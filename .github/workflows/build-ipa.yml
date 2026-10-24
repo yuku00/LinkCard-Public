@@ -76,6 +76,7 @@ jobs:
           path: |
             build/public/result.json
             build/public/build.log
+            build/public/compiler-diagnostics.json
           if-no-files-found: error
           include-hidden-files: false
           retention-days: 7

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Export enums and bounded counts, never raw diagnostics or arbitrary strings.
+"""Export bounded results plus separately allowlisted compiler diagnostics.
 This report does not replace Tools/require_ui_gates.py or authorize IPA upload.
 """
 import json
@@ -85,7 +85,10 @@ def main():
               'Artifact upload and final workflow success must be checked separately.',
               'No raw logs, simulator identifiers, screenshots or attachments are exported.']
     (destination / 'build.log').write_text('\n'.join(lines) + '\n')
-    print('Wrote schema-limited public results; raw diagnostics were not exported.')
+    from public_compile_diagnostics import make_diagnostics
+    (destination / 'compiler-diagnostics.json').write_text(
+        json.dumps(make_diagnostics(Path.cwd(), os.environ), indent=2) + '\n')
+    print('Wrote bounded public results and allowlisted compiler diagnostics; raw logs not exported.')
 
 
 if __name__ == '__main__':
