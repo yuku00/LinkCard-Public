@@ -63,7 +63,7 @@ class CompilerDiagnosticsTests(unittest.TestCase):
 
     def test_symlinks_missing_and_oversized_logs_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve()
             path = root / 'log'
             self.assertEqual(module.extract(path, root, {}, {})['read_status'], 'missing')
             path.write_text('x')

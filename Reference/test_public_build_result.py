@@ -14,7 +14,7 @@ spec.loader.exec_module(module)
 class PublicBuildResultTests(unittest.TestCase):
     def report(self, unit=None, full=None, environment=None):
         with tempfile.TemporaryDirectory() as folder:
-            logs = Path(folder)
+            logs = Path(folder).resolve()
             for name, value in [('mist-uikit-result.json', unit), ('full-app-ui-result.json', full)]:
                 if value is not None:
                     (logs / name).write_text(json.dumps(value))
@@ -30,7 +30,7 @@ class PublicBuildResultTests(unittest.TestCase):
 
     def test_compile_classifier_never_exports_diagnostic_text(self):
         with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / 'build.log'
+            path = Path(folder).resolve() / 'build.log'
             cases = {
                 'SYNTHETIC_PRIVATE_MARKER': 'unknown',
                 'SYNTHETIC_PRIVATE_MARKER error: unable to type-check this expression in reasonable time': 'unknown',
@@ -44,19 +44,19 @@ class PublicBuildResultTests(unittest.TestCase):
             for text, expected in cases.items():
                 path.write_text(text)
                 self.assertEqual(module.compile_failure_kind(path), expected)
-            link = Path(folder) / 'link.log'
+            link = Path(folder).resolve() / 'link.log'
             link.symlink_to(path)
             self.assertEqual(module.compile_failure_kind(link), 'unknown')
 
     def test_warning_and_cross_line_regression(self):
         with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / 'build.log'
+            path = Path(folder).resolve() / 'build.log'
             path.write_text('warning: unable to type-check this expression in reasonable time\n** BUILD SUCCEEDED **\n')
             self.assertEqual(module.compile_failure_kind(path), 'unknown')
 
     def test_unrelated_warning_cannot_classify_error(self):
         with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / 'build.log'
+            path = Path(folder).resolve() / 'build.log'
             path.write_text('xcodebuild: error: invalid scheme\nwarning: cannot convert sample\n')
             self.assertEqual(module.compile_failure_kind(path), 'xcodebuild-error')
 
@@ -91,7 +91,7 @@ class PublicBuildResultTests(unittest.TestCase):
                  ('xcodebuild: error: invalid scheme\nwarning: cannot convert sample', 'failure', 'xcodebuild-error'),
                  ('** BUILD FAILED **', 'success', 'unknown')]
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve()
             logs = root / 'build/logs'
             logs.mkdir(parents=True)
             for text, outcome, kind in cases:
@@ -131,16 +131,16 @@ class PublicBuildResultTests(unittest.TestCase):
 
     def test_malformed_and_oversized_files_are_ignored(self):
         with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / 'result.json'
+            path = Path(folder).resolve() / 'result.json'
             for text in ['{', '[]', 'x' * 65537]:
                 path.write_text(text)
                 self.assertEqual(module.read_result(path), {})
 
     def test_symlinks_are_ignored(self):
         with tempfile.TemporaryDirectory() as folder:
-            target = Path(folder) / 'target.json'
+            target = Path(folder).resolve() / 'target.json'
             target.write_text('{"status":"passed"}')
-            link = Path(folder) / 'link.json'
+            link = Path(folder).resolve() / 'link.json'
             link.symlink_to(target)
             self.assertEqual(module.read_result(link), {})
 
