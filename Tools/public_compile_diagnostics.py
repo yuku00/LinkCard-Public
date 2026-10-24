@@ -192,6 +192,19 @@ def make_diagnostics(root, environment):
     stages = {}
     for stage, name in [('release', 'build-package.log'), ('unit', 'mist-uikit-tests.log'), ('fullApp', 'full-app-ui-tests.log')]:
         stages[stage] = extract(logs / name, root, sources, environment)
+    # One publication budget for the complete report, not twelve per stage.
+    # Reserve it for errors across all stages before retaining any warnings.
+    ranked = sorted(((name, index, item) for name, report in stages.items()
+                     for index, item in enumerate(report['items'])),
+                    key=lambda entry: entry[2]['severity'] != 'error')
+    retained = {(name, index) for name, index, _ in ranked[:MAX_ITEMS]}
+    for name, report in stages.items():
+        items = [item for index, item in enumerate(report['items']) if (name, index) in retained]
+        removed = len(report['items']) - len(items)
+        report['reasons']['limit'] += removed
+        report['omitted'] += removed
+        report['items'] = items
+        report['retained'] = len(items)
     return {'schema': 1, 'kind': 'minimal-compiler-diagnostics', 'stages': stages,
             'policy': 'Single-line diagnostics; public paths mapped, other paths and credentials redacted before limits; no context exported.'}
 

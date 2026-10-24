@@ -20,8 +20,10 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         tree.name = "actual-accessibility-tree"; tree.lifetime = .keepAlways; add(tree)
         app.terminate()
     }
-    private func wait(_ element: XCUIElement, _ predicate: String, seconds: Double = 6) {
-        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: predicate), object: element)], timeout: seconds), .completed, element.debugDescription)
+    private func wait(_ element: XCUIElement, _ predicate: String, seconds: Double = 6,
+                      file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: predicate), object: element)], timeout: seconds), .completed,
+                       "Timed out waiting for \(predicate)", file: file, line: line)
     }
     private func tap(_ element: XCUIElement) {
         XCTAssertTrue(element.waitForExistence(timeout: 6), app.debugDescription)
@@ -150,6 +152,16 @@ final class LinkCardFullAppTouchTests: XCTestCase {
                 .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: endX-origin.x, dy: t.midY-origin.y)))
         } else {
             slider.adjust(toNormalizedSliderPosition: position)
+            // XCTest's synthesized drag can land a few percent away from the
+            // requested fraction (observed 0.15 for 0.18). Make at most one
+            // measured, physical correction, never write a binding/AX value or
+            // relax the original 0.02 acceptance bound.
+            let landed = slider.normalizedSliderPosition
+            if abs(landed - position) > 0.02 {
+                let corrected = min(1, max(0, position + position - landed))
+                XCTAssertNotEqual(corrected, position)
+                slider.adjust(toNormalizedSliderPosition: corrected)
+            }
         }
         let changed = NSPredicate { _, _ in
             guard let value = slider.value as? String, value != old else { return false }
@@ -314,7 +326,8 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         let originalWorkbench = try value(workbench), originalWallpaper = try value(wallpaper)
         func set(_ row: XCUIElement, _ target: CGFloat) throws {
             if abs(try value(row) - target) > 0.005 { try slide(row, to: target) }
-            XCTAssertEqual(try value(row), target, accuracy: 0.02)
+            XCTAssertEqual(try value(row), target, accuracy: 0.02,
+                           "Physical slider target: \(row.identifier)")
         }
         for strength in [CGFloat(0), 0.5, 1] {
             try set(sidebar, strength)

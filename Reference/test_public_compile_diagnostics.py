@@ -61,6 +61,25 @@ class CompilerDiagnosticsTests(unittest.TestCase):
         self.assertEqual(result['items'][0]['severity'], 'error')
         self.assertEqual(result['omitted'], 13)
 
+    def test_report_budget_is_shared_across_all_stages(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            logs = root / 'build/logs'
+            logs.mkdir(parents=True)
+            for name in ['build-package.log', 'mist-uikit-tests.log', 'full-app-ui-tests.log']:
+                (logs / name).write_text(''.join(
+                    f'error: diagnostic {n}\n' if name == 'full-app-ui-tests.log' else f'warning: diagnostic {n}\n'
+                    for n in range(15)))
+            with patch.object(module, 'public_sources', return_value={}):
+                stages = module.make_diagnostics(root, {})['stages']
+            self.assertEqual(sum(s['retained'] for s in stages.values()), 12)
+            self.assertEqual(stages['fullApp']['retained'], 12)
+            self.assertEqual(sum(s['omitted'] for s in stages.values()), 33)
+            for stage in stages.values():
+                self.assertEqual(stage['retained'], len(stage['items']))
+                self.assertEqual(stage['omitted'], stage['reasons']['limit'])
+
     def test_symlinks_missing_and_oversized_logs_rejected(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder).resolve()
