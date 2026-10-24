@@ -65,10 +65,10 @@ if (logs/'FullApp.xcresult').exists():
             p=subprocess.run(command,capture_output=True,text=True,timeout=60)
             if 'summary' in command:
                 (logs/'full-app-summary.json').write_text(p.stdout)
+                summary = json.loads(p.stdout)
+                counts = {key: summary.get(key) for key in ['passedTests','failedTests','skippedTests','totalTestCount']}
+                result['test_counts'] = counts
                 if result['status'] == 'passed':
-                    summary = json.loads(p.stdout)
-                    counts = {key: summary.get(key) for key in ['passedTests','failedTests','skippedTests','totalTestCount']}
-                    result['test_counts'] = counts
                     if counts != {'passedTests':expected_count,'failedTests':0,'skippedTests':0,'totalTestCount':expected_count}:
                         result.update(status='failed',reason=f'All {expected_count} selected full-App tests must execute and pass, none skipped')
             with (logs/'full-app-evidence-export.log').open('a') as output:

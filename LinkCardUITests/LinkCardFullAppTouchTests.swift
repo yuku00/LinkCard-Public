@@ -56,18 +56,43 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
     }
+    private func contentViewport() -> CGRect {
+        let panel = app.descendants(matching: .any).matching(identifier: "workbench.panel").firstMatch.frame
+        let handle = app.buttons["workbench.handle"].frame
+        let settings = app.buttons["fusion.settings"]
+        let top = settings.exists && settings.isHittable ? max(handle.maxY, settings.frame.maxY) : handle.maxY
+        let tabTop = ["tab.0", "tab.1", "tab.2"].map { app.buttons[$0].frame.minY }.min()!
+        // FusionShell places content strictly between the header and tab padding.
+        return CGRect(x: panel.minX, y: top, width: panel.width,
+                      height: max(0, tabTop - 12 - top)).intersection(app.frame)
+    }
     private func reveal(_ element: XCUIElement) {
         for attempt in 0..<8 {
-            if element.exists && element.isHittable { return }
-            // Settings tests visit wallpaper then controls above it. Always
-            // swiping upward can never reveal an earlier off-screen slider.
-            let above = element.exists && !element.frame.isEmpty
-                ? element.frame.midY < app.frame.midY : attempt >= 4
-            print("FULLAPP reveal id=\(element.identifier) attempt=\(attempt) above=\(above)")
-            drag(CGVector(dx: 0.78, dy: above ? 0.38 : 0.72),
-                 CGVector(dx: 0.78, dy: above ? 0.72 : 0.38))
+            let viewport = contentViewport()
+            let frame = element.exists ? element.frame : .zero
+            let centre = CGPoint(x: frame.midX, y: frame.midY)
+            if element.exists && element.isHittable && viewport.contains(centre) { return }
+            let above = element.exists && !frame.isEmpty ? frame.midY < viewport.midY : attempt >= 4
+            // MistPage and creationPage inset content by 14/16 points; scroll in
+            // the 8-point gutter, not through the slider tracks at screen x=.78.
+            let x = viewport.minX + 8
+            let low = viewport.minY + viewport.height * 0.8
+            let high = viewport.minY + viewport.height * 0.2
+            XCTAssertGreaterThan(low - high, 40)
+            let sliders = ["blur.controls", "blur.workbench", "blur.sidebar"].map { app.sliders[$0] }
+                .filter { $0.exists && $0.isHittable }
+            let values = sliders.map { $0.normalizedSliderPosition }
+            for slider in sliders { XCTAssertLessThan(x, slider.frame.minX, "Scroll gutter must not hit a slider") }
+            screenPoint(CGPoint(x: x, y: above ? high : low)).press(forDuration: 0.05,
+                thenDragTo: screenPoint(CGPoint(x: x, y: above ? low : high)))
+            for (slider, before) in zip(sliders, values) {
+                XCTAssertEqual(slider.normalizedSliderPosition, before, accuracy: 0.001,
+                               "Revealing content must not edit a blur preference")
+            }
         }
         XCTAssertTrue(element.isHittable, app.debugDescription)
+        XCTAssertTrue(contentViewport().contains(CGPoint(x: element.frame.midX, y: element.frame.midY)),
+                      "Coordinate tap centre must be inside visible workbench content")
     }
     // SwiftUI can expose a labelled row and the native control as the same AX
     // type. Never use a row's centre as the switch or slider touch target.
