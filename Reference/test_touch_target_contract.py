@@ -29,6 +29,22 @@ class TouchTargetContracts(unittest.TestCase):
         self.assertIn('A real thumb drag must change the setting', s)
         self.assertNotIn('f.width - 28', s)
 
+    def test_slider_overshoot_uses_two_measured_points_not_repeated_offset(self):
+        s = SOURCE.read_text()
+        self.assertIn('let response = secondLanding - landed', s)
+        self.assertIn('let fraction = (position - landed) / response', s)
+        self.assertIn('let interpolated = position + (corrected - position) * fraction', s)
+        self.assertIn('(0...1).contains(fraction)', s)
+        self.assertEqual(s.count('slider.adjust(toNormalizedSliderPosition:'), 3)
+        self.assertIn('accuracy: 0.02', s)
+        # Observed pair: request .18 -> .15; request .21 -> .21.
+        # A repeated full offset would return to .18 and can oscillate.
+        target, first, requested, second = .18, .15, .21, .21
+        fraction = (target - first) / (second - first)
+        interpolated = target + (requested - target) * fraction
+        self.assertAlmostEqual(interpolated, .195)
+        self.assertTrue(target < interpolated < requested)
+
     def test_full_four_cases_and_default_wait_remain(self):
         s = SOURCE.read_text()
         self.assertEqual(s.count('    func test'), 4)

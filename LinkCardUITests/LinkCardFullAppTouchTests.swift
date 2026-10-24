@@ -153,14 +153,26 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         } else {
             slider.adjust(toNormalizedSliderPosition: position)
             // XCTest's synthesized drag can land a few percent away from the
-            // requested fraction (observed 0.15 for 0.18). Make at most one
-            // measured, physical correction, never write a binding/AX value or
-            // relax the original 0.02 acceptance bound.
+            // requested fraction. Keep the original 0.02 acceptance bound.
+            // At most two measured corrections; never write a binding/AX value.
             let landed = slider.normalizedSliderPosition
             if abs(landed - position) > 0.02 {
                 let corrected = min(1, max(0, position + position - landed))
                 XCTAssertNotEqual(corrected, position)
                 slider.adjust(toNormalizedSliderPosition: corrected)
+                let secondLanding = slider.normalizedSliderPosition
+                // Observed .18 -> .15, then .21 -> .21: a full offset
+                // overshoots. Interpolate the two actual responses instead of
+                // alternating requests. Only interpolate a bracketed target;
+                // a nonmonotonic or unmoving control must fail, not be retried.
+                let response = secondLanding - landed
+                if abs(secondLanding - position) > 0.02 && abs(response) > 0.001 {
+                    let fraction = (position - landed) / response
+                    if (0...1).contains(fraction) {
+                        let interpolated = position + (corrected - position) * fraction
+                        slider.adjust(toNormalizedSliderPosition: interpolated)
+                    }
+                }
             }
         }
         let changed = NSPredicate { _, _ in
