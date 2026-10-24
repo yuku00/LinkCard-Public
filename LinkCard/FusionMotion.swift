@@ -71,7 +71,8 @@ struct FusionWorkbenchDrag: Equatable {
         self.keyboard = keyboard; self.accessibility = accessibility
         vertical = abs(translation.height) > abs(translation.width)
         progress = origin
-        self = tracking(translation)
+        // Frozen let fields are initialized once; only progress tracks the sample.
+        progress = tracking(translation).progress
     }
     func tracking(_ translation: CGSize) -> Self {
         var next = self
