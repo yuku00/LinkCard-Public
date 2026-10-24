@@ -20,14 +20,20 @@ struct FusionShell<Content: View>: View {
         self.library = library; self.keyboard = keyboard; self.busy = busy; self.content = content()
     }
     private var spring: Animation? { reduceMotion || scenePhase != .active ? nil : .interactiveSpring(response: 0.46, dampingFraction: 0.78, blendDuration: 0.12) }
-    @State private var dragProgress: CGFloat?
-    @State private var handleOrigin: CGFloat?
+    // GestureState also resets after recognizer cancellation; onEnded alone does not.
+    @GestureState private var handleDrag: FusionWorkbenchDrag?
+    @State private var handleSession = FusionWorkbenchDragSession()
     private var opened: Bool { workbench.expanded }
     private var targetProgress: CGFloat { opened ? 2 : 1 }
     var body: some View {
         GeometryReader { geo in
             let width = FusionState.drawerWidth(geo.size.width)
-            let layout = FusionWorkbenchGeometry(size: geo.size, progress: dragProgress ?? targetProgress, keyboard: keyboard, accessibility: typeSize.isAccessibilitySize)
+            let liveDrag = handleDrag.flatMap { sample in
+                sample.matches(size: geo.size, keyboard: keyboard, accessibility: typeSize.isAccessibilitySize)
+                    && scenePhase == .active ? sample : nil
+            }
+            let progress = liveDrag?.progress ?? targetProgress
+            let layout = FusionWorkbenchGeometry(size: geo.size, progress: progress, keyboard: keyboard, accessibility: typeSize.isAccessibilitySize)
             ZStack(alignment: .topLeading) {
                 // Only the wallpaper and the panel's background reach past safe areas.
                 // Interactive content remains inside the system's usable rectangle.
@@ -37,10 +43,9 @@ struct FusionShell<Content: View>: View {
                         .frame(height: geo.size.height < 600 ? 64 : 92)
                         .padding(.horizontal, 20)
                 }
-                desk(layout: layout, bottomInset: geo.safeAreaInsets.bottom)
+                desk(layout: layout, bottomInset: geo.safeAreaInsets.bottom, size: geo.size)
                     .frame(width: layout.panel.width, height: layout.panel.height)
                     .position(x: layout.panel.midX, y: layout.panel.midY)
-                    .animation(handleOrigin == nil ? spring : nil, value: opened)
                 if !keyboard {
                     Button { state.profile = true } label: {
                         FusionAvatar(image: person.image).frame(width: 56, height: 56)
@@ -56,18 +61,22 @@ struct FusionShell<Content: View>: View {
                         }
                         .recordWorkbenchFrame("avatar")
                         .position(x: layout.avatar.midX, y: layout.avatar.midY)
-                        .animation(handleOrigin == nil ? spring : nil, value: opened)
                 }
                 NativeFluidDrawer(state: state, active: scenePhase == .active, busy: busy,
-                                  reduceMotion: reduceMotion, strength: cardBlur.strength(channel: .controls),
+                                  reduceMotion: reduceMotion, strength: cardBlur.strength(channel: .sidebar),
                                   menu: drawer()
                                     .environmentObject(cardBlur))
                     .frame(width: 0, height: 0).allowsHitTesting(false)
                     .transaction { $0.animation = nil }
             }
+            // One animation owner for panel + avatar. Tracking is unanimated;
+            // release (including returning to the same detent) settles once.
+            .animation(liveDrag == nil ? spring : nil, value: progress)
         }
         .sheet(isPresented: $state.profile) { FusionProfileView(store: person) }
-        .onChange(of: keyboard) { visible in if visible { workbench.expanded = true } }
+        .onChange(of: keyboard) { visible in
+            if visible && !workbench.expanded { workbench.expanded = true }
+        }
     }
     private func toolbar(width: CGFloat, compact: Bool) -> some View {
         HStack(alignment: .center, spacing: 12) {
@@ -82,7 +91,35 @@ struct FusionShell<Content: View>: View {
         state.search = ""
         workbench.restore(); workbench.expanded = !opened
     }
-    private func desk(layout: FusionWorkbenchGeometry, bottomInset: CGFloat) -> some View {
+    private func handleGesture(size: CGSize, travel: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .named("workbench.shell"))
+            .updating($handleDrag) { drag, sample, transaction in
+                // The handle moves during tracking. Its local coordinates must
+                // never feed back into the geometry that moved the handle.
+                transaction.animation = nil
+                transaction.disablesAnimations = true
+                guard scenePhase == .active else { return }
+                let current = sample ?? FusionWorkbenchDrag(origin: targetProgress, travel: travel,
+                    size: size, keyboard: keyboard, accessibility: typeSize.isAccessibilitySize,
+                    translation: drag.translation)
+                if sample == nil { handleSession.start = current }
+                guard current.matches(size: size, keyboard: keyboard,
+                                      accessibility: typeSize.isAccessibilitySize) else { return }
+                let next = current.tracking(drag.translation)
+                if sample != next { sample = next }
+            }
+            .onEnded { drag in
+                defer { handleSession.start = nil }
+                guard let sample = handleSession.start, sample.vertical, scenePhase == .active,
+                      sample.matches(size: size, keyboard: keyboard,
+                                     accessibility: typeSize.isAccessibilitySize) else { return }
+                let expanded = sample.expanded(predictedTranslation: drag.predictedEndTranslation.height)
+                if !state.search.isEmpty { state.search = "" }
+                if workbench.expanded != expanded { workbench.expanded = expanded }
+                // GestureState performs the only transient reset, also on cancel.
+            }
+    }
+    private func desk(layout: FusionWorkbenchGeometry, bottomInset: CGFloat, size: CGSize) -> some View {
         VStack(spacing: 0) {
             HStack {
                 Spacer(minLength: 0)
@@ -91,16 +128,7 @@ struct FusionShell<Content: View>: View {
                         .shadow(color: .black.opacity(0.25), radius: 1, y: 1).allowsHitTesting(false))
                     .frame(width: layout.handle.width, height: layout.handle.height)
                     .recordWorkbenchFrame("handle")
-                    .simultaneousGesture(DragGesture(minimumDistance: 12).onChanged { drag in
-                        if handleOrigin == nil { handleOrigin = targetProgress }
-                        dragProgress = min(2, max(1, (handleOrigin ?? 1) - drag.translation.height / layout.travel))
-                    }.onEnded { drag in
-                        let projected = (handleOrigin ?? targetProgress) - drag.predictedEndTranslation.height / layout.travel
-                        handleOrigin = nil
-                        withAnimation(spring) {
-                            state.search = ""; workbench.expanded = projected > 1.5; dragProgress = nil
-                        }
-                    })
+                    .highPriorityGesture(handleGesture(size: size, travel: layout.travel))
             }.padding(.trailing, 12).frame(height: layout.handle.height)
             HStack {
                 Text(workbench.tab == .settings ? "设置" : "工作台")

@@ -1,4 +1,4 @@
-# LinkCard 0.8.5 · build 24
+# LinkCard 0.8.6 · build 25
 
 LinkCard 是使用 SwiftUI、UIKit、CoreNFC 与 CoreBluetooth 的 iOS 应用，用于卡片内容排版、预览、本地管理及受支持设备的连接。应用最低部署目标为 iOS 16。
 

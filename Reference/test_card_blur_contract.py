@@ -50,9 +50,9 @@ class CardBlurContracts(unittest.TestCase):
             self.assertIn(key, theme)
         for text in ['恢复此卡跟随全局', '恢复全部卡片默认设置', '跟随全局', 'setOverride(', 'var overrides']:
             self.assertNotIn(text, theme)
-        for key in ['appearance.blur.controls.v2', 'appearance.blur.workbench.v2', 'appearance.blur.migrated.v2']:
+        for key in ['appearance.blur.controls.v2', 'appearance.blur.workbench.v2', 'appearance.blur.sidebar.v1', 'appearance.blur.migrated.v2']:
             self.assertIn(key, theme)
-        for slider in ['blur.controls', 'blur.workbench', 'blur.wallpaper']:
+        for slider in ['blur.controls', 'blur.workbench', 'blur.sidebar', 'blur.wallpaper']:
             self.assertEqual(theme.count('accessibilityIdentifier("' + slider + '")'), 1)
         self.assertIn('if !inWorkbench || id == "action"', theme)
 

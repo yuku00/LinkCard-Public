@@ -6,7 +6,7 @@
 - 工作流使用 GitHub 托管 `macos-15`；不得改为带个人数据的 self-hosted runner。
 - 只使用 runner 已安装的 iPhone simulator runtime；缺失时失败关闭，不自动下载 runtime。
 - 不依赖 CocoaPods、第三方 Python 包、签名证书、Apple 账号或仓库 secrets。
-- `LinkCard.xcodeproj` 和共享 `LinkCard` scheme 已包含 app、unit 和 UI test targets。当前版本为 0.8.5，build 为 24。
+- `LinkCard.xcodeproj` 和共享 `LinkCard` scheme 已包含 app、unit 和 UI test targets。当前版本为 0.8.6，build 为 25。
 
 ## 结构及 Reference 测试
 
@@ -32,7 +32,7 @@ python3 Tools/require_ui_gates.py
 - fullApp 必须为 `passed`，scope 必须是 `fullApp`。
 - 计数必须精确为 `passedTests=4, failedTests=0, skippedTests=0, totalTestCount=4`。
 - 不接受 sidebar-only、缺结果、超时、跳过或用 Reference 模型代替 UI。
-- 保留默认动画/quiescence、真实 frame 中心触摸、真实滑块拖动、值变化及恢复断言。
+- 保留默认动画/quiescence、真实 frame 中心触摸、真实滑块拖动、值变化及恢复断言。新增纵拖、选图取消、偏好隔离与重启检查合并在原四项内；suite 上限为 1200 秒，单次触摸响应上限仍为 15 秒。
 - NFC 测试仅打开确认再取消，不发送；保留无设备读取禁用断言。
 
 IPA 可能先在构建目录生成；这不等于可交付。工作流严格 gate 在上传前执行；失败不能上传 IPA。最终还须检查 workflow `completed / success`、本次源码版本以及 IPA 内 bundle、版本、架构和 SHA-256。自动测试不构成硬件兼容性保证。

@@ -5,6 +5,56 @@ import SwiftUI
 @testable import LinkCard
 
 final class FrameCodecTests: XCTestCase {
+    func testSendPreparationBothBranchesShareGuardsSnapshotAndSingleDispatch() {
+        for confirms in [true, false] {
+            var request = SendRequestState()
+            var frame = Data(repeating: 0x5A, count: 5000)
+            XCTAssertNil(request.prepare(frame: nil, busy: false, loading: false, previewPending: false, requiresConfirmation: confirms))
+            XCTAssertNil(request.prepare(frame: Data(count: 4999), busy: false, loading: false, previewPending: false, requiresConfirmation: confirms))
+            for flags in [(true, false, false), (false, true, false), (false, false, true)] {
+                XCTAssertNil(request.prepare(frame: frame, busy: flags.0, loading: flags.1, previewPending: flags.2, requiresConfirmation: confirms))
+            }
+            XCTAssertEqual(request.prepare(frame: frame, busy: false, loading: false, previewPending: false, requiresConfirmation: confirms), confirms ? .confirm : .send)
+            frame[0] = 0
+            XCTAssertNil(request.prepare(frame: frame, busy: false, loading: false, previewPending: false, requiresConfirmation: confirms))
+            let snapshot = request.takeFrame(busy: false, loading: false, previewPending: false)
+            XCTAssertEqual(snapshot?.first, 0x5A, "Dispatch uses the click-time frame, not a newer render")
+            XCTAssertEqual(snapshot?.count, 5000)
+            XCTAssertTrue(request.dispatched)
+            XCTAssertNil(request.takeFrame(busy: false, loading: false, previewPending: false), "One intent dispatches only once")
+            XCTAssertNil(request.prepare(frame: frame, busy: false, loading: false, previewPending: false, requiresConfirmation: confirms))
+            request.finish()
+            XCTAssertNotNil(request.prepare(frame: frame, busy: false, loading: false, previewPending: false, requiresConfirmation: confirms))
+            request.cancel()
+            XCTAssertNil(request.takeFrame(busy: false, loading: false, previewPending: false), "Cancel never dispatches")
+        }
+    }
+    func testSendRechecksReadinessAndConfirmationPreferencePersists() {
+        for flags in [(true, false, false), (false, true, false), (false, false, true)] {
+            var request = SendRequestState()
+            XCTAssertEqual(request.prepare(frame: Data(count: 5000), busy: false, loading: false, previewPending: false, requiresConfirmation: true), .confirm)
+            XCTAssertNil(request.takeFrame(busy: flags.0, loading: flags.1, previewPending: flags.2))
+            XCTAssertFalse(request.dispatched)
+        }
+        let name = "SendPreferenceTests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let preference = AppStorage(wrappedValue: true, "nfc.confirmBeforeSend.v1", store: defaults)
+        XCTAssertTrue(preference.wrappedValue)
+        preference.wrappedValue = false
+        XCTAssertFalse(AppStorage(wrappedValue: true, "nfc.confirmBeforeSend.v1", store: defaults).wrappedValue)
+    }
+    func testPhotoDitherFlagChangesRealRenderedFrame() throws {
+        let source = CardRenderer.canvas { context in
+            UIColor(white: 0.5, alpha: 1).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 200, height: 200))
+        }
+        let smooth = try CardRenderer.render(source, threshold: 120, dither: true)
+        let hard = try CardRenderer.render(source, threshold: 120, dither: false)
+        XCTAssertNotEqual(smooth.frame, hard.frame, "Photo toggle must change pixels, not just switch appearance")
+        XCTAssertEqual(smooth.frame.count, 5000)
+        XCTAssertEqual(hard.frame.count, 5000)
+    }
     func testWhiteAndBlack() throws {
         XCTAssertEqual(try FrameCodec.encode([UInt8](repeating: 255, count: 40000)), Data(repeating: 255, count: 5000))
         XCTAssertEqual(try FrameCodec.encode([UInt8](repeating: 0, count: 40000)), Data(repeating: 0, count: 5000))
@@ -86,6 +136,57 @@ final class MistBlurStoreTests: XCTestCase {
             XCTAssertEqual(restored.strength(channel: .workbench), 80)
             XCTAssertEqual(defaults.double(forKey: "appearance.blur"), 23)
             XCTAssertEqual(defaults.double(forKey: "appearance.veil"), 0.55)
+        }
+    }
+    func testPartiallyMigratedPreferencesAreNotOverwritten() {
+        withDefaults { defaults in
+            defaults.set(17.0, forKey: "appearance.blur.controls.v2")
+            defaults.set(29.0, forKey: "appearance.blur.workbench.v2")
+            defaults.set(9.0, forKey: "appearance.blur")
+            let store = MistBlurStore(defaults: defaults)
+            XCTAssertEqual(store.global, 17)
+            XCTAssertEqual(store.workbench, 29)
+            XCTAssertEqual(store.sidebar, 17)
+            XCTAssertEqual(defaults.double(forKey: "appearance.blur"), 9)
+        }
+    }
+    func testSidebarCopiesControlsOnceAndPreservesAllOtherPreferences() {
+        withDefaults { defaults in
+            defaults.set(true, forKey: "appearance.blur.migrated.v2")
+            defaults.set("50", forKey: "appearance.blur.controls.v2")
+            defaults.set(83.0, forKey: "appearance.blur.workbench.v2")
+            defaults.set(19.0, forKey: "appearance.blur")
+            defaults.set(["keep": "unchanged"], forKey: "appearance.cardBlur.overrides.v1")
+            let store = MistBlurStore(defaults: defaults)
+            XCTAssertEqual(store.sidebar, 50)
+            XCTAssertEqual(defaults.double(forKey: "appearance.blur.sidebar.v1"), 50)
+            store.setGlobal(0)
+            XCTAssertEqual(store.sidebar, 50)
+            store.setSidebar(100)
+            XCTAssertEqual(store.global, 0)
+            let restored = MistBlurStore(defaults: defaults)
+            XCTAssertEqual(restored.sidebar, 100)
+            XCTAssertEqual(restored.strength(channel: .sidebar), 100)
+            XCTAssertEqual(restored.workbench, 83)
+            XCTAssertEqual(defaults.double(forKey: "appearance.blur"), 19)
+            XCTAssertEqual(defaults.dictionary(forKey: "appearance.cardBlur.overrides.v1") as? [String: String], ["keep": "unchanged"])
+        }
+    }
+    func testExistingSidebarZeroIsNeverRemigratedAndStrengthsClamp() {
+        withDefaults { defaults in
+            defaults.set(true, forKey: "appearance.blur.migrated.v2")
+            defaults.set(100.0, forKey: "appearance.blur.controls.v2")
+            defaults.set(0.0, forKey: "appearance.blur.sidebar.v1")
+            let store = MistBlurStore(defaults: defaults)
+            XCTAssertEqual(store.sidebar, 0)
+            for value in [0.0, 50, 100] {
+                store.setSidebar(value)
+                XCTAssertEqual(MistBlurStore(defaults: defaults).sidebar, value)
+                XCTAssertEqual(store.global, 100)
+            }
+            store.setSidebar(-1); XCTAssertEqual(store.sidebar, 0)
+            store.setSidebar(101); XCTAssertEqual(store.sidebar, 100)
+            store.setSidebar(.nan); XCTAssertEqual(store.sidebar, 70)
         }
     }
     func testArgumentDomainNumericStringsAreNotSilentlyDefaulted() {
@@ -418,6 +519,26 @@ final class WorkbenchPresentationTests: XCTestCase {
 /// Runs production state/Shape and hosts the actual SwiftUI root in a simulator.
 /// These are real hierarchy captures, not HTML renders or touch-driven XCUITest.
 final class FusionPresentationTests: XCTestCase {
+    func testVerticalDragUsesFrozenMetricsClampsAndReverses() {
+        let size = CGSize(width: 390, height: 750)
+        let sample = FusionWorkbenchDrag(origin: 1, travel: 300, size: size,
+            keyboard: false, accessibility: false, translation: CGSize(width: 0, height: -30))
+        XCTAssertEqual(sample.progress, 1.1, accuracy: 0.001)
+        XCTAssertEqual(sample.tracking(CGSize(width: 0, height: -900)).progress, 2)
+        XCTAssertEqual(sample.tracking(CGSize(width: 0, height: -900)),
+                       sample.tracking(CGSize(width: 0, height: -1000)),
+                       "Clamped duplicate samples must not rewrite transient state")
+        XCTAssertEqual(sample.tracking(CGSize(width: 0, height: 90)).progress, 1)
+        XCTAssertFalse(sample.expanded(predictedTranslation: 90))
+        XCTAssertTrue(sample.expanded(predictedTranslation: -240))
+        XCTAssertTrue(sample.matches(size: size, keyboard: false, accessibility: false))
+        XCTAssertFalse(sample.matches(size: size, keyboard: true, accessibility: false))
+        XCTAssertFalse(sample.matches(size: CGSize(width: 750, height: 390), keyboard: false, accessibility: false))
+        let horizontal = FusionWorkbenchDrag(origin: 1, travel: 300, size: size,
+            keyboard: false, accessibility: false, translation: CGSize(width: 40, height: 4))
+        XCTAssertFalse(horizontal.vertical)
+        XCTAssertEqual(horizontal.tracking(CGSize(width: 40, height: -400)).progress, 1)
+    }
     @MainActor func testProductionConfigurationDedupAndLatestAction() {
         var tapped = 0
         let button = UIButton(type: .system)

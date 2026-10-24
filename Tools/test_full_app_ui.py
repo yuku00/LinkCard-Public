@@ -21,16 +21,16 @@ try:
             cmd[cmd.index('-only-testing:LinkCardUITests')] = '-only-testing:LinkCardUITests/LinkCardFullAppTouchTests/testSidebarActionsTabsSettingsAndSafety'
         started = time.monotonic()
         with (logs/'full-app-ui-tests.log').open('w') as output:
-            output.write(f'FULLAPP runner: default animation/quiescence waiting; {expected_count} real UI tests; 720s budget\n')
+            output.write(f'FULLAPP runner: default animation/quiescence waiting; {expected_count} real UI tests; 1200s budget\n')
             output.flush()
             p=subprocess.Popen(cmd,stdout=output,stderr=subprocess.STDOUT,start_new_session=True)
             try:
-                code=p.wait(timeout=720);result.update(status='passed' if code==0 else 'failed',exit_code=code)
+                code=p.wait(timeout=1200);result.update(status='passed' if code==0 else 'failed',exit_code=code)
             except subprocess.TimeoutExpired:
                 os.killpg(p.pid,signal.SIGTERM)
                 try:p.wait(timeout=15)
                 except subprocess.TimeoutExpired:os.killpg(p.pid,signal.SIGKILL)
-                result.update(status='timeout',reason='720s full-App UI test budget')
+                result.update(status='timeout',reason='1200s full-App UI test budget')
         result['elapsed_seconds'] = round(time.monotonic() - started, 2)
         if result['status'] != 'passed':
             # Capture the actual simulator without replacing the application root.

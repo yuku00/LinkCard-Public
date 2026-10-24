@@ -17,8 +17,10 @@ class GlassContracts(unittest.TestCase):
         for owner in ('nfc = NFCService()', 'ble = PCRBluetooth()', 'library = LocalCardLibrary()', 'wallpaper = WallpaperStore()'):
             self.assertIn('@StateObject private var '+owner,s)
         self.assertIn('@State private var text',s)
-        self.assertIn('pendingFrame = rendered?.frame',s)
-        self.assertIn('guard let frame = pendingFrame',s)
+        self.assertIn('sendRequest.prepare(frame: rendered?.frame',s)
+        self.assertIn('guard let frame = sendRequest.takeFrame',s)
+        self.assertIn('self.frame = frame',s)
+        self.assertIn('dispatched = true',s)
     def test_native_material_and_accessibility(self):
         s=source('MistDesign.swift')
         for feature in ('UIVisualEffectView','visualTint.backgroundColor','UIBlurEffect(style: .systemUltraThinMaterial)','dynamicTypeSize'):

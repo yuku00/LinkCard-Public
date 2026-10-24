@@ -7,6 +7,30 @@ struct LinkCardApp: App {
     var body: some Scene { WindowGroup { ContentView() } }
 }
 
+/// UI intent gate only. CoreNFC still performs all device/mailbox checks.
+/// Both confirmation and direct-send consume the same click-time frame once.
+struct SendRequestState {
+    enum Decision: Equatable { case confirm, send }
+    private var frame: Data?
+    private(set) var dispatched = false
+    mutating func prepare(frame: Data?, busy: Bool, loading: Bool, previewPending: Bool,
+                          requiresConfirmation: Bool) -> Decision? {
+        guard !dispatched, self.frame == nil, !busy, !loading, !previewPending,
+              let frame, frame.count == 5000 else { return nil }
+        self.frame = frame
+        return requiresConfirmation ? .confirm : .send
+    }
+    mutating func takeFrame(busy: Bool, loading: Bool, previewPending: Bool) -> Data? {
+        guard !dispatched, let snapshot = frame else { return nil }
+        frame = nil
+        guard !busy, !loading, !previewPending, snapshot.count == 5000 else { return nil }
+        dispatched = true
+        return snapshot
+    }
+    mutating func cancel() { frame = nil }
+    mutating func finish() { dispatched = false }
+}
+
 final class PreviewActivity: ObservableObject {
     // Reference state is read at execution time, never from an old View closure.
     var active = false
@@ -16,12 +40,15 @@ struct ContentView: View {
     @StateObject private var nfc = NFCService()
     @Environment(\.scenePhase) private var scenePhase
     @State private var selected: PhotosPickerItem?
+    @State private var importedSelection: PhotosPickerItem?
+    @State private var photoPickerPresented = false
     @State private var photo: UIImage?
     @State private var source = 4
     @State private var fill = true
     @State private var turns = 0
     @State private var threshold = 120.0
-    @State private var dither = false
+    // Editor preferences are session-only; a fresh editor uses photo dithering.
+    @State private var dither = true
     @State private var text = "留一点空间，\n给重要的事。"
     @State private var qr = "https://example.com"
     @State private var fontSize = 20.0
@@ -50,7 +77,8 @@ struct ContentView: View {
         _workbench = StateObject(wrappedValue: workbench)
     }
     @State private var keyboardVisible = false
-    @State private var pendingFrame: Data?
+    @AppStorage("nfc.confirmBeforeSend.v1") private var confirmBeforeSend = true
+    @State private var sendRequest = SendRequestState()
     private let accent = MistStyle.accent
     private let templates = [(4, "日期", "calendar"), (2, "便签", "text.alignleft"),
                              (0, "照片", "photo"), (1, "二维码", "qrcode"),
@@ -78,12 +106,14 @@ struct ContentView: View {
         .foregroundStyle(MistStyle.ink).tint(MistStyle.link)
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardVisible = true }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardVisible = false }
+        .onReceive(nfc.$status) { _ in
+            // Includes unavailable/invalid-start failures that never set busy.
+            if !nfc.busy && sendRequest.dispatched { sendRequest.finish() }
+        }
+        .photosPicker(isPresented: $photoPickerPresented, selection: $selected, matching: .images)
         .confirmationDialog("发送到墨水屏？", isPresented: $confirmSend, titleVisibility: .visible) {
-            Button("通过 NFC 发送") {
-                guard let frame = pendingFrame else { return }
-                nfc.send(frame: frame); pendingFrame = nil
-            }
-            Button("取消", role: .cancel) { pendingFrame = nil }
+            Button("通过 NFC 发送") { dispatchPreparedSend() }
+            Button("取消", role: .cancel) { sendRequest.cancel() }
         } message: {
             Text("仅发送到兼容 ST25DV Link-Card，不使用 PCR 蓝牙。请持续供电并贴合手机顶部；失败或取消后断电重启。")
         }
@@ -146,10 +176,10 @@ struct ContentView: View {
                         Label("NFC · Link-Card", systemImage: "wave.3.right").font(.subheadline)
                             .fixedSize(horizontal: false, vertical: true)
                         if !typeSize.isAccessibilitySize { Spacer(minLength: 0) }
-                        Button { pendingFrame = rendered?.frame; confirmSend = true } label: {
+                        Button { prepareSend() } label: {
                             Label("发送", systemImage: "square.and.arrow.up").frame(minHeight: 44)
                         }.accessibilityLabel("发送到墨水屏").accessibilityIdentifier("create.send")
-                            .disabled(nfc.busy || loading || previewPending || rendered == nil)
+                            .disabled(nfc.busy || sendRequest.dispatched || confirmSend || loading || previewPending || rendered == nil)
                     }
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
@@ -178,23 +208,47 @@ struct ContentView: View {
 
     private func preview(width: CGFloat, availableHeight: CGFloat) -> some View {
         let side = min(WorkbenchState.previewSide(width: width), max(20, availableHeight - 52))
-        return Group {
-            if let rendered = rendered {
-                Image(uiImage: rendered.image).resizable().interpolation(.none)
-                    .accessibilityLabel("200 乘 200 单色预览，请检查是否裁切")
-            } else {
-                VStack(spacing: 14) {
-                    Image(systemName: "photo.on.rectangle.angled").font(.largeTitle)
-                    Text(loading ? "正在载入…" : "选择内容，开始制卡").font(.caption)
-                }.foregroundStyle(Color.black).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.white)
+        return Button { choosePhoto() } label: {
+            Group {
+                if let rendered = rendered {
+                    Image(uiImage: rendered.image).resizable().interpolation(.none)
+                        .accessibilityLabel("200 乘 200 单色预览，请检查是否裁切")
+                } else {
+                    VStack(spacing: 14) {
+                        Image(systemName: "photo.on.rectangle.angled").font(.largeTitle)
+                        Text(loading ? "正在载入…" : "选择内容，开始制卡").font(.caption)
+                    }.foregroundStyle(Color.black).frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.white)
+                }
             }
+            .frame(width: side, height: side)
+            .overlay(Rectangle().stroke(Color.black.opacity(0.12), lineWidth: 1))
+            .padding(10)
+            .background { MistSurface(id: "create.preview", radius: 14) }
+            .shadow(color: .black.opacity(0.12), radius: 16, y: 8)
         }
-        .frame(width: side, height: side)
-        .overlay(Rectangle().stroke(Color.black.opacity(0.12), lineWidth: 1))
-        .padding(10)
-        .background { MistSurface(id: "create.preview", radius: 14) }
-        .shadow(color: .black.opacity(0.12), radius: 16, y: 8)
+        .buttonStyle(.plain)
+        .disabled(nfc.busy || sendRequest.dispatched || loading || photoPickerPresented)
+        .accessibilityLabel("选择照片作为墨水屏内容")
+        .accessibilityHint("轻点打开照片选择；取消将保留当前内容")
         .accessibilityIdentifier("create.preview")
+    }
+
+    private func prepareSend() {
+        // A dismissed confirmation may leave a snapshot; a new explicit click
+        // replaces it, but never clears the synchronous dispatched latch.
+        if !confirmSend { sendRequest.cancel() }
+        guard let decision = sendRequest.prepare(frame: rendered?.frame, busy: nfc.busy,
+            loading: loading, previewPending: previewPending,
+            requiresConfirmation: confirmBeforeSend) else { return }
+        switch decision {
+        case .confirm: confirmSend = true
+        case .send: dispatchPreparedSend()
+        }
+    }
+    private func dispatchPreparedSend() {
+        guard let frame = sendRequest.takeFrame(busy: nfc.busy, loading: loading,
+                                                previewPending: previewPending) else { return }
+        nfc.send(frame: frame)
     }
 
     private var transferStatus: some View {
@@ -218,7 +272,9 @@ struct ContentView: View {
     @ViewBuilder private var editor: some View {
         switch source {
         case 0:
-            PhotosPicker(selection: $selected, matching: .images) { Label("选择照片", systemImage: "photo.badge.plus") }
+            Button { choosePhoto() } label: { Label("选择照片", systemImage: "photo.badge.plus") }
+                .disabled(nfc.busy || sendRequest.dispatched || loading || photoPickerPresented)
+                .accessibilityIdentifier("create.choosePhoto")
             if loading { ProgressView("正在读取照片…") }
             Picker("方形构图", selection: $fill) { Text("居中填充").tag(true); Text("完整适应").tag(false) }.pickerStyle(.menu)
             Button("顺时针旋转 90°") { turns = (turns+1)%4 }
@@ -265,17 +321,33 @@ struct ContentView: View {
         Text(text).font(.footnote).foregroundStyle(MistStyle.secondary).fixedSize(horizontal: false, vertical: true)
     }
 
+    private func choosePhoto() {
+        guard !nfc.busy, !sendRequest.dispatched, !loading, !photoPickerPresented else { return }
+        // Reset only the picker selection, never photo/editor/rendered content.
+        // This permits choosing the same asset again after switching templates.
+        selected = nil
+        photoPickerPresented = true
+    }
+
     @MainActor private func loadPhoto() async {
-        guard let item = selected else { return }
-        loading = true; rendered = nil
+        guard let item = selected, !nfc.busy, !sendRequest.dispatched else { return }
+        if item == importedSelection {
+            source = 0; updatePreview() // Reuse a successfully decoded selection.
+            return
+        }
+        // Opening/cancelling the picker does not clear the current template or
+        // frame. Commit only after a selected photo has loaded and decoded.
+        loading = true
         defer { loading = false }
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else { throw CardError.message("未能载入照片") }
             try Task.checkCancellation()
-            photo = try CardRenderer.photo(data: data)
+            guard selected == item, !nfc.busy, !sendRequest.dispatched else { return }
+            let nextPhoto = try CardRenderer.photo(data: data)
+            photo = nextPhoto; importedSelection = item
             source = 0; updatePreview()
         } catch is CancellationError { }
-          catch { renderError = error.localizedDescription; photo = nil; rendered = nil }
+          catch { renderError = error.localizedDescription }
     }
 
     private func updatePreview() {
@@ -328,6 +400,10 @@ struct ContentView: View {
             MistPanel(id: "settings.reminders") {
                 DisclosureGroup("发送前的小提醒") {
                   VStack(alignment: .leading, spacing: 12) {
+                    Toggle("发送前确认", isOn: $confirmBeforeSend)
+                        .accessibilityIdentifier("send.confirmBeforeSend")
+                    Text("关闭后，点击发送会直接启动系统 NFC 扫描；只跳过本 App 的确认，不会隐藏系统 NFC 界面或跳过权限、设备型号与邮箱检查。")
+                        .font(.footnote).foregroundStyle(MistStyle.secondary)
                     Label("持续供电，再贴合手机顶部", systemImage: "wave.3.right")
                     Text("你这张实卡：先持续按住远离 USB-C 的 A 电源键，再持续按住滚轮。刷新结束前保持供电与贴合。")
                         .font(.subheadline).foregroundStyle(MistStyle.secondary)

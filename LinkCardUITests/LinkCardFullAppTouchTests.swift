@@ -9,7 +9,7 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         if name.contains("testSidebarActionsTabsSettingsAndSafety") {
-            app.launchArguments.append("-DrawerClickAudit")
+            app.launchArguments += ["-DrawerClickAudit", "-nfc.confirmBeforeSend.v1", "YES"]
         }
         app.launch() // Real App / WindowGroup / scene, never a forced replacement root.
         XCTAssertTrue(app.buttons["fusion.menu"].waitForExistence(timeout: 15), app.debugDescription)
@@ -141,9 +141,178 @@ final class LinkCardFullAppTouchTests: XCTestCase {
                           "Actual thumb must finish closer to the requested position")
         print("FULLAPP slider result id=\(row.identifier) old=\(old) new=\(String(describing: slider.value)) normalized=\(oldPosition)->\(newPosition)")
     }
-    func testAIdleCoordinateMenuCompletesWithoutAnimationTimeout() {
+    private func screenPoint(_ point: CGPoint) -> XCUICoordinate {
+        app.coordinate(withNormalizedOffset: .zero).withOffset(
+            CGVector(dx: point.x - app.frame.minX, dy: point.y - app.frame.minY))
+    }
+    private func verticalHandle(_ expanded: Bool) {
+        let handle = app.buttons["workbench.handle"]
+        wait(handle, "hittable == true")
+        let start = CGPoint(x: handle.frame.midX, y: handle.frame.midY)
+        let endY = expanded ? app.frame.minY + 105 : app.frame.maxY - 105
+        let started = ProcessInfo.processInfo.systemUptime
+        screenPoint(start).press(forDuration: 0.05,
+            thenDragTo: screenPoint(CGPoint(x: start.x, y: endY)),
+            withVelocity: .slow, thenHoldForDuration: 0.15)
+        XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 15,
+                          "Vertical handle drag must settle with default quiescence")
+        panel(expanded ? "expanded" : "compact")
+    }
+    private func verticalContent(_ value: String) {
+        let container = app.descendants(matching: .any).matching(identifier: "workbench.panel").firstMatch
+        let f = container.frame
+        // Between the handle/header and tabs, never on the drawer or handle.
+        let top = f.minY + (value == "expanded" ? 100 : 54)
+        let bottom = min(f.maxY - 90, app.frame.maxY - 100)
+        XCTAssertGreaterThan(bottom - top, 40)
+        let lower = CGPoint(x: f.minX + 18, y: bottom)
+        let upper = CGPoint(x: lower.x, y: top)
+        screenPoint(lower).press(forDuration: 0.05, thenDragTo: screenPoint(upper))
+        panel(value)
+        screenPoint(upper).press(forDuration: 0.05, thenDragTo: screenPoint(lower))
+        panel(value)
+    }
+    private func responsiveTabTap() {
+        // A real coordinate tap with a visible page change, not just isHittable.
+        tap(app.buttons["tab.1"])
+        XCTAssertTrue(app.staticTexts["你的文件，安静留在本机。"].waitForExistence(timeout: 6))
+        tap(app.buttons["tab.0"])
+        XCTAssertTrue(app.staticTexts["200 × 200 · 单色电子纸"].waitForExistence(timeout: 6))
+    }
+    private func verifyWorkbenchVerticalHandleRoundTripsAndReversal() {
+        panel("compact")
+        for _ in 0..<4 {
+            verticalHandle(true)
+            verticalHandle(false)
+        }
+        // A sub-threshold displacement returns to the same detent, then reverse.
+        let handle = app.buttons["workbench.handle"]
+        let p = CGPoint(x: handle.frame.midX, y: handle.frame.midY)
+        screenPoint(p).press(forDuration: 0.05,
+            thenDragTo: screenPoint(CGPoint(x: p.x, y: p.y - 24)),
+            withVelocity: .slow, thenHoldForDuration: 0.2)
+        panel("compact")
+        responsiveTabTap()
+        verticalHandle(false); verticalHandle(true); verticalHandle(false)
+        open(); close() // A subsequent actual menu tap must also respond.
+    }
+    private func verifyWorkbenchVerticalContentScrollAndSettingsHandle() {
+        panel("compact"); verticalContent("compact")
+        verticalHandle(true); verticalContent("expanded")
+        responsiveTabTap()
+        tap(app.buttons["fusion.settings"]); panel("expanded")
+        verticalContent("expanded")
+        verticalHandle(false); verticalContent("compact")
+        verticalHandle(true)
+        // Verify content really scrolls, not just that the root stays put.
+        let wallpaper = app.sliders["blur.wallpaper"]
+        reveal(wallpaper); XCTAssertTrue(wallpaper.isHittable); panel("expanded")
+        let controls = app.sliders["blur.controls"]
+        reveal(controls); XCTAssertTrue(controls.isHittable); panel("expanded")
+        verticalHandle(false); verticalHandle(true)
+        responsiveTabTap(); open(); close()
+    }
+    private func verifyWorkbenchVerticalWithKeyboardAndLifecycle() {
+        verticalHandle(true)
+        let note = app.buttons["便签"].firstMatch
+        reveal(note); tap(note)
+        let editor = app.textViews["便签文字"]
+        reveal(editor); tap(editor)
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 6))
+        panel("expanded")
+        verticalHandle(false); verticalHandle(true)
+        tap(app.buttons["tab.1"])
+        XCTAssertTrue(app.staticTexts["你的文件，安静留在本机。"].waitForExistence(timeout: 6))
+        wait(app.keyboards.firstMatch, "exists == false")
+        verticalHandle(false); verticalHandle(true)
+        XCUIDevice.shared.press(.home); app.activate()
+        verticalHandle(false); verticalHandle(true)
+        open(); close()
+    }
+    private func verifyPreviewPhotoPickerCancelAfterVerticalDrags() {
+        verticalHandle(true); verticalHandle(false); verticalHandle(true)
+        for title in ["日期", "便签"] {
+            let template = app.buttons[title].firstMatch
+            reveal(template); tap(template)
+            let note = app.textViews["便签文字"]
+            let oldText = title == "便签" ? note.value as? String : nil
+            let send = app.buttons["create.send"]
+            reveal(send); wait(send, "enabled == true")
+            let preview = app.buttons["create.preview"]
+            reveal(preview)
+            let before = pixels(preview.screenshot().image, CGRect(x: 0.2, y: 0.2, width: 0.6, height: 0.6))
+            tap(preview)
+            let cancel = app.buttons["取消"].firstMatch
+            XCTAssertTrue(cancel.waitForExistence(timeout: 6), "Preview must open the system PhotosPicker")
+            tap(cancel)
+            wait(preview, "hittable == true")
+            XCTAssertEqual(pixels(preview.screenshot().image, CGRect(x: 0.2, y: 0.2, width: 0.6, height: 0.6)), before,
+                           "Cancelling must not clear or change the rendered pixels")
+            XCTAssertTrue(template.isSelected, "Cancelling must not switch to the photo template")
+            if let oldText { XCTAssertEqual(note.value as? String, oldText) }
+            XCTAssertFalse(app.buttons["取消会话"].exists, "Choosing/cancelling a photo must never start NFC")
+            panel("expanded")
+        }
+        verticalHandle(false); verticalHandle(true)
+        responsiveTabTap(); open(); close()
+    }
+    private func verifySendConfirmationPreferencePersistsWithoutStartingNFC() throws {
+        func setting() throws -> (XCUIElement, XCUIElement) {
+            verticalHandle(true); tap(app.buttons["fusion.settings"])
+            let section = app.buttons["发送前的小提醒"].firstMatch
+            reveal(section); tap(section)
+            let row = app.switches.matching(identifier: "send.confirmBeforeSend").firstMatch
+            return (row, try visibleLeafControl(row, type: .switch))
+        }
+        let (row, control) = try setting()
+        let original = try XCTUnwrap(control.value as? String)
+        XCTAssertTrue(["0", "1"].contains(original))
+        let changed = original == "0" ? "1" : "0"
+        tap(control); waitForValue(control, row: row, expected: changed)
+        app.terminate(); app.launch()
+        let (restoredRow, restoredControl) = try setting()
+        XCTAssertEqual(restoredControl.value as? String, changed)
+        tap(restoredControl); waitForValue(restoredControl, row: restoredRow, expected: original)
+        XCTAssertFalse(app.buttons["取消会话"].exists)
+        responsiveTabTap()
+    }
+    private func verifyFourBlurChannelsRemainIndependentAcrossRelaunch() throws {
+        verticalHandle(true); tap(app.buttons["fusion.settings"])
+        let controls = app.sliders["blur.controls"]
+        let sidebar = app.sliders["blur.sidebar"]
+        let workbench = app.sliders["blur.workbench"]
+        let wallpaper = app.sliders["blur.wallpaper"]
+        func value(_ row: XCUIElement) throws -> CGFloat {
+            try visibleLeafControl(row, type: .slider).normalizedSliderPosition
+        }
+        let originalControls = try value(controls), originalSidebar = try value(sidebar)
+        let originalWorkbench = try value(workbench), originalWallpaper = try value(wallpaper)
+        func set(_ row: XCUIElement, _ target: CGFloat) throws {
+            if abs(try value(row) - target) > 0.005 { try slide(row, to: target) }
+            XCTAssertEqual(try value(row), target, accuracy: 0.02)
+        }
+        for strength in [CGFloat(0), 0.5, 1] {
+            try set(sidebar, strength)
+            XCTAssertEqual(try value(controls), originalControls, accuracy: 0.02)
+            XCTAssertEqual(try value(workbench), originalWorkbench, accuracy: 0.02)
+            XCTAssertEqual(try value(wallpaper), originalWallpaper, accuracy: 0.02)
+            open(); capture("sidebar-strength-\(strength)"); close()
+        }
+        try set(controls, originalControls < 0.5 ? 1 : 0)
+        XCTAssertEqual(try value(sidebar), 1, accuracy: 0.02)
+        app.terminate(); app.launch()
+        verticalHandle(true); tap(app.buttons["fusion.settings"])
+        XCTAssertEqual(try value(sidebar), 1, accuracy: 0.02)
+        XCTAssertEqual(try value(workbench), originalWorkbench, accuracy: 0.02)
+        XCTAssertEqual(try value(wallpaper), originalWallpaper, accuracy: 0.02)
+        try set(controls, originalControls); try set(sidebar, originalSidebar)
+        responsiveTabTap(); open(); close()
+    }
+    func testAIdleCoordinateMenuCompletesWithoutAnimationTimeout() throws {
         // Default production appearance, no injected state or idle overrides.
         open(); capture("idle-regression-sidebar"); close()
+        verifyWorkbenchVerticalHandleRoundTripsAndReversal()
+        try verifySendConfirmationPreferencePersistsWithoutStartingNFC()
         XCUIDevice.shared.press(.home); app.activate()
         open(); close()
     }
@@ -170,6 +339,8 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         wait(app.buttons["fusion.menu"], "hittable == true")
         open(); close()
         tap(app.buttons["workbench.handle"]); panel("compact")
+        verifyWorkbenchVerticalContentScrollAndSettingsHandle()
+        verifyWorkbenchVerticalWithKeyboardAndLifecycle()
     }
     func testSidebarActionsTabsSettingsAndSafety() throws {
         for entry in [(1, "你的文件，安静留在本机。"), (2, "前台保持连接，按需读取。"), (0, "200 × 200 · 单色电子纸")] {
@@ -194,7 +365,7 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         let originalDither = dither.value as? String
         XCTAssertNotNil(originalDither)
         let original = try XCTUnwrap(originalDither)
-        XCTAssertTrue(["0", "1"].contains(original), "Expected a binary native switch value")
+        XCTAssertEqual(original, "1", "A fresh editor defaults to dithering enabled")
         let changedDither = original == "0" ? "1" : "0"
         capture("dither-before-real-leaf-tap")
         tap(dither) // Exactly one dynamic-frame coordinate tap, not the outer row.
@@ -203,6 +374,10 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         XCTAssertEqual(ditherRow.value as? String, changedDither, "Outer row must reflect the native switch")
         print("FULLAPP dither changed leaf=\(String(describing: dither.value)) row=\(String(describing: ditherRow.value))")
         capture("dither-after-one-real-leaf-tap")
+        let temporaryDate = app.buttons["日期"].firstMatch
+        reveal(temporaryDate); tap(temporaryDate)
+        reveal(photoMode); tap(photoMode); reveal(ditherRow)
+        waitForValue(dither, row: ditherRow, expected: changedDither)
         tap(dither) // One restoring tap; never retry a failed state change.
         waitForValue(dither, row: ditherRow, expected: original)
         XCTAssertEqual(dither.value as? String, originalDither, "Restore the user's original toggle value")
@@ -226,6 +401,8 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         try slide(workbench, to: 0.45)
         XCTAssertTrue(app.sliders["blur.controls"].exists)
         capture("settings-sliders-real-touch")
+        try verifyFourBlurChannelsRemainIndependentAcrossRelaunch()
+        verifyPreviewPhotoPickerCancelAfterVerticalDrags()
     }
     private func pixels(_ image: UIImage, _ rect: CGRect) -> [UInt8] {
         let cg = image.cgImage!
@@ -246,7 +423,7 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         var middle:[[UInt8]] = [], top:[[UInt8]] = [], bottom:[[UInt8]] = []
         for strength in [0,50,100] {
             app.terminate()
-            app.launchArguments = ["--uitest-texture", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-appearance.blur", "0", "-appearance.veil", "0.25", "-appearance.blur.migrated.v2", "YES", "-appearance.blur.controls.v2", "\(strength)", "-appearance.blur.workbench.v2", "0"]
+            app.launchArguments = ["--uitest-texture", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN", "-appearance.blur", "0", "-appearance.veil", "0.25", "-appearance.blur.migrated.v2", "YES", "-appearance.blur.controls.v2", "0", "-appearance.blur.sidebar.v1", "\(strength)", "-appearance.blur.workbench.v2", "0"]
             app.launch()
             XCTAssertTrue(app.buttons["fusion.menu"].waitForExistence(timeout:15))
             capture("texture-closed-\(strength)")

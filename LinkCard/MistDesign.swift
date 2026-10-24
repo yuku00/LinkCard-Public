@@ -225,28 +225,40 @@ struct MistCardTarget: Identifiable {
     static func library(_ id: UUID) -> String { "library.card." + id.uuidString.lowercased() }
 }
 
-enum MistBlurChannel { case controls, workbench }
+enum MistBlurChannel { case controls, workbench, sidebar }
 
 final class MistBlurStore: ObservableObject {
     private let defaults: UserDefaults
     private static let controlsKey = "appearance.blur.controls.v2"
     private static let workbenchKey = "appearance.blur.workbench.v2"
+    private static let sidebarKey = "appearance.blur.sidebar.v1"
     private static let migratedKey = "appearance.blur.migrated.v2"
     @Published private(set) var global: Double
     @Published private(set) var workbench: Double
+    @Published private(set) var sidebar: Double
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         if !defaults.bool(forKey: Self.migratedKey) {
             let previous = Self.clamp((defaults.object(forKey: "appearance.cardBlur.global.v1") as? Double) ?? 70)
             let old = defaults.dictionary(forKey: "appearance.cardBlur.overrides.v1") ?? [:]
             let base = Self.clamp((old["workbench.base"] as? Double) ?? previous)
-            defaults.set(previous, forKey: Self.controlsKey)
-            defaults.set(base, forKey: Self.workbenchKey)
+            if defaults.object(forKey: Self.controlsKey) == nil {
+                defaults.set(previous, forKey: Self.controlsKey)
+            }
+            if defaults.object(forKey: Self.workbenchKey) == nil {
+                defaults.set(base, forKey: Self.workbenchKey)
+            }
             defaults.set(true, forKey: Self.migratedKey)
             // Keep legacy keys and all user files, but never consult overrides again.
         }
         global = Self.readStrength(defaults, key: Self.controlsKey)
         workbench = Self.readStrength(defaults, key: Self.workbenchKey)
+        // Absence, not bool/zero, is the migration marker. Never recopy controls
+        // after the independent preference exists, even if it is explicitly zero.
+        if defaults.object(forKey: Self.sidebarKey) == nil {
+            defaults.set(Self.readStrength(defaults, key: Self.controlsKey), forKey: Self.sidebarKey)
+        }
+        sidebar = Self.readStrength(defaults, key: Self.sidebarKey)
     }
     // UserDefaults argument domains and imported preferences can contain numeric
     // strings. Treat those exactly like stored numbers, not silently as 70.
@@ -258,7 +270,18 @@ final class MistBlurStore: ObservableObject {
     }
     private static func clamp(_ value: Double) -> Double { value.isFinite ? min(100, max(0, value)) : 70 }
     func strength(for id: String) -> Double { global }
-    func strength(channel: MistBlurChannel) -> Double { channel == .workbench ? workbench : global }
+    func strength(channel: MistBlurChannel) -> Double {
+        switch channel {
+        case .controls: return global
+        case .workbench: return workbench
+        case .sidebar: return sidebar
+        }
+    }
+    func setSidebar(_ value: Double) {
+        let next = Self.clamp(value)
+        guard next != sidebar else { return }
+        sidebar = next; defaults.set(next, forKey: Self.sidebarKey)
+    }
     func setGlobal(_ value: Double) {
         let next = Self.clamp(value)
         guard next != global else { return }
@@ -387,7 +410,12 @@ struct MistBlurSettings: View {
                     Slider(value: Binding(get: { blur.workbench }, set: { blur.setWorkbench($0) }), in: 0...100, step: 1)
                         .accessibilityLabel("工作台背景模糊").accessibilityIdentifier("blur.workbench")
                 }
-                Text("控件和工作台的 0 关闭材质，1–100 调节系统实时模糊上的视觉雾感，并非高斯模糊半径。控件包含按钮、侧栏和连接面板；壁纸模糊仍在下方独立调整。设置仅保存在本机。")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("侧栏背景 · \(Int(blur.sidebar)) / 100")
+                    Slider(value: Binding(get: { blur.sidebar }, set: { blur.setSidebar($0) }), in: 0...100, step: 1)
+                        .accessibilityLabel("侧栏背景模糊").accessibilityIdentifier("blur.sidebar")
+                }
+                Text("控件、工作台和侧栏的 0 关闭材质，1–100 调节系统实时模糊上的视觉雾感，并非高斯模糊半径。控件包含按钮和连接面板；侧栏与下方壁纸模糊均独立调整。设置仅保存在本机。")
                     .font(.footnote).foregroundStyle(MistStyle.secondary)
             }
         }

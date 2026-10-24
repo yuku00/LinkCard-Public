@@ -55,6 +55,43 @@ final class FusionProgress: NSObject, ObservableObject {
     deinit { link?.invalidate(); NotificationCenter.default.removeObserver(self) }
 }
 
+/// A handle drag samples a stable ancestor coordinate space and freezes its
+/// detent/travel until release. Content scrolling never creates this sample.
+struct FusionWorkbenchDrag: Equatable {
+    let origin: CGFloat
+    let travel: CGFloat
+    let size: CGSize
+    let keyboard: Bool
+    let accessibility: Bool
+    let vertical: Bool
+    private(set) var progress: CGFloat
+    init(origin: CGFloat, travel: CGFloat, size: CGSize, keyboard: Bool,
+         accessibility: Bool, translation: CGSize) {
+        self.origin = origin; self.travel = max(1, travel); self.size = size
+        self.keyboard = keyboard; self.accessibility = accessibility
+        vertical = abs(translation.height) > abs(translation.width)
+        progress = origin
+        self = tracking(translation)
+    }
+    func tracking(_ translation: CGSize) -> Self {
+        var next = self
+        if vertical { next.progress = min(2, max(1, origin - translation.height / travel)) }
+        return next
+    }
+    func expanded(predictedTranslation: CGFloat) -> Bool {
+        origin - predictedTranslation / travel > 1.5
+    }
+    func matches(size: CGSize, keyboard: Bool, accessibility: Bool) -> Bool {
+        self.size == size && self.keyboard == keyboard && self.accessibility == accessibility
+    }
+}
+
+/// Non-observed release metadata: GestureState may reset before onEnded runs.
+/// This is assigned only at begin/end, never a second per-frame view publisher.
+final class FusionWorkbenchDragSession {
+    var start: FusionWorkbenchDrag?
+}
+
 /// Shared production geometry for intermediate progress and test assertions.
 struct FusionWorkbenchGeometry {
     let panel: CGRect
