@@ -47,33 +47,44 @@ def make_report(logs, environment):
             'artifact_upload': 'not-attested', 'hardware_validation': 'not-performed'}
 
 
-def compile_failure_kind(path):
-    # Never export lines, paths or diagnostic payloads. Only these fixed enums.
+def compile_failure_kind(path=None, *, diagnostics=None):
+    # Classify one structured error at a time. Never infer build status here.
     try:
-        if path.is_symlink() or path.stat().st_size > 16 * 1024 * 1024:
+        from public_compile_diagnostics import extract, public_sources
+    except ModuleNotFoundError:
+        from Tools.public_compile_diagnostics import extract, public_sources
+    if diagnostics is None:
+        if path is None:
             return 'unknown'
-        text = path.read_text(errors='replace')
-    except OSError:
-        return 'unknown'
-    if 'unable to type-check this expression in reasonable time' in text:
-        return 'swift-typecheck-limit'
-    if 'generic parameter' in text and 'could not be inferred' in text:
-        return 'swift-generic-inference'
-    if 'error:' in text and 'is only available in iOS' in text:
-        return 'swift-api-availability'
-    if 'error:' in text and 'cannot find' in text:
-        return 'swift-missing-symbol'
-    if 'error:' in text and 'cannot convert' in text:
-        return 'swift-type-mismatch'
-    if '** BUILD FAILED **' in text:
-        return 'xcode-build-failed'
-    if '** BUILD SUCCEEDED **' in text:
-        return 'xcode-build-succeeded'
+        root = Path.cwd()
+        diagnostics = extract(path, root, public_sources(root), os.environ)
+    for item in diagnostics['items']:
+        if item['severity'] != 'error':
+            continue
+        filename, message = item['file'], item['message']
+        if not filename.startswith('[') and filename.endswith('.swift'):
+            checks = [('swift-typecheck-limit', ('unable to type-check this expression in reasonable time',)),
+                      ('swift-generic-inference', ('generic parameter', 'could not be inferred')),
+                      ('swift-api-availability', ('is only available in iOS',)),
+                      ('swift-missing-symbol', ('cannot find',)),
+                      ('swift-type-mismatch', ('cannot convert',))]
+            for kind, phrases in checks:
+                if all(phrase in message for phrase in phrases):
+                    return kind
+            return 'swift-error'
+        if filename.endswith(('.xcodeproj', '.pbxproj', '.xcworkspace')):
+            return 'project-error'
+        return {'[tool:xcodebuild]': 'xcodebuild-error', '[tool:clang]': 'clang-error',
+                '[tool:clang++]': 'clang-error', '[tool:ld]': 'linker-error',
+                '[sdk]': 'sdk-error'}.get(filename, 'tool-error' if filename.startswith('[tool:') else 'compiler-error')
     return 'unknown'
 
 
 def main():
+    from public_compile_diagnostics import make_diagnostics
+    diagnostics = make_diagnostics(Path.cwd(), os.environ)
     report = make_report(Path('build/logs'), os.environ)
+    report['compile_diagnostic'] = compile_failure_kind(diagnostics=diagnostics['stages']['release'])
     destination = Path('build/public')
     destination.mkdir(parents=True, exist_ok=True)
     (destination / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
@@ -81,13 +92,12 @@ def main():
     lines.extend(key + ': ' + value for key, value in report['stages'].items())
     lines += ['unit: ' + report['unit']['status'], 'fullApp: ' + report['fullApp']['status'],
               'native_validation: ' + report['native_validation'],
-              'compile_check: ' + compile_failure_kind(Path('build/logs/build-package.log')),
+              'compile_check: ' + report['compile_diagnostic'],
               'Artifact upload and final workflow success must be checked separately.',
               'No raw logs, simulator identifiers, screenshots or attachments are exported.']
     (destination / 'build.log').write_text('\n'.join(lines) + '\n')
-    from public_compile_diagnostics import make_diagnostics
     (destination / 'compiler-diagnostics.json').write_text(
-        json.dumps(make_diagnostics(Path.cwd(), os.environ), indent=2) + '\n')
+        json.dumps(diagnostics, indent=2) + '\n')
     print('Wrote bounded public results and allowlisted compiler diagnostics; raw logs not exported.')
 
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Fail-closed compiler diagnostics: public source locations and known grammar only.
-Never export source snippets, command lines, arbitrary log text or environment data.
+"""Bounded, single-line diagnostics with public-path mapping and secret redaction.
+No source snippets, continuation blocks, commands or environment dumps are exported.
 """
 import json
 import os
@@ -13,114 +13,177 @@ MAX_LOG = 16 * 1024 * 1024
 MAX_LINE = 4096
 MAX_MESSAGE = 640
 MAX_ITEMS = 12
-# Dynamic text must be quoted and composed entirely of identifiers already in
-# public Swift source (plus compiler language terminology), never arbitrary prose.
-Q = r"'([A-Za-z0-9_ .,:?<>()[\]&=!+-]{1,180})'"
-GRAMMAR = [
-    r"the compiler is unable to type-check this expression in reasonable time; try breaking up the expression into distinct sub-expressions",
-    r"unable to type-check this expression in reasonable time",
-    r"cannot find " + Q + r" in scope",
-    r"cannot find type " + Q + r" in scope",
-    r"cannot infer contextual base in reference to member " + Q,
-    r"generic parameter " + Q + r" could not be inferred",
-    r"type of expression is ambiguous without a type annotation",
-    r"ambiguous use of " + Q,
-    r"invalid redeclaration of " + Q,
-    r"value of type " + Q + r" has no member " + Q,
-    r"type " + Q + r" has no member " + Q,
-    r"cannot convert value of type " + Q + r" to expected argument type " + Q,
-    r"cannot convert return expression of type " + Q + r" to return type " + Q,
-    r"cannot assign value of type " + Q + r" to type " + Q,
-    r"cannot assign to property: " + Q + r" is a get-only property",
-    r"cannot assign to property: " + Q + r" setter is inaccessible",
-    r"cannot use mutating member on immutable value: " + Q + r" is immutable",
-    r"cannot call value of non-function type " + Q,
-    r"cannot call value of non-function type " + Q + r"\?",
-    r"cannot convert value of type " + Q + r" to closure result type " + Q,
-    r"type " + Q + r" does not conform to protocol " + Q,
-    r"return type of (?:property|instance method) " + Q + r" requires that " + Q + r" conform to " + Q,
-    r"(?:instance method|initializer|referencing instance method|referencing initializer|static method) " + Q + r"(?: on " + Q + r")? requires (?:that (?:the types )?)?" + Q + r" (?:conform to|be equivalent to|inherit from) " + Q,
-    r"missing argument for parameter " + Q + r" in call",
-    r"extra argument " + Q + r" in call",
-    r"extra arguments at positions #[0-9]+(?:, #[0-9]+)* in call",
-    r"incorrect argument label(?:s)? in call \(have: " + Q + r", expected: " + Q + r"\)",
-    r"argument " + Q + r" must precede argument " + Q,
-    r"missing argument label " + Q + r" in call",
-    r"extraneous argument label " + Q + r" in call",
-    r"expected (?:expression|type|pattern|declaration|identifier|member name following " + Q + r")",
-    r"expected " + Q + r" (?:in|after|to end) (?:expression|argument list|closure|parameter list|declaration|function call)",
-    r"consecutive (?:statements|declarations) on a line must be separated by " + Q,
-    r"closure containing a declaration cannot be used with result builder " + Q,
-    r"closure containing control flow statement cannot be used with result builder " + Q,
-    r"function declares an opaque return type, but (?:has no return statements in its body from which to infer an underlying type|the return statements in its body do not have matching underlying types)",
-    r"cannot use explicit " + Q + r" statement in the body of result builder " + Q,
-    Q + r" is (?:inaccessible due to " + Q + r" protection level|only available in iOS [0-9.]+ or newer|unavailable in iOS)",
-    r"call to main actor-isolated (?:instance method|initializer|static method) " + Q + r" in a synchronous nonisolated context",
-    r"main actor-isolated property " + Q + r" can not be referenced from a nonisolated context",
-    r"result of call to " + Q + r" is unused",
-    r"immutable value " + Q + r" was never used; consider replacing with " + Q + r" or removing it",
-    r"variable " + Q + r" was never mutated; consider changing to " + Q + r" constant",
-]
-PATTERNS = [re.compile(p) for p in GRAMMAR]
-BLOCKED = re.compile(r"(?:gh[pousr]_|github_pat_|Bearer\s|https?://|file:|://|/Users/|/home/|/private/|/var/|\\|[\x00-\x1f\x7f])", re.I)
-WORDS = set('Swift SwiftUI Foundation UIKit View AnyView some any Self self Type Element Optional Never Void String Int Double Float Bool Binding State Published CGFloat CGPoint CGSize CGRect Sendable MainActor ViewBuilder private fileprivate internal public open let var return init buildExpression T V Content Label nil true false async throws inout get set _'.split())
+# Recognize diagnostic envelopes, not whole English sentences or source vocabulary.
+TOOLS = {'xcodebuild', 'swiftc', 'swift-frontend', 'clang', 'clang++', 'ld',
+         'actool', 'ibtool', 'codesign'}
+SEVERITY = re.compile(r'(?:^|:)\s*(fatal error|error|warning):\s*')
+DIAGNOSTIC = re.compile(r'^(?:(.+?):\s*)?(fatal error|error|warning):\s*(.*)$')
+SENSITIVE_KEY = r'(?:[\w-]*(?:token|secret|password|passwd|credential|authorization|api[_-]?key|private[_-]?key|access[_-]?key|signing[_-]?key|ssh[_-]?key|cookie)[\w-]*|(?:[\w-]*[_-])?(?:key|auth|pass|pwd)(?:[_-][\w-]*)?)'
+SECRET_KEY = re.compile(SENSITIVE_KEY, re.I)
+URL = re.compile(r'\b[a-z][a-z0-9+.-]*://[^\s<>\'\"]+|\bfile:[^\s<>\'\"]+', re.I)
+PATH = re.compile(r'''(?P<q>['"])(?P<quoted>(?:/|\./|\.\./|~/|[A-Za-z]:\\)[^'"\n]+)(?P=q)|(?<![\w])(?:[A-Za-z]:\\|~?/|\.{1,2}/)[^\s'"<>;,()]+|\b[\w.-]+(?:/[^\s'"<>;,()]+)+|\b[\w.-]+\.(?:swift|h|hpp|o|a|dylib|framework|xcodeproj|pbxproj)\b''')
+CREDENTIAL = re.compile(r'\b' + SENSITIVE_KEY + r'''['"]?\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)''', re.I)
+TOKEN = re.compile(r'''\b(?:gh[pousr]_[\w]+|github_pat_[\w]+|glpat-[\w-]+|xox[baprs]-[\w-]+|sk-(?:proj-)?[\w-]+|AKIA[A-Z0-9]{16}|eyJ[\w-]+\.[\w-]+\.[\w-]+)\b|\b(?:Bearer|Basic)\s+['"]?[\w.+/~=-]+['"]?''', re.I)
+PERSONAL = re.compile(r'\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b|\b[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\b', re.I)
+UNSAFE = re.compile(r'''[`\\\x00-\x1f\x7f\ufffd]|-----BEGIN |\b(?i:command|invocation|environment|snippet|source(?: code)?|user(?:name| name)?|profile|phone|address)['"]?\s*[:=]|\b(?:export|setenv)\s|\b[A-Z_][A-Z0-9_]*=|\b(?:swiftc|xcodebuild|clang(?:\+\+)?|codesign|curl|sh|bash)\s+-|\[(?:tool:[^]]+|sdk|external-path)\]\s+-|\b(?:let|var)\s+\w+\s*[:=]|\b(?:func\s+\w+\s*\(|(?:class|struct)\s+\w+\s*\{)''')
+REASONS = ('unrecognized-location', 'unsafe-payload', 'line-limit', 'external-location',
+           'redacted', 'truncated', 'duplicate', 'limit', 'log-symlink', 'log-limit', 'read-error')
+
+
+def map_path(name, root, sources):
+    """Resolve every parent symlink; never promote an external basename to public."""
+    if '\\' in name or name.startswith('~'):
+        return '[external-path]'
+    resolved = None
+    try:
+        path = Path(name)
+        resolved = (path if path.is_absolute() else root / path).resolve()
+        relative = resolved.relative_to(root.resolve()).as_posix()
+        if relative in sources:
+            return relative
+    except (OSError, ValueError, RuntimeError):
+        pass
+    # Fixed, anchored toolchain roots only, not arbitrary paths containing 'SDK'.
+    if re.match(r'^/(?:Applications/Xcode[^/]*\.app/Contents/Developer/|Library/Developer/CommandLineTools/)', str(resolved or '')):
+        return '[sdk]'
+    if name in {'/usr/bin/' + tool for tool in TOOLS}:
+        return '[tool:' + Path(name).name + ']'
+    return '[external-path]'
+
+
+def redact(text, root, sources, environment):
+    # Map paths BEFORE secret replacement; fully sanitize BEFORE truncation.
+    def replace_path(match):
+        name = match.group('quoted') or match.group(0)
+        mapped = map_path(name, root, sources)
+        return (match.group('q') or '') + mapped + (match.group('q') or '')
+    def mapped(value):
+        return PATH.sub(replace_path, URL.sub('[url]', value))
+    text = mapped(text)
+    # Match all rules against the same mapped text, then merge spans. Sequential
+    # replacement can erase a token's prefix or a multi-word secret's first word.
+    values = {mapped(v) for k, v in environment.items() if isinstance(v, str) and v
+              and SECRET_KEY.fullmatch(k)}
+    patterns = [TOKEN, CREDENTIAL, PERSONAL]
+    if values:
+        patterns.append(re.compile('|'.join(re.escape(v) for v in sorted(values, key=len, reverse=True))))
+    spans = sorted((m.start(), m.end()) for pattern in patterns for m in pattern.finditer(text))
+    merged = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(end, merged[-1][1])
+        else:
+            merged.append([start, end])
+    for start, end in reversed(merged):
+        text = text[:start] + '[redacted]' + text[end:]
+    return text
+
+
+def location(prefix, root, sources):
+    if not prefix:
+        return '[compiler]', None, None
+    if prefix in TOOLS:
+        return '[tool:' + prefix + ']', None, None
+    match = re.fullmatch(r'(.+?):([0-9]{1,7})(?::([0-9]{1,5}))?', prefix)
+    name, line, column = (match.groups() if match else (prefix, None, None))
+    if (line and int(line) == 0) or (column and int(column) == 0):
+        return None
+    if not (name in sources or '/' in name or '\\' in name or
+            re.search(r'\.(?:swift|[chm]|mm|hpp|xcodeproj|xcworkspace|pbxproj|storyboard|xib)$', name)):
+        return None
+    return map_path(name, root, sources), int(line) if line else None, int(column) if column else None
 
 
 def public_sources(root):
-    result = subprocess.run(['git', 'ls-files', '-z', '--', 'LinkCard', 'LinkCardTests', 'LinkCardUITests', 'Reference'], cwd=root, capture_output=True, check=True)
-    sources = {}
-    for name in result.stdout.decode().split('\0'):
-        path = root / name
-        if name.endswith('.swift') and not path.is_symlink() and path.is_file():
-            sources[name] = path.read_text()
-    return sources
+    """The tracked public trees are the allowlist; source contents are never read."""
+    try:
+        result = subprocess.run(['git', 'ls-files', '-z', '--', 'LinkCard', 'LinkCardTests',
+                                 'LinkCardUITests', 'Reference', 'LinkCard.xcodeproj'],
+                                cwd=root, capture_output=True, check=True)
+    except (OSError, subprocess.CalledProcessError):
+        return {}
+    names = {name: None for name in result.stdout.decode().split('\0') if name}
+    if 'LinkCard.xcodeproj/project.pbxproj' in names:
+        names['LinkCard.xcodeproj'] = None
+    return names
 
 
 def extract(path, root, sources, environment):
-    items, omitted = [], 0
-    words = WORDS | set(re.findall(r'[A-Za-z_][A-Za-z_0-9]*', '\n'.join(sources.values())))
-    values = [v for k, v in environment.items() if isinstance(v, str) and v and
-              (len(v) >= 4 or re.search(r'token|secret|password|credential|key', k, re.I))]
-    if path.is_symlink():
-        return {'items': [], 'omitted': 0, 'read_status': 'rejected'}
+    items, seen = [], set()
+    result = {'items': [], 'omitted': 0, 'read_status': 'read',
+              'candidates': {'error': 0, 'warning': 0}, 'retained': 0,
+              'reasons': dict.fromkeys(REASONS, 0)}
+    reasons = result['reasons']
+    def reject(reason):
+        reasons[reason] += 1
+        result['omitted'] += 1
     try:
+        # Reject symlinked log parents as well as symlinked log files.
+        if any(p.is_symlink() for p in (path, *path.parents)):
+            reasons['log-symlink'] += 1
+            result['read_status'] = 'rejected'
+            return result
         if path.stat().st_size > MAX_LOG:
-            return {'items': [], 'omitted': 0, 'read_status': 'rejected'}
+            reasons['log-limit'] += 1
+            result['read_status'] = 'rejected'
+            return result
         with path.open(errors='replace') as stream:
             for raw in stream:
-                if ': error:' not in raw and ': warning:' not in raw:
+                text = raw.rstrip('\r\n').strip(' ')
+                marker = SEVERITY.search(text)
+                # Apple ld also emits errors without the literal 'error:'.
+                implicit = bool(re.match(r'^ld: (?:library not found|framework .+ not found|symbol\(s\) not found|duplicate symbol|Undefined symbols|file not found|building for .+but linking)', text)) and not marker
+                if not marker and not implicit:
                     continue
+                severity = 'warning' if marker and marker.group(1) == 'warning' else 'error'
+                result['candidates'][severity] += 1
                 if len(raw) > MAX_LINE:
-                    omitted += 1
+                    reject('line-limit')
                     continue
-                match = re.fullmatch(r'(.+\.swift):([0-9]{1,7}):([0-9]{1,5}): (error|warning): (.+)\n?', raw.rstrip('\n'))
-                if not match:
-                    omitted += 1
+                match = DIAGNOSTIC.fullmatch(text)
+                if implicit:
+                    prefix, message = 'ld', text[4:]
+                elif match:
+                    prefix, _, message = match.groups()
+                else:
+                    reject('unrecognized-location')
                     continue
-                filename, line, column, severity, message = match.groups()
-                prefix = str(root.resolve()) + '/'
-                relative = filename[len(prefix):] if filename.startswith(prefix) else filename
-                accepted = relative in sources and not BLOCKED.search(relative) and not BLOCKED.search(message)
-                accepted = accepted and 0 < int(line) <= len(sources.get(relative, '').splitlines()) and 0 < int(column) <= 4096
-                accepted = accepted and len(message) <= MAX_MESSAGE and not any(v in message or v in relative for v in values)
-                grammar = next((p.fullmatch(message) for p in PATTERNS if p.fullmatch(message)), None) if accepted else None
-                accepted = accepted and grammar is not None
-                if accepted:
-                    for fragment in grammar.groups():
-                        if fragment and not set(re.findall(r'[A-Za-z_][A-Za-z_0-9]*', fragment)) <= words:
-                            accepted = False
-                if not accepted:
-                    omitted += 1
+                loc = location(prefix, root, sources)
+                if loc is None:
+                    reject('unrecognized-location')
                     continue
-                item = {'file': relative, 'line': int(line), 'column': int(column), 'severity': severity, 'message': message}
-                if item not in items:
-                    items.append(item)
+                filename, line, column = loc
+                if filename == '[external-path]':
+                    reasons['external-location'] += 1
+                clean = redact(message, root, sources, environment)
+                clean_file = redact(filename, root, sources, environment)
+                if clean != message or clean_file != filename:
+                    reasons['redacted'] += 1
+                if not clean.strip() or UNSAFE.search(clean):
+                    reject('unsafe-payload')
+                    continue
+                if len(clean) > MAX_MESSAGE:
+                    reasons['truncated'] += 1
+                    clean = clean[:MAX_MESSAGE - 1] + '…'
+                item = {'file': clean_file, 'line': line, 'column': column,
+                        'severity': severity, 'message': clean}
+                # Dedup on the final public representation, including truncation.
+                key = tuple(item.values())
+                if key in seen:
+                    reasons['duplicate'] += 1
+                    continue
+                seen.add(key)
+                items.append(item)
     except OSError:
-        return {'items': [], 'omitted': 0, 'read_status': 'missing'}
-    # Errors take priority over warnings; at most twelve 640-character messages.
+        result['read_status'] = 'missing'
+        reasons['read-error'] += 1
+        return result
     items.sort(key=lambda item: item['severity'] != 'error')
-    omitted += max(0, len(items) - MAX_ITEMS)
-    return {'items': items[:MAX_ITEMS], 'omitted': min(omitted, 100000), 'read_status': 'read'}
+    reasons['limit'] = max(0, len(items) - MAX_ITEMS)
+    result['omitted'] += reasons['limit']
+    result['items'] = items[:MAX_ITEMS]
+    result['retained'] = len(result['items'])
+    return result
 
 
 def make_diagnostics(root, environment):
@@ -130,7 +193,7 @@ def make_diagnostics(root, environment):
     for stage, name in [('release', 'build-package.log'), ('unit', 'mist-uikit-tests.log'), ('fullApp', 'full-app-ui-tests.log')]:
         stages[stage] = extract(logs / name, root, sources, environment)
     return {'schema': 1, 'kind': 'minimal-compiler-diagnostics', 'stages': stages,
-            'policy': 'Known compiler grammar and public Swift source locations only; unknown content omitted.'}
+            'policy': 'Single-line diagnostics; public paths mapped, other paths and credentials redacted before limits; no context exported.'}
 
 
 if __name__ == '__main__':

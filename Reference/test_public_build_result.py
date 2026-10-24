@@ -33,13 +33,13 @@ class PublicBuildResultTests(unittest.TestCase):
             path = Path(folder) / 'build.log'
             cases = {
                 'SYNTHETIC_PRIVATE_MARKER': 'unknown',
-                'SYNTHETIC_PRIVATE_MARKER error: unable to type-check this expression in reasonable time': 'swift-typecheck-limit',
-                'error: generic parameter T could not be inferred': 'swift-generic-inference',
-                'error: API is only available in iOS 17': 'swift-api-availability',
-                'error: cannot find SYNTHETIC_PRIVATE_MARKER': 'swift-missing-symbol',
-                'error: cannot convert SYNTHETIC_PRIVATE_MARKER': 'swift-type-mismatch',
-                '** BUILD FAILED **': 'xcode-build-failed',
-                '** BUILD SUCCEEDED **': 'xcode-build-succeeded',
+                'SYNTHETIC_PRIVATE_MARKER error: unable to type-check this expression in reasonable time': 'unknown',
+                'error: generic parameter T could not be inferred': 'compiler-error',
+                'error: API is only available in iOS 17': 'compiler-error',
+                'error: cannot find SYNTHETIC_PRIVATE_MARKER': 'compiler-error',
+                'error: cannot convert SYNTHETIC_PRIVATE_MARKER': 'compiler-error',
+                '** BUILD FAILED **': 'unknown',
+                '** BUILD SUCCEEDED **': 'unknown',
             }
             for text, expected in cases.items():
                 path.write_text(text)
@@ -47,6 +47,63 @@ class PublicBuildResultTests(unittest.TestCase):
             link = Path(folder) / 'link.log'
             link.symlink_to(path)
             self.assertEqual(module.compile_failure_kind(link), 'unknown')
+
+    def test_warning_and_cross_line_regression(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'build.log'
+            path.write_text('warning: unable to type-check this expression in reasonable time\n** BUILD SUCCEEDED **\n')
+            self.assertEqual(module.compile_failure_kind(path), 'unknown')
+
+    def test_unrelated_warning_cannot_classify_error(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'build.log'
+            path.write_text('xcodebuild: error: invalid scheme\nwarning: cannot convert sample\n')
+            self.assertEqual(module.compile_failure_kind(path), 'xcodebuild-error')
+
+    def test_structured_errors_only_and_status_independent(self):
+        def item(message, severity='error', filename='LinkCard/ContentView.swift'):
+            return {'file': filename, 'line': 1, 'column': None, 'severity': severity, 'message': message}
+        cases = [
+            ([item('generic parameter T'), item('could not be inferred', 'warning')], 'swift-error'),
+            ([item('cannot convert value', 'warning')], 'unknown'),
+            ([item('generic parameter T could not be inferred')], 'swift-generic-inference'),
+            ([item('new SDK diagnostic')], 'swift-error'),
+            ([item('cannot convert value')], 'swift-type-mismatch'),
+            ([item('cannot find type')], 'swift-missing-symbol'),
+            ([item('API is only available in iOS 17')], 'swift-api-availability'),
+            ([item('unable to type-check this expression in reasonable time')], 'swift-typecheck-limit'),
+            ([item('failure', filename='[sdk]')], 'sdk-error'),
+            ([item('failure', filename='[tool:ld]')], 'linker-error'),
+            ([item('failure', filename='[tool:clang]')], 'clang-error'),
+            ([item('failure', filename='LinkCard.xcodeproj')], 'project-error'),
+        ]
+        for items, expected in cases:
+            self.assertEqual(module.compile_failure_kind(diagnostics={'items': items}), expected)
+        # The authoritative workflow outcome remains success even with diagnostics.
+        self.assertEqual(self.report(environment=self.environment())['stages']['build'], 'success')
+        self.assertEqual(self.report(environment={'PUBLIC_BUILD_OUTCOME': 'failure'})['stages']['build'], 'failure')
+
+    def test_script_keeps_workflow_status_separate_from_messages(self):
+        import subprocess
+        import sys
+        script = Path(__file__).resolve().parents[1] / 'Tools/public_build_result.py'
+        cases = [('warning: unable to type-check this expression in reasonable time\n** BUILD SUCCEEDED **', 'success', 'unknown'),
+                 ('xcodebuild: error: invalid scheme\nwarning: cannot convert sample', 'failure', 'xcodebuild-error'),
+                 ('** BUILD FAILED **', 'success', 'unknown')]
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            logs = root / 'build/logs'
+            logs.mkdir(parents=True)
+            for text, outcome, kind in cases:
+                (logs / 'build-package.log').write_text(text + '\n')
+                subprocess.run([sys.executable, str(script)], cwd=root, check=True,
+                               capture_output=True, env={'PUBLIC_BUILD_OUTCOME': outcome, 'PYTHONDONTWRITEBYTECODE': '1'})
+                report = json.loads((root / 'build/public/result.json').read_text())
+                self.assertEqual(report['stages']['build'], outcome)
+                self.assertEqual(report['compile_diagnostic'], kind)
+                diagnostics = json.loads((root / 'build/public/compiler-diagnostics.json').read_text())
+                self.assertEqual(diagnostics['stages']['unit']['read_status'], 'missing')
+                self.assertEqual(diagnostics['stages']['fullApp']['read_status'], 'missing')
 
     def test_missing_results_cannot_validate(self):
         self.assertEqual(self.report()['native_validation'], 'not-validated')
