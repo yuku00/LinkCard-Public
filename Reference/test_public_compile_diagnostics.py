@@ -14,7 +14,7 @@ spec.loader.exec_module(module)
 class CompilerDiagnosticsTests(unittest.TestCase):
     def extract(self, lines, environment=None):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve()
             path = root / 'compile.log'
             path.write_text(lines.replace('$ROOT', str(root)))
             sources = {'LinkCard/ContentView.swift': 'struct ContentView { var body: some View }\n' * 30}
