@@ -47,6 +47,31 @@ def make_report(logs, environment):
             'artifact_upload': 'not-attested', 'hardware_validation': 'not-performed'}
 
 
+def compile_failure_kind(path):
+    # Never export lines, paths or diagnostic payloads. Only these fixed enums.
+    try:
+        if path.is_symlink() or path.stat().st_size > 16 * 1024 * 1024:
+            return 'unknown'
+        text = path.read_text(errors='replace')
+    except OSError:
+        return 'unknown'
+    if 'unable to type-check this expression in reasonable time' in text:
+        return 'swift-typecheck-limit'
+    if 'generic parameter' in text and 'could not be inferred' in text:
+        return 'swift-generic-inference'
+    if 'error:' in text and 'is only available in iOS' in text:
+        return 'swift-api-availability'
+    if 'error:' in text and 'cannot find' in text:
+        return 'swift-missing-symbol'
+    if 'error:' in text and 'cannot convert' in text:
+        return 'swift-type-mismatch'
+    if '** BUILD FAILED **' in text:
+        return 'xcode-build-failed'
+    if '** BUILD SUCCEEDED **' in text:
+        return 'xcode-build-succeeded'
+    return 'unknown'
+
+
 def main():
     report = make_report(Path('build/logs'), os.environ)
     destination = Path('build/public')
@@ -56,6 +81,7 @@ def main():
     lines.extend(key + ': ' + value for key, value in report['stages'].items())
     lines += ['unit: ' + report['unit']['status'], 'fullApp: ' + report['fullApp']['status'],
               'native_validation: ' + report['native_validation'],
+              'compile_check: ' + compile_failure_kind(Path('build/logs/build-package.log')),
               'Artifact upload and final workflow success must be checked separately.',
               'No raw logs, simulator identifiers, screenshots or attachments are exported.']
     (destination / 'build.log').write_text('\n'.join(lines) + '\n')

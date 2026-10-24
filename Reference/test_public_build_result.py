@@ -28,6 +28,26 @@ class PublicBuildResultTests(unittest.TestCase):
     def environment(self):
         return {key: 'success' for key in ('PUBLIC_VALIDATION_OUTCOME', 'PUBLIC_BUILD_OUTCOME', 'PUBLIC_GATE_OUTCOME')}
 
+    def test_compile_classifier_never_exports_diagnostic_text(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'build.log'
+            cases = {
+                'SYNTHETIC_PRIVATE_MARKER': 'unknown',
+                'SYNTHETIC_PRIVATE_MARKER error: unable to type-check this expression in reasonable time': 'swift-typecheck-limit',
+                'error: generic parameter T could not be inferred': 'swift-generic-inference',
+                'error: API is only available in iOS 17': 'swift-api-availability',
+                'error: cannot find SYNTHETIC_PRIVATE_MARKER': 'swift-missing-symbol',
+                'error: cannot convert SYNTHETIC_PRIVATE_MARKER': 'swift-type-mismatch',
+                '** BUILD FAILED **': 'xcode-build-failed',
+                '** BUILD SUCCEEDED **': 'xcode-build-succeeded',
+            }
+            for text, expected in cases.items():
+                path.write_text(text)
+                self.assertEqual(module.compile_failure_kind(path), expected)
+            link = Path(folder) / 'link.log'
+            link.symlink_to(path)
+            self.assertEqual(module.compile_failure_kind(link), 'unknown')
+
     def test_missing_results_cannot_validate(self):
         self.assertEqual(self.report()['native_validation'], 'not-validated')
 

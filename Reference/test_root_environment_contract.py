@@ -8,7 +8,15 @@ class RootEnvironmentContract(unittest.TestCase):
         root = source.split('    var body: some View {', 1)[1].split('    private var creationPage:', 1)[0]
         self.assertEqual(root.count('.environmentObject(cardBlur)'), 1)
         # Tabs now occupy a real VStack sibling slot, rather than overlaying a NavigationStack inset.
-        self.assertGreater(root.index('.environmentObject(cardBlur)'), root.index('FusionShell(state:'))
+        self.assertGreater(root.index('.environmentObject(cardBlur)'), root.index('renderedContent'))
+        # Compile-time opaque boundaries preserve the exact modifier chain.
+        shell_content = source.split('    private var shellContent:', 1)[1].split('    private var interactiveContent:', 1)[0]
+        interactive = source.split('    private var interactiveContent:', 1)[1].split('    private var renderedContent:', 1)[0]
+        rendered = source.split('    private var renderedContent:', 1)[1].split('    var body: some View {', 1)[0]
+        self.assertIn('FusionShell(state:', shell_content)
+        self.assertIn('shellContent', interactive)
+        self.assertIn('interactiveContent', rendered)
+        self.assertNotIn('.environmentObject(cardBlur)', shell_content + interactive + rendered)
         shell = (Path(__file__).resolve().parents[1] / 'LinkCard/FusionShell.swift').read_text()
         self.assertIn('recordWorkbenchFrame("tabs")', shell)
         self.assertIn('VStack(spacing: 0)', shell)

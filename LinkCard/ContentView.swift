@@ -84,8 +84,7 @@ struct ContentView: View {
                              (0, "照片", "photo"), (1, "二维码", "qrcode"),
                              (5, "清单", "checklist"), (3, "测试图", "square.grid.2x2")]
 
-    var body: some View {
-        let _ = { fusion.rootBodyCount += 1 }()
+    private var shellContent: some View {
         FusionShell(state: fusion, workbench: workbench, wallpaper: wallpaper,
                     library: library, keyboard: keyboardVisible, busy: nfc.busy) {
             Group {
@@ -104,6 +103,9 @@ struct ContentView: View {
         }
         .bleDiscoveryHost(ble)
         .foregroundStyle(MistStyle.ink).tint(MistStyle.link)
+    }
+    private var interactiveContent: some View {
+        shellContent
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboardVisible = true }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboardVisible = false }
         .onReceive(nfc.$status) { _ in
@@ -117,6 +119,9 @@ struct ContentView: View {
         } message: {
             Text("仅发送到兼容 ST25DV Link-Card，不使用 PCR 蓝牙。请持续供电并贴合手机顶部；失败或取消后断电重启。")
         }
+    }
+    private var renderedContent: some View {
+        interactiveContent
         .task { previewActivity.active = scenePhase == .active; updatePreview() }
         .task(id: selected) { await loadPhoto() }
         .onChange(of: source) { _ in updatePreview() }
@@ -131,6 +136,10 @@ struct ContentView: View {
         .onChange(of: dateStyle) { _ in updatePreview() }
         .onChange(of: cardDate) { _ in updatePreview() }
         .onChange(of: tasks) { _ in updatePreview() }
+    }
+    var body: some View {
+        let _ = { fusion.rootBodyCount += 1 }()
+        renderedContent
         .onChange(of: scenePhase) { phase in
             previewActivity.active = phase == .active
             if phase != .active { previewTask?.cancel(); previewTask = nil }

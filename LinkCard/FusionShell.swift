@@ -28,7 +28,7 @@ struct FusionShell<Content: View>: View {
     var body: some View {
         GeometryReader { geo in
             let width = FusionState.drawerWidth(geo.size.width)
-            let liveDrag = handleDrag.flatMap { sample in
+            let liveDrag: FusionWorkbenchDrag? = handleDrag.flatMap { sample in
                 sample.matches(size: geo.size, keyboard: keyboard, accessibility: typeSize.isAccessibilitySize)
                     && scenePhase == .active ? sample : nil
             }

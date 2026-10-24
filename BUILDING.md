@@ -52,7 +52,7 @@ IPA 可能先在构建目录生成；这不等于可交付。工作流严格 gat
 3. `build/public/result.json`
 4. `build/public/build.log`
 
-前两项仅在构建与严格 gate 成功后上传。后两项由 `Tools/public_build_result.py` 重新生成，只允许固定状态枚举和有界测试计数；不复制原始错误字符串、路径、模拟器 UDID 或环境变量。报告的 `artifact_upload=not-attested` 表示它不是上传成功证明；最终状态以 Actions 页面为准。
+前两项仅在构建与严格 gate 成功后上传。后两项由 `Tools/public_build_result.py` 重新生成，只允许固定状态枚举和有界测试计数；`build.log` 另外只含固定编译分类枚举（不含原始错误、符号、源码位置或诊断行）。不复制原始错误字符串、路径、模拟器 UDID 或环境变量。报告的 `artifact_upload=not-attested` 表示它不是上传成功证明；最终状态以 Actions 页面为准。
 
 原始构建日志、xcresult、截图、AX 树、系统日志、附件、dSYM 和 simulator inventory 均不上传。源码测试以默认 UI、生成纹理及程序化数据为输入；截图与 AX 附件仍可能反映运行环境，不能无条件宣称它们永远只是合成内容。因此初版不公开任何测试附件，也不将其作为 IPA 通过证明的替代品。失败时仅有受限阶段/状态信息，若需更多诊断须单独审查后调整。
 
