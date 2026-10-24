@@ -1,0 +1,16 @@
+# Generated local output is never source.
+build/
+DerivedData/
+__pycache__/
+*.py[cod]
+.DS_Store
+*.xcuserstate
+xcuserdata/
+*.ipa
+*.xcresult/
+*.dSYM/
+*.log
+.env
+.env.*
+*.p12
+*.mobileprovision

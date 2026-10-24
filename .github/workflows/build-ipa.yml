@@ -1,0 +1,81 @@
+name: Build LinkCard IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa:
+    name: iPhoneOS Release with strict native gates
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      LINKCARD_UI_SCOPE: fullApp
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Validate project and reference contracts
+        id: validation
+        run: |
+          mkdir -p build/logs
+          {
+            python3 Tools/validate_project.py
+            python3 -m unittest discover -s Reference -v
+          } > build/logs/validation.log 2>&1
+
+      - name: Build IPA and execute native unit plus all four fullApp tests
+        id: build
+        run: |
+          mkdir -p build/logs
+          bash Tools/build_ipa.sh > build/logs/build-package.log 2>&1
+
+      # This is deliberately before IPA upload, including on earlier failure.
+      - name: Require unit and fullApp validation
+        id: gates
+        if: always()
+        run: |
+          mkdir -p build/logs
+          python3 Tools/require_ui_gates.py > build/logs/native-gates.log 2>&1
+
+      - name: Generate allowlisted public results
+        if: always()
+        env:
+          PUBLIC_VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
+          PUBLIC_BUILD_OUTCOME: ${{ steps.build.outcome }}
+          PUBLIC_GATE_OUTCOME: ${{ steps.gates.outcome }}
+        run: python3 Tools/public_build_result.py
+
+      - name: Upload validated IPA only
+        if: success() && steps.build.outcome == 'success' && steps.gates.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: LinkCard-0.8.5-build24-IPA
+          path: |
+            build/export/LinkCard-TrollStore.ipa
+            build/export/LinkCard-TrollStore.ipa.sha256
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 7
+          compression-level: 0
+
+      - name: Upload schema-limited results only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: LinkCard-0.8.5-build24-results
+          path: |
+            build/public/result.json
+            build/public/build.log
+          if-no-files-found: error
+          include-hidden-files: false
+          retention-days: 7
