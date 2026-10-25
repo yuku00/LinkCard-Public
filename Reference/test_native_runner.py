@@ -69,7 +69,7 @@ class NativeRunnerTests(unittest.TestCase):
                     return b''
                 runner.command = command
                 runner.boot()
-                self.assertIn(['open', '-a', 'Simulator'], calls)
+                self.assertFalse(any(c[0] == 'open' for c in calls))
                 self.assertIn(['xcrun', 'simctl', 'boot', udid], calls)
                 self.assertIn(['xcrun', 'simctl', 'bootstatus', udid, '-b'], calls)
                 self.assertIn(['xcrun', 'simctl', 'spawn', udid, 'launchctl', 'print', 'system'], calls)
@@ -95,6 +95,16 @@ class NativeRunnerTests(unittest.TestCase):
                 self.assertEqual(result['runner']['cleanup'], 'complete')
             finally:
                 os.chdir(old)
+
+    def test_bootstatus_phrases_return_only_fixed_enums(self):
+        for text, expected in [
+            ('PRIVATE UUID /path', 'waiting-boot'),
+            ('Waiting on BackBoard /PRIVATE', 'waiting-backboard'),
+            ('Waiting on Data Migration PRIVATE', 'waiting-data-migration'),
+            ('Waiting on Data Migration\nWaiting on System App PRIVATE', 'waiting-system-app'),
+        ]:
+            self.assertEqual(m.boot_wait_phase(text.encode()), expected)
+            self.assertIn(expected, m.BOOT_PHASES)
 
     def test_process_is_reaped_on_timeout(self):
         p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], start_new_session=True,

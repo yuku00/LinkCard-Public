@@ -11,7 +11,8 @@ import time
 PHASES = {'not-started', 'inventory', 'create', 'simulator-launch', 'boot', 'bootstatus',
           'readiness', 'build', 'test-startup', 'testing', 'results', 'cleanup', 'complete'}
 BOOT_PHASES = {'not-started', 'inventory', 'create', 'simulator-launch', 'boot', 'bootstatus',
-               'readiness', 'ready', 'failed'}
+               'readiness', 'ready', 'failed', 'waiting-backboard', 'waiting-data-migration',
+               'waiting-system-app', 'waiting-boot'}
 PROCESS_STATES = {'not-started', 'running', 'exited', 'terminated', 'killed', 'unknown'}
 
 
@@ -111,6 +112,20 @@ def reap_group(process):
     return state
 
 
+def boot_wait_phase(output):
+    """Read only known simctl status phrases, returning no other log content."""
+    if isinstance(output, bytes):
+        output = output.decode('utf-8', errors='replace')
+    last = 'waiting-boot'
+    for line in (output or '').splitlines():
+        for phrase, phase in [('Waiting on BackBoard', 'waiting-backboard'),
+                              ('Waiting on Data Migration', 'waiting-data-migration'),
+                              ('Waiting on System App', 'waiting-system-app')]:
+            if phrase in line:
+                last = phase
+    return last
+
+
 class BudgetExceeded(Exception):
     pass
 
@@ -143,7 +158,9 @@ class NativeRunner:
         p = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
         try:
             out, _ = p.communicate(timeout=remaining)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as error:
+            if command[:3] == ['xcrun', 'simctl', 'bootstatus']:
+                self.progress.data['simulator_boot_phase'] = boot_wait_phase(error.output)
             reap_group(p)
             raise BudgetExceeded() from None
         if p.returncode:
@@ -171,8 +188,8 @@ class NativeRunner:
             if not re.fullmatch(r'[A-Fa-f0-9-]{36}', self.udid):
                 self.udid = None
                 raise RuntimeError('invalid-created-device')
-            phase('simulator-launch')
-            self.command(['open', '-a', 'Simulator'], 30)
+            # simctl boots the specified device headlessly. Opening Simulator.app
+            # here may independently start its default device and compete for boot resources.
             phase('boot')
             self.command(['xcrun', 'simctl', 'boot', self.udid], 30)
             phase('bootstatus')
