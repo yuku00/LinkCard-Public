@@ -47,13 +47,17 @@ final class LinkCardFullAppTouchTests: XCTestCase {
     }
     private func panel(_ value: String, file: StaticString = #filePath, line: UInt = #line) {
         let panel = app.descendants(matching: .any).matching(identifier: "workbench.panel").firstMatch
-        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == true AND value == %@", value), object: panel)], timeout: 6)
+        // Match identity AND detent in one AX snapshot, rather than separate
+        // cross-process KVC reads while the keyboard changes the view hierarchy.
+        // Wrong/missing state still fails within the original six-second budget.
+        let expected = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier == %@ AND value == %@", "workbench.panel", value)).firstMatch
+        let result = expected.waitForExistence(timeout: 6)
         // Only fixed state vocabulary and booleans may enter public diagnostics.
         // Never export AX trees, user labels, identifiers or screenshots here.
         let raw = panel.value as? String
         let state = ["compact", "expanded"].contains(raw ?? "") ? raw! : "unavailable"
-        XCTAssertEqual(result, .completed,
+        XCTAssertTrue(result,
             "Workbench expected=\(value) state=\(state) exists=\(panel.exists) connectionSheet=\(app.buttons["connection.close"].exists) profileSheet=\(app.buttons["profile.done"].exists)",
             file: file, line: line)
     }

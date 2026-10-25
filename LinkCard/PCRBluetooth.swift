@@ -75,7 +75,8 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
             name: selected?.name ?? "", builtinProfile: connectionProfile == .builtin,
             channel: identifyChannel, model: deviceInformation["2A24"])
     }
-    var preferencesRestoreMessage: String? { preferences.restorationWarning }
+    private static let preferencesWriteWarning = "蓝牙设置未能保存；未应用本次修改，自动恢复已暂停。请重试保存，不要清除应用数据。"
+    var preferencesRestoreMessage: String? { preferences.restorationWarning ?? (preferencesWriteFailed ? Self.preferencesWriteWarning : nil) }
     /// UUID-keyed, display-only values. Never persisted or logged.
     @Published private(set) var deviceInformation = [String: String]()
     var modelExplanation: String {
@@ -102,7 +103,14 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
     private var awaitingWrite = false
     private var parser = PCRTextReply()
     private var writeType: CBCharacteristicWriteType = .withResponse
-    @Published private(set) var preferences = BLEPreferences.load()
+    private let preferencesStore: BLEPreferencesStore
+    @Published private(set) var preferences: BLEPreferences
+    private var preferencesWriteFailed = false
+    init(preferencesStore: BLEPreferencesStore = BLEPreferencesStore()) {
+        self.preferencesStore = preferencesStore
+        preferences = preferencesStore.load()
+        super.init()
+    }
     @Published var connectionPrompt: Device?
     private var foreground = false
     private var sessionSuppressed = false
@@ -203,39 +211,55 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         guard let warning = preferences.restorationWarning else { return true }
         status = warning; return false
     }
+    /// Commit consent only after the real store accepts and reads back the draft.
+    /// Failed edits remain retryable but cannot authorize a later automatic cycle.
+    private func updatePreferences(_ edit: (inout BLEPreferences) -> Void) -> Bool {
+        guard preferenceChangeAllowed() else { return false }
+        var draft = preferences
+        edit(&draft)
+        guard preferencesStore.save(draft) else {
+            preferencesWriteFailed = true; sessionSuppressed = true
+            stopScan(); retryWork?.cancel(); retryWork = nil; retryAfterDisconnect = false
+            status = Self.preferencesWriteWarning
+            return false
+        }
+        preferencesWriteFailed = false
+        preferences = draft
+        return true
+    }
     func setAutomaticScanning(_ value: Bool) {
-        guard preferenceChangeAllowed() else { return }
-        preferences.autoScan = value; preferences.save()
+        guard updatePreferences({ $0.autoScan = value }) else { return }
         if value { resumeDiscovery() }
         else { stopScan(); retryWork?.cancel(); retryWork = nil; retryAfterDisconnect = false; dismissConnectionPrompt() }
     }
     func setDiscoveryPrompt(_ value: Bool) {
-        guard preferenceChangeAllowed() else { return }
-        preferences.showDiscoveryPrompt = value; preferences.save()
+        guard updatePreferences({ $0.showDiscoveryPrompt = value }) else { return }
         if !value { dismissConnectionPrompt() }
     }
     func addProfile(_ profile: BLEProfile) -> String? {
         if let warning = preferences.restorationWarning { return warning }
         if let error = profile.validationError { return error }
         guard preferences.profiles.count < 33, !preferences.profiles.contains(where: { $0.id == profile.id }) else { return "配置已存在或达到 32 个自定义配置上限。" }
-        preferences.profiles.append(profile); preferences.save(); return nil
+        guard updatePreferences({ $0.profiles.append(profile) }) else { return status }
+        return nil
     }
     func removeProfile(_ id: UUID) {
-        guard preferenceChangeAllowed() else { return }
         guard id != BLEProfile.builtin.id else { return }
-        preferences.profiles.removeAll { $0.id == id }
-        preferences.trusted.removeAll { $0.profileID == id }; preferences.save()
+        guard updatePreferences({
+            $0.profiles.removeAll { $0.id == id }
+            $0.trusted.removeAll { $0.profileID == id }
+        }) else { return }
         if connectionProfile.id == id && active { disconnect("使用中的配置已移除，连接停止。") }
     }
     func forget(_ id: UUID) {
-        guard preferenceChangeAllowed() else { return }
-        preferences.trusted.removeAll { $0.id == id }; preferences.save()
+        guard updatePreferences({ $0.trusted.removeAll { $0.id == id } }) else { return }
         if selected?.id == id && active { disconnect("已忘记设备并断开。") }
     }
     func prioritize(_ id: UUID) {
-        guard preferenceChangeAllowed() else { return }
         guard let index = preferences.trusted.firstIndex(where: { $0.id == id }) else { return }
-        let item = preferences.trusted.remove(at: index); preferences.trusted.insert(item, at: 0); preferences.save()
+        _ = updatePreferences { draft in
+            let item = draft.trusted.remove(at: index); draft.trusted.insert(item, at: 0)
+        }
     }
     func isCandidate(_ device: Device) -> Bool {
         preferences.profiles.contains { $0.matches(name: device.name, services: device.advertisedServices) }
@@ -270,23 +294,25 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         guard !remember || preferences.trusted.count < 100 || preferences.trusted.contains(where: { $0.id == device.id }) else {
             status = "已达 100 个信任设备上限，请先忘记不再使用的设备。"; return
         }
-        dismissConnectionPrompt(); sessionSuppressed = false; automaticAttempt = false; retryWork?.cancel(); retryWork = nil
         if remember {
             let binding = BLETrust(id: device.id, profileID: profile.id)
-            if let index = preferences.trusted.firstIndex(where: { $0.id == device.id }) { preferences.trusted[index] = binding }
-            else { preferences.trusted.append(binding) }
-            preferences.save()
+            guard updatePreferences({ draft in
+                if let index = draft.trusted.firstIndex(where: { $0.id == device.id }) { draft.trusted[index] = binding }
+                else { draft.trusted.append(binding) }
+            }) else { return }
         } else if preferences.restorationWarning == nil {
             // Explicitly turning Remember off revokes this UUID, unlike dismissing a sheet.
-            preferences.trusted.removeAll { $0.id == device.id }; preferences.save()
+            guard updatePreferences({ $0.trusted.removeAll { $0.id == device.id } }) else { return }
         }
+        // Keep the sheet and its error visible if persistence failed above.
+        dismissConnectionPrompt(); sessionSuppressed = false; automaticAttempt = false; retryWork?.cancel(); retryWork = nil
         automaticAttempt = preferences.autoScan && preferences.trusted.contains { $0.id == device.id && $0.profileID == profile.id }
         if automaticAttempt { attempts = 1; automaticTarget = device.id }
         connectionProfile = profile; connect(device)
     }
     func resumeDiscovery() { sessionSuppressed = false; attempts = 0; scan() }
     private func scanAutomatically() {
-        guard foreground, preferences.autoScan, !sessionSuppressed, attempts < 3, !active, !scanning, retryWork == nil else { return }
+        guard !preferencesWriteFailed, foreground, preferences.autoScan, !sessionSuppressed, attempts < 3, !active, !scanning, retryWork == nil else { return }
         // Never trigger the initial system permission dialog merely by opening the App.
         guard CBCentralManager.authorization == .allowedAlways else {
             status = "自动发现需要蓝牙授权；首次请点击扫描并允许系统权限。"; return
@@ -298,7 +324,7 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         stopScan()
         guard foreground, !sessionSuppressed, !active else { return }
         // Wait for the complete scan window, then use explicit saved order, not arrival/RSSI.
-        if preferences.autoScan, attempts < 3,
+        if !preferencesWriteFailed, preferences.autoScan, attempts < 3,
            let trust = preferences.trusted.first(where: { saved in
                (automaticTarget == nil || automaticTarget == saved.id) && devices.contains { $0.id == saved.id }
            }),

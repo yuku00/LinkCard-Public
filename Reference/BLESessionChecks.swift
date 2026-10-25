@@ -3,6 +3,15 @@
 import Foundation
 import CoreBluetooth
 
+/// Real UserDefaults read/load path with a deterministic write-rejection seam.
+/// This is a persistence fault injection, not a claim of physical disk failure.
+private final class RejectingPreferencesDefaults: UserDefaults, @unchecked Sendable {
+    var rejectsWrites = false
+    override func set(_ value: Any?, forKey defaultName: String) {
+        if !rejectsWrites { super.set(value, forKey: defaultName) }
+    }
+}
+
 @main struct BLESessionChecks {
     static func connected(_ name: String = "PCR-NFCPRO", withoutResponse: Bool = false) -> (PCRBluetooth, CBCentralManager, CBPeripheral, [CBCharacteristic]) {
         let fields = zip(PCRDeviceInformation.fields, ["TD5322A", "1.0.0", "V3.0.1", "TD5322A_V3.0.1"]).map {
@@ -115,6 +124,60 @@ import CoreBluetooth
         precondition(!locked.busy && locked.identifyPhase == "failed" && locked.identifyFailurePhase == "starting")
         precondition(locked.identifyMessage.contains("写入失败"))
         print("PASS: actual NFCPRO coordinator, synthetic transport only: 3-byte MTU, both write modes, early response, busy guard, finite no-card, success, repeated click, startup/poll cancel, late notification quarantine, reconnect, timeout and background.")
+    }
+    static func persistenceFailureChecks() {
+        let suite = "LinkCard-write-failure-" + UUID().uuidString
+        let store = RejectingPreferencesDefaults(suiteName: suite)!
+        defer { store.removePersistentDomain(forName: suite) }
+        precondition(BLEPreferences().save(to: store))
+        let b = PCRBluetooth(preferencesStore: BLEPreferencesStore(defaults: store))
+        b.setForeground(true)
+        let c = CBCentralManager.latest!
+        b.centralManagerDidUpdateState(c)
+        let p = CBPeripheral(name: "PCR-NFCPRO", services: [])
+        b.centralManager(c, didDiscover: p, advertisementData: [CBAdvertisementDataLocalNameKey: "PCR-NFCPRO"], rssi: -50)
+        b.finishDiscovery()
+        let device = b.devices[0]
+        b.connectionPromptDidAppear()
+        store.rejectsWrites = true
+        b.confirmConnection(device, profileID: BLEProfile.builtin.id, remember: true)
+        precondition(!b.active && c.connections == 0 && b.connectionPrompt?.id == p.identifier)
+        precondition(b.preferences.trusted.isEmpty && BLEPreferences.load(from: store).trusted.isEmpty)
+        precondition(b.status.contains("未能保存") && b.preferencesRestoreMessage != nil)
+        precondition(p.reads.isEmpty && p.writes.isEmpty)
+        let scans = c.scans
+        b.setForeground(false); b.connectionPromptDidDisappear(); b.setForeground(true)
+        c.state = .poweredOff; b.centralManagerDidUpdateState(c)
+        c.state = .poweredOn; b.centralManagerDidUpdateState(c)
+        precondition(!b.scanning && c.scans == scans && c.connections == 0)
+        // Explicit retry after storage becomes writable commits consent once.
+        store.rejectsWrites = false
+        b.confirmConnection(device, profileID: BLEProfile.builtin.id, remember: true)
+        precondition(b.active && c.connections == 1 && b.preferencesRestoreMessage == nil)
+        precondition(BLEPreferences.load(from: store).trusted.first?.id == p.identifier)
+        precondition(p.reads.isEmpty && p.writes.isEmpty)
+        b.setForeground(false); b.centralManager(c, didDisconnectPeripheral: p, error: nil)
+        let saved = BLEPreferences.load(from: store)
+        let edits = PCRBluetooth(preferencesStore: BLEPreferencesStore(defaults: store))
+        store.rejectsWrites = true
+        edits.forget(p.identifier)
+        precondition(edits.preferences.trusted == saved.trusted)
+        edits.setAutomaticScanning(false)
+        precondition(edits.preferences.autoScan && BLEPreferences.load(from: store).autoScan)
+        edits.setDiscoveryPrompt(false)
+        precondition(edits.preferences.showDiscoveryPrompt)
+        var profile = BLEProfile.builtin
+        profile.id = UUID(); profile.name = "Local fault-injection profile"
+        profile.adapterID = "connect-only"
+        precondition(edits.addProfile(profile) != nil && edits.preferences.profiles == saved.profiles)
+        edits.setForeground(true)
+        precondition(!edits.scanning && !edits.active)
+        precondition(BLEPreferences.load(from: store).trusted == saved.trusted)
+        edits.setForeground(false)
+        store.rejectsWrites = false
+        edits.forget(p.identifier)
+        precondition(edits.preferences.trusted.isEmpty && BLEPreferences.load(from: store).trusted.isEmpty)
+        print("PASS: real defaults round-trip with rejected writes; no unsaved trust/connect, visible failure, foreground/power suppression, failed edit rollback and explicit retry. No hardware storage failure claimed.")
     }
     static func recoveryChecks() {
         let id = UUID()
@@ -279,6 +342,7 @@ import CoreBluetooth
             if let original = original { UserDefaults.standard.set(original, forKey: key) }
             else { UserDefaults.standard.removeObject(forKey: key) }
         }
+        persistenceFailureChecks()
         recoveryChecks()
         presentationChecks()
         retryBoundChecks()

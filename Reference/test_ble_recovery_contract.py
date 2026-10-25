@@ -31,7 +31,7 @@ class RecoveryContracts(unittest.TestCase):
  def test_explicit_remember_off_revokes_but_cancel_does_not(self):
   confirm=body('func confirmConnection','func resumeDiscovery')
   self.assertIn('else if preferences.restorationWarning == nil',confirm)
-  self.assertIn('preferences.trusted.removeAll { $0.id == device.id }',confirm)
+  self.assertIn('guard updatePreferences({ $0.trusted.removeAll { $0.id == device.id } }) else { return }',confirm)
  def test_retry_budget_guards_scan_itself(self):
   self.assertIn('attempts < 3',body('func scanAutomatically','func finishDiscovery'))
  def test_identify_error_retains_safe_failure_phase(self):

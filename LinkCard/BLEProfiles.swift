@@ -116,3 +116,11 @@ struct BLEPreferences: Codable {
         return defaults.data(forKey: Self.key) == data
     }
 }
+
+/// Typed persistence boundary: the coordinator cannot store card/device payloads.
+struct BLEPreferencesStore {
+    private let defaults: UserDefaults
+    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    func load() -> BLEPreferences { BLEPreferences.load(from: defaults) }
+    func save(_ preferences: BLEPreferences) -> Bool { preferences.save(to: defaults) }
+}
