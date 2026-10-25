@@ -24,6 +24,7 @@ try:
                    '-only-testing:LinkCardTests/WorkbenchPresentationTests',
                    '-only-testing:LinkCardTests/FrameCodecTests',
                    '-only-testing:LinkCardTests/FusionPresentationTests',
+                   '-only-testing:LinkCardTests/PN532IdentifyTests',
                    '-derivedDataPath', 'build/UIKitDerivedData',
                    '-resultBundlePath', 'build/logs/MistLifecycle.xcresult',
                    'CODE_SIGNING_ALLOWED=NO', 'CODE_SIGNING_REQUIRED=NO', 'CODE_SIGN_IDENTITY=', 'DEVELOPMENT_TEAM=']
