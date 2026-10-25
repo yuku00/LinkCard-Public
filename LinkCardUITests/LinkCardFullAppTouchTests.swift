@@ -45,9 +45,17 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         print("FULLAPP event end tap=\(identifier) elapsed=\(elapsed)s")
         XCTAssertLessThan(elapsed, 15, "Real coordinate event blocked waiting for app animations; never disable quiescence")
     }
-    private func panel(_ value: String) {
+    private func panel(_ value: String, file: StaticString = #filePath, line: UInt = #line) {
         let panel = app.descendants(matching: .any).matching(identifier: "workbench.panel").firstMatch
-        wait(panel, "exists == true AND value == '\(value)'")
+        let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == true AND value == %@", value), object: panel)], timeout: 6)
+        // Only fixed state vocabulary and booleans may enter public diagnostics.
+        // Never export AX trees, user labels, identifiers or screenshots here.
+        let raw = panel.value as? String
+        let state = ["compact", "expanded"].contains(raw ?? "") ? raw! : "unavailable"
+        XCTAssertEqual(result, .completed,
+            "Workbench expected=\(value) state=\(state) exists=\(panel.exists) connectionSheet=\(app.buttons["connection.close"].exists) profileSheet=\(app.buttons["profile.done"].exists)",
+            file: file, line: line)
     }
     private func open() { tap(app.buttons["fusion.menu"]); wait(app.buttons["fusion.close"], "hittable == true") }
     private func close() { tap(app.buttons["fusion.close"]); wait(app.buttons["fusion.close"], "hittable == false") }
@@ -194,7 +202,7 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         app.coordinate(withNormalizedOffset: .zero).withOffset(
             CGVector(dx: point.x - app.frame.minX, dy: point.y - app.frame.minY))
     }
-    private func verticalHandle(_ expanded: Bool) {
+    private func verticalHandle(_ expanded: Bool, file: StaticString = #filePath, line: UInt = #line) {
         let handle = app.buttons["workbench.handle"]
         wait(handle, "hittable == true")
         let start = CGPoint(x: handle.frame.midX, y: handle.frame.midY)
@@ -205,7 +213,7 @@ final class LinkCardFullAppTouchTests: XCTestCase {
             withVelocity: .slow, thenHoldForDuration: 0.15)
         XCTAssertLessThan(ProcessInfo.processInfo.systemUptime - started, 15,
                           "Vertical handle drag must settle with default quiescence")
-        panel(expanded ? "expanded" : "compact")
+        panel(expanded ? "expanded" : "compact", file: file, line: line)
     }
     private func verticalContent(_ value: String) {
         let container = app.descendants(matching: .any).matching(identifier: "workbench.panel").firstMatch

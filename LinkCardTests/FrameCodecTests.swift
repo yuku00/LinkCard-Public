@@ -355,7 +355,7 @@ final class BLEConnectionPresentationTests: XCTestCase {
         let ble = PCRBluetooth()
         let trusted = ble.preferences.trusted.map { $0.id }
         ble.connectionPromptDidDisappear()
-        XCTAssertEqual(ble.status, "已取消本次自动发现；点击扫描可重新开始。")
+        XCTAssertEqual(ble.status, "已取消本次发现；已记住设备仍保留，下次进入前台或蓝牙重新开启时按设置恢复。")
         XCTAssertFalse(ble.scanning)
         XCTAssertEqual(ble.preferences.trusted.map { $0.id }, trusted)
     }
@@ -1076,6 +1076,9 @@ final class PN532IdentifyTests: XCTestCase {
     func testDisconnectedClickIsSafeAndNotFakeSuccess() {
         let b = PCRBluetooth(); b.identifyCard()
         XCTAssertFalse(b.identifying); XCTAssertFalse(b.busy); XCTAssertNil(b.identifiedCard)
-        XCTAssertTrue(b.identifyMessage.contains("请连接"))
+        XCTAssertEqual(b.identifyMessage, "请先连接已记住的设备或选择新设备。")
+        XCTAssertEqual(b.status, b.identifyMessage, "The disconnected guard must publish visible feedback")
+        XCTAssertEqual(b.identifyPhase, "blocked")
+        XCTAssertFalse(b.active); XCTAssertFalse(b.connected); XCTAssertFalse(b.canIdentify)
     }
 }
