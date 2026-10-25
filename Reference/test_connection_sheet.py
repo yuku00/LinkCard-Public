@@ -8,17 +8,21 @@ SHEET = UI[UI.index('private struct BLEConnectionConfirmation'):UI.index('struct
 class ConnectionSheetContracts(unittest.TestCase):
     def test_native_bottom_sheet_and_accessibility(self):
         for fragment in ['.presentationDetents(', '.presentationDragIndicator(.visible)',
-                         'typeSize.isAccessibilitySize', 'Form {', 'NavigationStack {',
-                         'minHeight: 44', '.height(300)',
-                         'selection?.label', '.navigationBarTitleDisplayMode(.inline)']:
+                         'typeSize.isAccessibilitySize', 'ScrollView {',
+                         'minHeight: 44', '.height(420)',
+                         'selection?.label', 'externaldrive.fill', 'xmark']:
             self.assertIn(fragment, SHEET)
         self.assertNotIn('BLEReaderIllustration', SHEET)
         self.assertNotIn('.ignoresSafeArea', SHEET)
         self.assertNotIn('.onDisappear', SHEET)
-    def test_multiple_candidates_need_explicit_choice(self):
+    def test_multiple_candidates_preserve_first_selection_until_user_switches(self):
         self.assertIn('@State private var selectedID: UUID?', SHEET)
-        self.assertIn('if candidates.count == 1 { selectedID = device.id }', SHEET)
-        self.assertIn('.disabled(selection == nil || ble.active)', SHEET)
+        self.assertIn('selectedID = device.id', SHEET)
+        self.assertIn('.pickerStyle(.menu)', SHEET)
+        self.assertNotIn('Form {', SHEET)
+        self.assertNotIn('.onChange(of: candidates', SHEET)
+        self.assertIn('enabled: selection != nil && !ble.active', SHEET)
+        self.assertIn('.disabled(!enabled)', SHEET)
         self.assertNotIn('.rssi', SHEET)
         self.assertIn('guard !initialized else { return }', SHEET)
     def test_minimal_sheet_and_real_saved_selection(self):
@@ -32,7 +36,7 @@ class ConnectionSheetContracts(unittest.TestCase):
         settings = UI[UI.index('struct BLEPreferencesView: View'):]
         for fragment in ['Picker("设备配置"', 'serviceUUID', 'showDiscoveryPrompt']:
             self.assertIn(fragment, settings)
-        action = SHEET[SHEET.index('guard let selected = selection'):SHEET.index('} label: {', SHEET.index('guard let selected = selection'))]
+        action = SHEET[SHEET.index('guard let selected = selection'):SHEET.index('}, onClose:', SHEET.index('guard let selected = selection'))]
         self.assertNotIn('cancelConnectionPrompt()', action)
         self.assertNotIn('dismiss()', action)
     def test_identify_feedback_and_real_modal_round_trips(self):

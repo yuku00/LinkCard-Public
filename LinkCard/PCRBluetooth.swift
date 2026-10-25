@@ -17,7 +17,7 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
             return clean.isEmpty ? "未广播名称的设备" : String(clean.prefix(100))
         }
         var matchedServices: [String] {
-            advertisedServices.filter { ["FF00", "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"].contains($0) }
+            advertisedServices.filter { value in DeviceAdapters.pcrChannels.contains { BLEProfile.sameUUID(value, $0[0]) } }
         }
         // Discovery hint only: never used by canQuery or command routing.
         var isCandidate: Bool { name.uppercased().hasPrefix("PCR") || !matchedServices.isEmpty }
@@ -55,6 +55,27 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
     private var identifyWait: DispatchWorkItem?
     private var identifySettling = false
     private var identifyChannel = [String]()
+    private var boundService: CBService?
+    @Published private(set) var channelAdmissionFailure: String?
+    var selectedProfileName: String { connectionProfile.name }
+    var channelSummary: String {
+        guard identifyChannel.count == 3 else { return "实际通道：service 未绑定 · write 未绑定 · notify 未绑定" }
+        return "实际通道：service \(identifyChannel[0]) · write \(identifyChannel[1])（\(writeType == .withResponse ? "写" : "无响应写")） · notify \(identifyChannel[2])（\(rx?.isNotifying == true ? "已订阅" : "未订阅")）"
+    }
+    /// Recheck the actual discovered objects, not profile strings or advertised UUIDs.
+    private var actualFF00ChannelIsValid: Bool {
+        guard let service = boundService, let write = tx, let notify = rx,
+              peripheral?.services?.contains(where: { $0 === service }) == true,
+              service.characteristics?.contains(where: { $0 === write }) == true,
+              service.characteristics?.contains(where: { $0 === notify }) == true,
+              write !== notify, notify.isNotifying,
+              BLEProfile.sameUUID(service.uuid.uuidString, "FF00"),
+              BLEProfile.sameUUID(write.uuid.uuidString, "FF02"),
+              BLEProfile.sameUUID(notify.uuid.uuidString, "FF01"),
+              write.properties.contains(.write) || write.properties.contains(.writeWithoutResponse),
+              notify.properties.contains(.notify) || notify.properties.contains(.indicate) else { return false }
+        return identifyChannel.map(BLEProfile.canonicalUUID) == ["FF00", "FF02", "FF01"].map(BLEProfile.canonicalUUID)
+    }
     private var pendingCard: PN532Card?
     @Published private(set) var identifyPhase = "idle"
     @Published private(set) var identifyFailurePhase: String?
@@ -63,10 +84,11 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         if busy { return identifying ? "正在识别，请等待本次结果或取消。" : "设备正忙，请等待当前操作完成后再识别。" }
         if closing { return "连接正在结束，请重新连接后识别。" }
         if !connected { return "请先连接已记住的设备或选择新设备。" }
+        if let failure = channelAdmissionFailure { return failure }
         if !ready { return "连接尚未就绪，请等待服务发现和通知订阅完成。" }
-        if connectionProfile != .builtin { return "当前为自定义连接配置；识别需要内置 PCR 配置。" }
+        if connectionProfile != .builtin { return "当前配置：\(connectionProfile.name)。识别需要内置 PCR 配置；请先断开，在蓝牙设置选择内置配置重新连接。不会自动改写你的配置或试探协议。" }
         if !PCRRoute.isNFCPro(selected?.name ?? "") { return "当前型号未准入；仅支持精确匹配的 PCR-NFCPRO / TD5322A，不向其他型号试探。" }
-        if identifyChannel != ["FF00", "FF02", "FF01"] { return "当前不是识别所需的 FF00 通道；不会切换协议试探。" }
+        if !actualFF00ChannelIsValid { return "FF00 准入失败：需要同一实际 FF00 服务中的 FF02 可写特征和 FF01 通知/指示特征，并完成订阅；不切换协议试探。" }
         if let model = deviceInformation["2A24"], model != "TD5322A" { return "标准型号信息未确认 TD5322A；识别已停止，请检查设备型号。" }
         return nil
     }
@@ -165,7 +187,7 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
     }
     private func flushDeferredConnectionPrompt() {
         guard presentationBlockers.isEmpty, !promptPresentationInFlight,
-              foreground, central?.state == .poweredOn, !active, !scanning,
+              foreground, central?.state == .poweredOn, !active,
               let pending = deferredConnectionPrompt else { return }
         // Re-resolve current scan results and saved UUIDs at presentation time.
         guard let current = devices.first(where: { $0.id == pending.id }),
@@ -229,7 +251,10 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
     }
     func setAutomaticScanning(_ value: Bool) {
         guard updatePreferences({ $0.autoScan = value }) else { return }
-        if value { resumeDiscovery() }
+        if value {
+            if scanning { sessionSuppressed = false; arbitrateDiscovery() }
+            else { resumeDiscovery() }
+        }
         else { stopScan(); retryWork?.cancel(); retryWork = nil; retryAfterDisconnect = false; dismissConnectionPrompt() }
     }
     func setDiscoveryPrompt(_ value: Bool) {
@@ -321,9 +346,16 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
     }
     // Internal completion seam is exercised by the host coordinator tests; not a timer bypass in UI.
     func finishDiscovery() {
+        guard scanning else { return } // A late scan deadline cannot cancel a connection deadline.
         stopScan()
+        arbitrateDiscovery()
+    }
+    /// Invoked by each semantic discovery; never waits for unseen higher-priority UUIDs.
+    func arbitrateDiscovery() {
         guard foreground, !sessionSuppressed, !active else { return }
-        // Wait for the complete scan window, then use explicit saved order, not arrival/RSSI.
+        // A pending/visible sheet owns selection until explicit choice/cancel. New broadcasts merge only.
+        guard connectionPrompt == nil, deferredConnectionPrompt == nil, !promptPresentationInFlight else { return }
+        // Among already visible saved UUIDs, use persisted priority, never RSSI or name.
         if !preferencesWriteFailed, preferences.autoScan, attempts < 3,
            let trust = preferences.trusted.first(where: { saved in
                (automaticTarget == nil || automaticTarget == saved.id) && devices.contains { $0.id == saved.id }
@@ -374,7 +406,7 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
             if central?.state == .poweredOff { status = "系统蓝牙已关闭，请自行在系统设置中开启；App 无权替你开启。" }
             return
         }
-        devices = []; scanning = true; status = "正在前台扫描 · 12 秒后选择候选或按信任优先级连接"
+        devices = []; discoveryPublishedAt = [:]; scanning = true; status = "正在前台扫描 · 发现后立即连接或提示，最长 12 秒"
         central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: true])
         arm(12) { [weak self] in self?.finishDiscovery() }
     }
@@ -391,6 +423,7 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         deviceInformation = [:]; informationCharacteristics = []; informationQueue = []
         pendingInformation = nil; canReadDeviceInformation = false; readingDeviceInformation = false
         result = "尚未读取版本"; services = []; status = "正在连接…"
+        boundService = nil; tx = nil; rx = nil; identifyChannel = []; channelAdmissionFailure = nil
         central?.connect(device.peripheral, options: nil)
         arm(15) { [weak self] in self?.connectionFailed("连接或服务发现超时，已停止。") }
     }
@@ -412,7 +445,7 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         }
         identifying = false; identifyGeneration += 1; identifyWait?.cancel(); identifyWait = nil
         identifyStep = nil; identifyExchange = nil; identifyReply = nil; pendingCard = nil
-        identifiedCard = nil; identifySettling = false; identifyChannel = []
+        identifiedCard = nil; identifySettling = false; identifyChannel = []; boundService = nil
         busy = false; ready = false; canQuery = false; connected = false
         canReadDeviceInformation = false; readingDeviceInformation = false
         informationQueue = []; pendingInformation = nil; informationCharacteristics = []
@@ -431,7 +464,7 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         })
         informationQueue = informationCharacteristics
         for characteristic in informationQueue {
-            deviceInformation[characteristic.uuid.uuidString] = "尚未读取"
+            deviceInformation[BLEProfile.displayUUID(characteristic.uuid.uuidString)] = "尚未读取"
         }
         readNextInformation()
     }
@@ -443,12 +476,12 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         }
         let characteristic = informationQueue.removeFirst()
         pendingInformation = characteristic
-        deviceInformation[characteristic.uuid.uuidString] = "正在读取…"
+        deviceInformation[BLEProfile.displayUUID(characteristic.uuid.uuidString)] = "正在读取…"
         status = "正在读取标准设备信息；不发送业务命令。"
         arm(4) { [weak self] in
             guard let self = self else { return }
             if let pending = self.pendingInformation {
-                self.deviceInformation[pending.uuid.uuidString] = "读取超时"
+                self.deviceInformation[BLEProfile.displayUUID(pending.uuid.uuidString)] = "读取超时"
             }
             self.disconnect("标准设备信息读取超时，已断开；不重试、不切换协议。", reason: .timeout)
         }
@@ -653,6 +686,7 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
             devices.append(item)
             discoveryPublishedAt[item.id] = now
         }
+        arbitrateDiscovery()
     }
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         guard foreground, self.peripheral === peripheral, !closing else { central.cancelPeripheralConnection(peripheral); return }
@@ -696,28 +730,46 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         }
         pendingServices -= 1
         guard pendingServices == 0 else { return }
-        if let informationService = peripheral.services?.first(where: { $0.uuid == CBUUID(string: "180A") }) {
+        if let informationService = peripheral.services?.first(where: { BLEProfile.sameUUID($0.uuid.uuidString, "180A") }) {
             informationCharacteristics = PCRDeviceInformation.fields.compactMap { field in
                 informationService.characteristics?.first(where: {
-                    $0.uuid == CBUUID(string: field.uuid) && $0.properties.contains(.read)
+                    BLEProfile.sameUUID($0.uuid.uuidString, field.uuid) && $0.properties.contains(.read)
                 })
             }
         }
-        for map in connectionProfile.channels {
-            guard let s = peripheral.services?.first(where: { $0.uuid == CBUUID(string: map[0]) }),
-                  let write = s.characteristics?.first(where: { $0.uuid == CBUUID(string: map[1]) }),
-                  let notify = s.characteristics?.first(where: { $0.uuid == CBUUID(string: map[2]) }),
-                  write !== notify,
-                  write.properties.contains(.write) || write.properties.contains(.writeWithoutResponse),
-                  notify.properties.contains(.notify) || notify.properties.contains(.indicate) else { continue }
-            tx = write; rx = notify
+        let channels = connectionProfile == .builtin && PCRRoute.isNFCPro(selected?.name ?? "")
+            ? [DeviceAdapters.pcrChannels[0]] : connectionProfile.channels
+        var failures = [String]()
+        for map in channels {
+            guard let s = peripheral.services?.first(where: { BLEProfile.sameUUID($0.uuid.uuidString, map[0]) }) else {
+                failures.append("缺少实际 service \(map[0])"); continue
+            }
+            guard let write = s.characteristics?.first(where: { BLEProfile.sameUUID($0.uuid.uuidString, map[1]) }) else {
+                failures.append("service \(map[0]) 缺少 write \(map[1])"); continue
+            }
+            guard let notify = s.characteristics?.first(where: { BLEProfile.sameUUID($0.uuid.uuidString, map[2]) }) else {
+                failures.append("service \(map[0]) 缺少 notify \(map[2])"); continue
+            }
+            guard write !== notify else { failures.append("写入和通知不能是同一特征"); continue }
+            guard write.properties.contains(.write) || write.properties.contains(.writeWithoutResponse) else {
+                failures.append("\(map[1]) 无写/无响应写属性"); continue
+            }
+            guard notify.properties.contains(.notify) || notify.properties.contains(.indicate) else {
+                failures.append("\(map[2]) 无通知/指示属性"); continue
+            }
+            boundService = s; tx = write; rx = notify
+            // Preserve actual UUID representations for diagnostics. Admission compares UUID semantics.
             identifyChannel = [s.uuid.uuidString, write.uuid.uuidString, notify.uuid.uuidString]
+            channelAdmissionFailure = nil
             writeType = write.properties.contains(.write) ? .withResponse : .withoutResponse
             writeLimit = peripheral.maximumWriteValueLength(for: writeType)
             peripheral.setNotifyValue(true, for: notify)
             status = "正在订阅匹配通知；未发送业务命令。"
             return
         }
+        channelAdmissionFailure = channels.isEmpty
+            ? "当前配置仅连接，未指定写入/通知通道；如需识别，请先断开并在设置选择内置 PCR 配置。"
+            : "通道准入失败：" + failures.joined(separator: "；") + "。仅核对实际 GATT，不切换协议或发送探测命令。"
         deadline?.cancel()
         if peripheral.services?.contains(where: { $0.uuid == CBUUID(string: "FE59") }) == true {
             disconnect("仅发现 DFU／未匹配业务通道：已停止并断开，不退出 DFU、不刷固件。", reason: .service)
@@ -749,7 +801,7 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
             // Ignore all unsolicited notifications and non-current read callbacks.
             guard busy, characteristic === pendingInformation else { return }
             deadline?.cancel()
-            deviceInformation[characteristic.uuid.uuidString] = error == nil
+            deviceInformation[BLEProfile.displayUUID(characteristic.uuid.uuidString)] = error == nil
                 ? PCRDeviceInformation.displayValue(characteristic.value)
                 : "读取失败（未重试）"
             pendingInformation = nil

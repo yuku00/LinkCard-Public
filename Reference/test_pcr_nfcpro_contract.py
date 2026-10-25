@@ -19,7 +19,7 @@ class NFCProSafety(unittest.TestCase):
         fields = PROTO.split('static let fields:', 1)[1].split('static func displayValue', 1)[0]
         self.assertEqual(re.findall(r'"(2A[0-9A-F]{2})"', fields), ['2A24', '2A27', '2A28', '2A29'])
         self.assertNotIn('"2A25"', BLE + PROTO)
-        self.assertIn('CBUUID(string: "180A")', BLE)
+        self.assertIn('BLEProfile.sameUUID($0.uuid.uuidString, "180A")', BLE)
         self.assertIn('$0.properties.contains(.read)', BLE)
 
     def test_user_action_only(self):

@@ -124,7 +124,8 @@ enum NFCProIdentify {
         return Data([0, 0, 0xFF, length, 0 &- length] + body + [checksum, 0])
     }
     static func permits(name: String, builtinProfile: Bool, channel: [String], model: String?) -> Bool {
-        guard builtinProfile, PCRRoute.isNFCPro(name), channel == ["FF00", "FF02", "FF01"] else { return false }
+        guard builtinProfile, PCRRoute.isNFCPro(name),
+              channel.map(BLEProfile.canonicalUUID) == ["FF00", "FF02", "FF01"].map(BLEProfile.canonicalUUID) else { return false }
         // 180A is optional, but an explicitly conflicting model is not ignored.
         return model == nil || model == "TD5322A"
     }

@@ -40,7 +40,7 @@ def make_report(logs, environment):
     scope = enum(full.get('scope'), {'fullApp', 'sidebar-diagnostic'}, 'unknown')
     passed = (unit_status == full_status == 'passed' and scope == 'fullApp'
               and counts == EXPECTED and all(v == 'success' for v in outcomes.values()))
-    return {'schema': 1, 'version': '0.9.1', 'build': 27,
+    return {'schema': 1, 'version': '0.9.2', 'build': 28,
             'stages': outcomes, 'unit': {'status': unit_status},
             'fullApp': {'status': full_status, 'scope': scope, 'test_counts': counts},
             'native_validation': 'passed' if passed else 'not-validated',
@@ -84,11 +84,17 @@ def main():
     from public_compile_diagnostics import make_diagnostics
     diagnostics = make_diagnostics(Path.cwd(), os.environ)
     report = make_report(Path('build/logs'), os.environ)
+    fast = read_result(Path('build/logs/ble-fast-result.json'))
+    report['ble_regression'] = {
+        'baseline_reproduced': fast.get('baseline_reproduced') is True,
+        'fixed_passed': fast.get('fixed_passed') is True,
+        'scenarios': 3 if fast.get('scenarios') == 3 else 0,
+        'host_suite': 'passed' if Path('build/logs/ble-host-passed').is_file() else 'not-validated'}
     report['compile_diagnostic'] = compile_failure_kind(diagnostics=diagnostics['stages']['release'])
     destination = Path('build/public')
     destination.mkdir(parents=True, exist_ok=True)
     (destination / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
-    lines = ['LinkCard 0.9.1 build27: schema-limited build log']
+    lines = ['LinkCard 0.9.2 build28: schema-limited build log']
     lines.extend(key + ': ' + value for key, value in report['stages'].items())
     lines += ['unit: ' + report['unit']['status'], 'fullApp: ' + report['fullApp']['status'],
               'native_validation: ' + report['native_validation'],

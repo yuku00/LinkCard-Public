@@ -58,7 +58,7 @@ for name, product_type, source in [('LinkCardTests','unit-test','FrameCodecTests
     assert [objects[objects[x]['fileRef']]['path'] for x in phase['files']]==[source]
     for config in objects[target['buildConfigurationList']]['buildConfigurations']:
         settings=objects[config]['buildSettings']
-        assert settings['MARKETING_VERSION']=='0.9.1' and settings['CURRENT_PROJECT_VERSION']=='27'
+        assert settings['MARKETING_VERSION']=='0.9.2' and settings['CURRENT_PROJECT_VERSION']=='28'
         if product_type=='ui-testing':
             assert settings['TEST_TARGET_NAME']=='LinkCard' and 'TEST_HOST' not in settings
 with (R/'LinkCard/Info.plist').open('rb') as f: info=plistlib.load(f)

@@ -44,6 +44,17 @@ struct BLEProfile: Identifiable, Codable, Equatable {
         if upper.count == 8 { return upper + "-0000-1000-8000-00805F9B34FB" }
         return upper
     }
+    static func sameUUID(_ lhs: String, _ rhs: String) -> Bool {
+        validUUID(lhs) && validUUID(rhs) && canonicalUUID(lhs) == canonicalUUID(rhs)
+    }
+    /// Diagnostic/persistence keys only; retain vendor-specific 128-bit UUIDs intact.
+    static func displayUUID(_ value: String) -> String {
+        let upper = value.uppercased()
+        if upper.hasPrefix("0000"), upper.hasSuffix("-0000-1000-8000-00805F9B34FB"), upper.count == 36 {
+            return String(upper.dropFirst(4).prefix(4))
+        }
+        return upper
+    }
     var validationError: String? {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.count <= 80, namePrefix.count <= 80,
               !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),

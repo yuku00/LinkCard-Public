@@ -11,11 +11,34 @@ mkdir -p build/ble-session-mocks
 swiftc -emit-module -emit-library -module-name CoreBluetooth Reference/SessionMocks/CoreBluetooth.swift \
   -emit-module-path build/ble-session-mocks/CoreBluetooth.swiftmodule \
   -o build/ble-session-mocks/libCoreBluetooth.dylib
+# Fetch only the explicitly approved successful baseline; no token/protocol probing.
+BASELINE=201ab5f338d1bc12d7281be945e45b75b35ef35b
+git fetch --no-tags --depth=1 origin "$BASELINE"
+mkdir -p build/ble-baseline
+for source in PCRProtocol PN532Identify BLEProfiles PCRBluetooth; do
+  git show "$BASELINE:LinkCard/$source.swift" > "build/ble-baseline/$source.swift"
+done
+for variant in baseline fixed; do
+  sources=LinkCard
+  if [[ "$variant" == baseline ]]; then sources=build/ble-baseline; fi
+  swiftc -I build/ble-session-mocks -L build/ble-session-mocks -lCoreBluetooth \
+    -Xlinker -rpath -Xlinker "$PWD/build/ble-session-mocks" \
+    "$sources/PCRProtocol.swift" "$sources/PN532Identify.swift" "$sources/BLEProfiles.swift" "$sources/PCRBluetooth.swift" \
+    Reference/BLEFastRegression.swift -o "build/ble-fast-$variant"
+  for scenario in uuid trusted prompt; do
+    code=0
+    "build/ble-fast-$variant" "$scenario" || code=$?
+    expected=0; if [[ "$variant" == baseline ]]; then expected=1; fi
+    [[ "$code" == "$expected" ]] || exit 1
+  done
+done
+printf '%s\n' '{"baseline_reproduced":true,"fixed_passed":true,"scenarios":3}' > build/logs/ble-fast-result.json
 swiftc -I build/ble-session-mocks -L build/ble-session-mocks -lCoreBluetooth \
   -Xlinker -rpath -Xlinker "$PWD/build/ble-session-mocks" \
   LinkCard/PCRProtocol.swift LinkCard/PN532Identify.swift LinkCard/BLEProfiles.swift LinkCard/PCRBluetooth.swift \
   Reference/BLESessionChecks.swift -o build/ble-session-checks
 build/ble-session-checks | tee build/logs/ble-session-checks.log
+touch build/logs/ble-host-passed
 
 # Execute the actual Foundation-only Swift parser on the macOS host.
 swiftc LinkCard/PCRProtocol.swift Reference/PCRProtocolChecks.swift -o build/pcr-protocol-checks

@@ -351,6 +351,37 @@ final class MistEffectLifecycleTests: XCTestCase {
 
 // No radio access: exercise the real dismissal methods on a fresh coordinator.
 final class BLEConnectionPresentationTests: XCTestCase {
+    @MainActor func testNativePairingSheetWithSyntheticReaderOnly() throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let root = UIViewController(); root.view.backgroundColor = .systemBackground
+        window.rootViewController = root; window.makeKeyAndVisible()
+        defer { root.dismiss(animated: false); window.isHidden = true }
+        let card = BLEPairingCard(title: "演示读写器", state: "已发现", candidates: [],
+                                 selectedID: .constant(nil), remember: .constant(false),
+                                 enabled: true, result: nil, onConnect: {}, onClose: {})
+        let host = UIHostingController(rootView: card)
+        host.modalPresentationStyle = .pageSheet
+        let sheet = try XCTUnwrap(host.sheetPresentationController)
+        sheet.detents = [.custom(identifier: .init("pairing")) { _ in 420 }]
+        sheet.preferredCornerRadius = 28
+        sheet.prefersGrabberVisible = true
+        root.present(host, animated: false)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.35))
+        host.view.layoutIfNeeded()
+        XCTAssertTrue(root.presentedViewController === host)
+        XCTAssertGreaterThan(host.view.bounds.height, 300)
+        XCTAssertLessThanOrEqual(host.view.bounds.height, 500)
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            XCTAssertTrue(window.drawHierarchy(in: window.bounds, afterScreenUpdates: true))
+        }
+        XCTAssertEqual(image.size.width, 390)
+        // Retained only inside the runner's private xcresult; public workflow exports no images.
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "native-pairing-synthetic-reader-no-private-data"
+        attachment.lifetime = .keepAlways; add(attachment)
+    }
     @MainActor func testInteractiveDismissCancelsCurrentDiscovery() {
         let ble = PCRBluetooth()
         let trusted = ble.preferences.trusted.map { $0.id }
@@ -1072,6 +1103,20 @@ final class PN532IdentifyTests: XCTestCase {
         XCTAssertFalse(NFCProIdentify.permits(name: "PCR-NFCPRO", builtinProfile: false, channel: ["FF00","FF02","FF01"], model: nil))
         XCTAssertFalse(NFCProIdentify.permits(name: "PCR-NFCPRO", builtinProfile: true, channel: ["FFE0","FFE1","FFE2"], model: nil))
         XCTAssertFalse(NFCProIdentify.permits(name: "PCR-NFCPRO", builtinProfile: true, channel: ["FF00","FF02","FF01"], model: "OTHER"))
+    }
+    func testCanonicalFF00GateStillRejectsOtherChannels() {
+        for channel in [["FF00", "FF02", "FF01"],
+                        ["FF00", "FF02", "FF01"].map(BLEProfile.canonicalUUID),
+                        ["0000ff00", "0000ff02", "0000ff01"],
+                        ["0000ff00-0000-1000-8000-00805f9b34fb", "FF02", "FF01"]] {
+            XCTAssertTrue(NFCProIdentify.permits(name: "PCR-NFCPRO(BLE)", builtinProfile: true, channel: channel, model: "TD5322A"))
+            XCTAssertFalse(NFCProIdentify.permits(name: "PCR-NFCPRO(BLE)", builtinProfile: false, channel: channel, model: "TD5322A"))
+            XCTAssertFalse(NFCProIdentify.permits(name: "PCR-NFCPRO(BLE)", builtinProfile: true, channel: channel, model: "OTHER"))
+        }
+        for bad in [["FF00", "FF01", "FF02"], ["FF00", "FF02"], DeviceAdapters.pcrChannels[1],
+                    ["0000FF00-0000-1000-8000-00805F9B34FA", "FF02", "FF01"]] {
+            XCTAssertFalse(NFCProIdentify.permits(name: "PCR-NFCPRO", builtinProfile: true, channel: bad, model: nil))
+        }
     }
     func testDisconnectedClickIsSafeAndNotFakeSuccess() {
         let b = PCRBluetooth(); b.identifyCard()

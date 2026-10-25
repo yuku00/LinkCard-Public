@@ -44,7 +44,7 @@ class GlassContracts(unittest.TestCase):
         # Standard GATT reads now require explicit user action and a fixed whitelist.
         self.assertEqual(s.count('peripheral.readValue(for:'), 1)
         self.assertIn('guard connected, canReadDeviceInformation, !busy, !closing', s)
-        self.assertIn('CBUUID(string: "180A")', s)
+        self.assertIn('BLEProfile.sameUUID($0.uuid.uuidString, "180A")', s)
         self.assertIn('informationCharacteristics = PCRDeviceInformation.fields.compactMap', s)
         self.assertIn('$0.properties.contains(.read)', s)
         fields = source('PCRProtocol.swift').split('static let fields:', 1)[1].split('static func displayValue', 1)[0]

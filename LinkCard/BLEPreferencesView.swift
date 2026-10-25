@@ -74,61 +74,21 @@ private struct BLEConnectionConfirmation: View {
         candidates.first { $0.id == selectedID }
     }
     var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    HStack(spacing: 8) {
-                        Image(systemName: "wave.3.right").foregroundStyle(.secondary)
-                            .accessibilityHidden(true)
-                        Text(selection?.label ?? "选择设备").font(.headline)
-                            .accessibilityIdentifier("connection.device")
-                        Spacer(minLength: 8)
-                        Text(connectionState).font(.subheadline).foregroundStyle(.secondary)
-                            .accessibilityIdentifier("connection.state")
-                    }
-                    if candidates.count > 1 {
-                        Picker("设备", selection: $selectedID) {
-                            Text("请选择设备").tag(nil as UUID?)
-                            ForEach(candidates) { candidate in
-                                Text(candidate.label + " · " + candidate.maskedID).tag(Optional(candidate.id))
-                            }
-                        }.frame(minHeight: 44)
-                    }
-                    Toggle("自动连接此设备", isOn: $remember).frame(minHeight: 44)
-                        .disabled(selection == nil || ble.active)
-                        .accessibilityIdentifier("connection.remember")
-                    Button {
-                        guard let selected = selection else { return }
-                        attempted = true
-                        ble.confirmConnection(selected, profileID: profileID, remember: remember)
-                    } label: {
-                        Text("连接").frame(maxWidth: .infinity, minHeight: 44)
-                    }.buttonStyle(.borderedProminent)
-                        .disabled(selection == nil || ble.active)
-                        .accessibilityIdentifier("connection.connect")
-                    if attempted {
-                        Text(ble.status).font(.footnote).foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("connection.result")
-                    }
-                }
-            }
-            .navigationTitle("连接设备")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") { ble.cancelConnectionPrompt() }
-                        .accessibilityIdentifier("connection.close")
-                }
-            }
-        }
-        .buttonStyle(.automatic)
-        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : (candidates.count > 1 || attempted ? [.height(380), .large] : [.height(300), .large]))
+        BLEPairingCard(title: selection?.label ?? "选择设备", state: connectionState,
+                       candidates: candidates.map { BLEPairingChoice(id: $0.id, label: $0.label + " · " + $0.maskedID) },
+                       selectedID: $selectedID, remember: $remember,
+                       enabled: selection != nil && !ble.active, result: attempted ? ble.status : nil,
+                       onConnect: {
+                           guard let selected = selection else { return }
+                           attempted = true
+                           ble.confirmConnection(selected, profileID: profileID, remember: remember)
+                       }, onClose: { ble.cancelConnectionPrompt() })
+        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : (candidates.count > 1 || attempted ? [.height(480), .large] : [.height(420), .large]))
         .presentationDragIndicator(.visible)
         .onAppear {
             guard !initialized else { return }
             initialized = true
-            if candidates.count == 1 { selectedID = device.id }
+            selectedID = device.id
             loadSelection()
         }
         .onChange(of: selectedID) { _ in
@@ -149,6 +109,84 @@ private struct BLEConnectionConfirmation: View {
         // A draft only: cancellation never writes trust. Reopen from persisted preferences.
         remember = ble.preferences.trusted.contains { $0.id == selected.id }
         profileID = ble.suggestedProfile(for: selected)
+    }
+}
+
+/// The production pairing face is independently hostable using synthetic labels in native tests.
+/// It owns no discovery, trust, identifiers beyond selection keys, or transport APIs.
+struct BLEPairingChoice: Identifiable {
+    let id: UUID
+    let label: String
+}
+struct BLEPairingCard: View {
+    let title: String
+    let state: String
+    let candidates: [BLEPairingChoice]
+    @Binding var selectedID: UUID?
+    @Binding var remember: Bool
+    let enabled: Bool
+    let result: String?
+    let onConnect: () -> Void
+    let onClose: () -> Void
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                HStack {
+                    Text("附近的读写器").font(.subheadline).foregroundStyle(.secondary)
+                    Spacer()
+                    Button { onClose() } label: {
+                        Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 32, height: 32)
+                            .background(Color.secondary.opacity(0.12), in: Circle())
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }.accessibilityLabel("关闭")
+                        .accessibilityIdentifier("connection.close")
+                }
+                // Generic SF Symbols, not Apple's private accessory pairing UI or branding.
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "externaldrive.fill")
+                        .font(.system(size: 72, weight: .regular))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 130, height: 86)
+                    Image(systemName: "wave.3.right")
+                        .font(.system(size: 25, weight: .medium)).foregroundStyle(.tint)
+                }.accessibilityHidden(true)
+                VStack(spacing: 6) {
+                    Text(title)
+                        .font(.title2.weight(.semibold)).multilineTextAlignment(.center)
+                        .accessibilityIdentifier("connection.device")
+                    Text(state).font(.subheadline).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("connection.state")
+                }
+                if candidates.count > 1 {
+                    Picker("切换设备", selection: $selectedID) {
+                        ForEach(candidates) { candidate in
+                            Text(candidate.label).tag(Optional(candidate.id))
+                        }
+                    }.pickerStyle(.menu).frame(minHeight: 44)
+                        .accessibilityIdentifier("connection.candidates")
+                }
+                Button {
+                    onConnect()
+                } label: {
+                    Text("连接").font(.headline).frame(maxWidth: .infinity, minHeight: 44)
+                }.buttonStyle(.borderedProminent).controlSize(.large)
+                    .disabled(!enabled)
+                    .accessibilityIdentifier("connection.connect")
+                Toggle("自动连接此设备", isOn: $remember)
+                    .font(.subheadline).frame(minHeight: 44)
+                    .disabled(!enabled)
+                    .accessibilityIdentifier("connection.remember")
+                if let result = result {
+                    Text(result).font(.footnote).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("connection.result")
+                }
+            }.padding(.horizontal, 28).padding(.top, 12).padding(.bottom, 24)
+        }
+        .buttonStyle(.automatic)
     }
 }
 
@@ -185,7 +223,7 @@ struct BLEPreferencesView: View {
                             }.buttonStyle(MistActionStyle())
                         }
                     }
-                    Text("扫描窗口结束后，从本轮发现的已信任设备按此顺序选择一台。连接中不抢连；失败仅原目标有限重试，不切换别的设备。取消/手动断开后须点扫描或恢复才再次尝试。")
+                    Text("发现已记住且允许自动连接的设备就立即连接；已有多台时按此顺序选，不等待尚未出现的高优先设备。连接中与已打开的选择弹窗不抢连；失败仅原目标有限重试。取消/手动断开只抑制本周期，下次进入前台或蓝牙重新开启按设置恢复。")
                 }
                 Section("高级连接配置") {
                     Picker("设备", selection: $configurationDeviceID) {

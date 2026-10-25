@@ -243,6 +243,7 @@ private final class RejectingPreferencesDefaults: UserDefaults, @unchecked Senda
         var custom = BLEProfile.builtin
         custom.id = UUID(); custom.name = "Connection only"; custom.adapterID = "connect-only"
         precondition(unknown.addProfile(custom) == nil)
+        unknown.setAutomaticScanning(false) // Explicit settings selection must precede any saved auto-connection.
         unknown.scan()
         unknown.centralManager(cu, didDiscover: p, advertisementData: [CBAdvertisementDataLocalNameKey: "PCR-NFCPRO"], rssi: -50)
         unknown.confirmConnection(unknown.devices[0], profileID: custom.id, remember: true)
@@ -334,6 +335,120 @@ private final class RejectingPreferencesDefaults: UserDefaults, @unchecked Senda
         b.setForeground(false)
         BLEPreferences().save()
     }
+    static func immediateDiscoveryChecks() {
+        let first = CBPeripheral(name: "PCR-NFCPRO", services: [])
+        let second = CBPeripheral(name: "PCR-NFCPRO(BLE)", services: [])
+        func advertise(_ b: PCRBluetooth, _ c: CBCentralManager, _ p: CBPeripheral) {
+            b.centralManager(c, didDiscover: p, advertisementData: [CBAdvertisementDataLocalNameKey: p.name ?? ""], rssi: -55)
+        }
+        BLEPreferences().save()
+        let b = PCRBluetooth(); b.setForeground(true)
+        let c = CBCentralManager.latest!; b.centralManagerDidUpdateState(c)
+        let start = ProcessInfo.processInfo.systemUptime
+        advertise(b,c,first)
+        precondition(b.connectionPrompt?.id == first.identifier && b.scanning && !b.active)
+        precondition(ProcessInfo.processInfo.systemUptime - start < 1, "Prompt intent must be immediate, not scan-end")
+        b.connectionPromptDidAppear()
+        for _ in 0..<100 { advertise(b,c,first) }
+        advertise(b,c,second)
+        precondition(b.devices.count == 2 && b.connectionPrompt?.id == first.identifier && c.connections == 0)
+        b.cancelConnectionPrompt(); b.connectionPromptDidDisappear()
+        advertise(b,c,second); b.enterDeviceFlow(); b.centralManagerDidUpdateState(c)
+        precondition(!b.scanning && b.connectionPrompt == nil && c.connections == 0)
+        b.setForeground(false)
+        var saved = BLEPreferences()
+        saved.trusted = [BLETrust(id: first.identifier, profileID: BLEProfile.builtin.id), BLETrust(id: second.identifier, profileID: BLEProfile.builtin.id)]
+        saved.save()
+        let auto = PCRBluetooth(); auto.setForeground(true)
+        let ca = CBCentralManager.latest!; auto.centralManagerDidUpdateState(ca)
+        advertise(auto,ca,second)
+        precondition(auto.active && !auto.scanning && ca.connections == 1 && auto.selected?.id == second.identifier,
+                     "Do not wait for unseen higher-priority first device")
+        advertise(auto,ca,first); auto.finishDiscovery()
+        precondition(ca.connections == 1 && auto.selected?.id == second.identifier)
+        precondition(second.reads.isEmpty && second.writes.isEmpty)
+        auto.disconnect(); auto.centralManager(ca, didDisconnectPeripheral: second, error: nil)
+        advertise(auto,ca,first); auto.enterDeviceFlow()
+        precondition(ca.connections == 1 && !auto.scanning)
+        auto.setForeground(false)
+        // Both already appeared in a manual scan before auto was enabled: persisted order wins.
+        saved.autoScan = false; saved.showDiscoveryPrompt = false; saved.save()
+        let both = PCRBluetooth(); both.setForeground(true); both.scan()
+        let cb = CBCentralManager.latest!; both.centralManagerDidUpdateState(cb)
+        advertise(both,cb,second); advertise(both,cb,first)
+        precondition(cb.connections == 0 && both.devices.count == 2)
+        both.setAutomaticScanning(true)
+        precondition(cb.connections == 1 && both.selected?.id == first.identifier && !both.scanning)
+        both.setForeground(false)
+        BLEPreferences().save()
+        print("PASS: immediate prompt, 100 duplicate broadcasts, merging candidates, stable selection, cycle cancel, first saved arrival, existing-candidate priority and no automatic reads/writes.")
+    }
+    static func actualChannelChecks() {
+        func probe(_ service: String, _ writeID: String, _ notifyID: String,
+                   writeProps: CBCharacteristicProperties = [.write, .writeWithoutResponse, .notify],
+                   notifyProps: CBCharacteristicProperties = [.notify, .read],
+                   valid: Bool = true, custom: Bool = false, extraFirst: Bool = true) {
+            var prefs = BLEPreferences(); prefs.autoScan = false; prefs.showDiscoveryPrompt = false
+            var profile = BLEProfile.builtin
+            if custom {
+                profile = BLEProfile(id: UUID(), name: "Explicit connection-only", namePrefix: "PCR", serviceUUID: "FF00", writeUUID: "FF02", notifyUUID: "FF01", adapterID: "connect-only")
+                prefs.profiles.append(profile)
+            }
+            prefs.save()
+            let tx = CBCharacteristic(writeID, writeProps), rx = CBCharacteristic(notifyID, notifyProps)
+            let gatt = CBService(service, [tx,rx])
+            let nordic = DeviceAdapters.pcrChannels[1]
+            let other = CBService(nordic[0], [CBCharacteristic(nordic[1], .write), CBCharacteristic(nordic[2], .notify)])
+            let model = CBCharacteristic(BLEProfile.canonicalUUID("2A24"), .read, value: "TD5322A")
+            let info = CBService(BLEProfile.canonicalUUID("180A"), [model])
+            let p = CBPeripheral(name: "PCR-NFCPRO(BLE)", services: extraFirst ? [other,info,gatt] : [info,gatt])
+            let b = PCRBluetooth(); b.setForeground(true); b.scan()
+            let c = CBCentralManager.latest!; b.centralManagerDidUpdateState(c)
+            b.centralManager(c, didDiscover: p, advertisementData: [CBAdvertisementDataLocalNameKey: p.name!], rssi: -50)
+            b.confirmConnection(b.devices[0], profileID: profile.id, remember: true)
+            precondition(BLEPreferences.load().trusted.first?.profileID == profile.id)
+            b.centralManager(c, didConnect: p); b.peripheral(p, didDiscoverServices: nil)
+            // Deliberately finish Nordic before FF00: selection must wait for actual discovery completion.
+            for s in p.services! { b.peripheral(p, didDiscoverCharacteristicsFor: s, error: nil) }
+            precondition(p.writes.isEmpty && p.reads.isEmpty)
+            if valid {
+                precondition(p.subscriptions == 1 && rx.isNotifying && !other.characteristics![1].isNotifying)
+                precondition(!b.canIdentify, "Wait for subscription callback")
+                b.peripheral(p, didUpdateNotificationStateFor: rx, error: nil)
+                precondition(b.ready && b.canIdentify == !custom && b.channelSummary.contains(service))
+                b.readDeviceInformation(); b.peripheral(p, didUpdateValueFor: model, error: nil)
+                precondition(b.deviceInformation["2A24"] == "TD5322A" && b.canIdentify == !custom)
+                if !custom {
+                    model.value = Data("OTHER".utf8)
+                    b.readDeviceInformation(); b.peripheral(p, didUpdateValueFor: model, error: nil)
+                    b.identifyCard(); precondition(!b.identifying && p.writes.isEmpty, "Long UUID model conflict must still block")
+                } else {
+                    b.identifyCard(); precondition(!b.identifying && p.writes.isEmpty)
+                    precondition(b.identifyUnavailableReason?.contains("内置") == true)
+                }
+            } else {
+                b.identifyCard()
+                precondition(!b.ready && !b.canIdentify && p.subscriptions == 0 && p.writes.isEmpty)
+                precondition(b.channelAdmissionFailure != nil && b.identifyMessage.contains("准入失败"))
+            }
+            b.setForeground(false)
+        }
+        for variant in 0..<4 {
+            let values = ["FF00", "FF02", "FF01"].enumerated().map { index,value in
+                variant == 0 ? value : variant == 1 ? BLEProfile.canonicalUUID(value) : variant == 2 ? "0000" + value.lowercased() : (index == 1 ? value : BLEProfile.canonicalUUID(value).lowercased())
+            }
+            probe(values[0],values[1],values[2])
+        }
+        probe("FF00","FF02","FF01", writeProps: .writeWithoutResponse, notifyProps: .indicate)
+        probe("FF00","FF02","FF01", writeProps: [.read,.notify], valid: false)
+        probe("FF00","FF02","FF01", notifyProps: .read, valid: false)
+        probe("FF00","FF01","FF02", valid: false)
+        probe("FF00","FF02","FF03", valid: false)
+        probe("0000FF00-0000-1000-8000-00805F9B34FA","FF02","FF01", valid: false)
+        probe("FF00","FF02","FF01", custom: true)
+        BLEPreferences().save()
+        print("PASS: actual short/32-bit/long/mixed UUIDs, FF00 priority over Nordic, FF02 notify not misselected, write/notify/indicate properties, model key normalization, explicit saved custom profile and fail-closed protocol gates.")
+    }
     static func main() {
         // Host executable's own defaults domain only; preserve any pre-existing fixture.
         let key = "linkcard.ble.preferences.v1"
@@ -342,6 +457,8 @@ private final class RejectingPreferencesDefaults: UserDefaults, @unchecked Senda
             if let original = original { UserDefaults.standard.set(original, forKey: key) }
             else { UserDefaults.standard.removeObject(forKey: key) }
         }
+        immediateDiscoveryChecks()
+        actualChannelChecks()
         persistenceFailureChecks()
         recoveryChecks()
         presentationChecks()

@@ -13,8 +13,13 @@ public protocol CBPeripheralDelegate: AnyObject {}
 public final class CBUUID: NSObject {
     public let uuidString: String
     public init(string: String) { uuidString = string.uppercased() }
-    public override func isEqual(_ object: Any?) -> Bool { (object as? CBUUID)?.uuidString == uuidString }
-    public override var hash: Int { uuidString.hashValue }
+    private var canonical: String {
+        if uuidString.count == 4 { return "0000" + uuidString + "-0000-1000-8000-00805F9B34FB" }
+        if uuidString.count == 8 { return uuidString + "-0000-1000-8000-00805F9B34FB" }
+        return uuidString
+    }
+    public override func isEqual(_ object: Any?) -> Bool { (object as? CBUUID)?.canonical == canonical }
+    public override var hash: Int { canonical.hashValue }
 }
 public struct CBCharacteristicProperties: OptionSet {
     public let rawValue: Int

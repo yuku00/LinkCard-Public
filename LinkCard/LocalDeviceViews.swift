@@ -115,6 +115,14 @@ struct PCRDeviceView: View {
         MistPanel(id: "device.identification") {
             VStack(alignment: .leading, spacing: 12) {
                 Label("基础寻卡", systemImage: "wave.3.right").font(.headline)
+                Text("连接配置：" + ble.selectedProfileName).font(.caption).foregroundStyle(MistStyle.secondary)
+                Text(ble.channelSummary).font(.caption.monospaced())
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("device.channel.actual")
+                if !ble.identifying, let reason = ble.identifyUnavailableReason {
+                    Text(reason).font(.footnote).foregroundStyle(MistStyle.secondary)
+                        .accessibilityIdentifier("device.channel.admission")
+                }
                 Text("将启用易失性读卡模式，只识别 ISO 14443A。不读取保护扇区、不改 UID、不写卡、不破解或恢复密钥；不开云 API、不升级固件。")
                     .font(.footnote).foregroundStyle(MistStyle.secondary)
                 Button {
