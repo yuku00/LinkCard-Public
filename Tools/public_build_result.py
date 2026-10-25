@@ -90,6 +90,14 @@ def main():
         'fixed_passed': fast.get('fixed_passed') is True,
         'scenarios': 3 if fast.get('scenarios') == 3 else 0,
         'host_suite': 'passed' if Path('build/logs/ble-host-passed').is_file() else 'not-validated'}
+    import re
+    # Only public test source line numbers; never forward assertion text, payloads or raw logs.
+    try:
+        host_log = Path('build/logs/build-package.log').read_text(errors='replace')[-262144:]
+        match = re.search(r'BLESessionChecks\.swift:([0-9]{1,5}): (?:Precondition|Assertion) failed', host_log)
+        report['host_assertion_line'] = int(match.group(1)) if match else None
+    except OSError:
+        report['host_assertion_line'] = None
     report['compile_diagnostic'] = compile_failure_kind(diagnostics=diagnostics['stages']['release'])
     destination = Path('build/public')
     destination.mkdir(parents=True, exist_ok=True)

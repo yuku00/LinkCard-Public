@@ -248,6 +248,7 @@ private final class RejectingPreferencesDefaults: UserDefaults, @unchecked Senda
         unknown.centralManager(cu, didDiscover: p, advertisementData: [CBAdvertisementDataLocalNameKey: "PCR-NFCPRO"], rssi: -50)
         unknown.confirmConnection(unknown.devices[0], profileID: custom.id, remember: true)
         precondition(BLEPreferences.load().trusted.first?.profileID == custom.id && cu.connections == 1)
+        unknown.setAutomaticScanning(true) // Restore auto consent for the following authorization-recovery scenario.
         precondition(p.writes.isEmpty && p.reads.isEmpty)
         unknown.setForeground(false)
         unknown.centralManager(cu, didDisconnectPeripheral: p, error: nil)
