@@ -65,7 +65,7 @@ enum PCRRoute {
     }
     static func explanation(for advertisedName: String) -> String {
         if isNFCPro(advertisedName) {
-            return "已识别 PCR-NFCPRO（厂商类型 -3、PN532 HAL），不是 PCRPANDA 文本型号。尚未证明连接后无需唤醒／初始化即可查询芯片版本，故不发送版本命令；可手动读取已提供的 180A 标准信息。"
+            return "已识别 PCR-NFCPRO（厂商类型 -3、PN532 HAL），不是 PCRPANDA 文本型号。可点击识别卡片启用易失性读卡模式；标准设备信息仍通过 180A 独立读取，不自动发送业务命令。"
         }
         return "型号／模式证据不足，业务版本查询未开放；可手动读取已提供的 180A 标准信息。"
     }

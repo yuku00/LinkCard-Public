@@ -8,6 +8,8 @@ struct PCRDeviceView: View {
     @State private var showOthers = false
     @State private var copied = false
     @State private var blePreferences = false
+    @State private var revealUID = false
+    @State private var copiedUID = false
     private var candidates: [PCRBluetooth.Device] { ble.devices.filter { ble.isCandidate($0) } }
     private var others: [PCRBluetooth.Device] { ble.devices.filter { !ble.isCandidate($0) } }
     private var disabledReason: String? {
@@ -46,6 +48,7 @@ struct PCRDeviceView: View {
                     }
                 }
             }
+            identificationCard
             MistPanel(id: "device.version") {
                 VStack(alignment: .leading, spacing: 14) {
                     Label("设备信息与版本", systemImage: "info.circle").font(.headline)
@@ -85,7 +88,7 @@ struct PCRDeviceView: View {
                             Text(line).font(.caption.monospaced()).textSelection(.enabled)
                         }
                         Text("复制内容仅含设备名称、服务 UUID 与特征属性；不含完整 identifier、序列号值或设备响应。")
-                        Text("FF00 通道与 PCR 名称都不是认证。保持严格文本型号门禁；不向未知协议试探，不寻卡、不写卡、不刷固件。仅 DFU 时停止。")
+                        Text("FF00 通道与 PCR 名称都不是认证。仅精确匹配的 NFCPRO 可由你点击启用基础寻卡；未知型号不试探、不写卡、不刷固件。仅 DFU 时停止。")
                     }.font(.footnote).foregroundStyle(MistStyle.secondary).padding(.top, 14)
                 }
             }
@@ -100,6 +103,44 @@ struct PCRDeviceView: View {
         .sheet(isPresented: $blePreferences) { BLEPreferencesView(ble: ble) }
         .onAppear { ble.enterDeviceFlow() }
         .onChange(of: ble.selected?.id) { _ in copied = false }
+    }
+    private var identificationCard: some View {
+        MistPanel(id: "device.identification") {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("基础寻卡", systemImage: "wave.3.right").font(.headline)
+                Text("将启用易失性读卡模式，只识别 ISO 14443A。不读取保护扇区、不改 UID、不写卡、不破解或恢复密钥；不开云 API、不升级固件。")
+                    .font(.footnote).foregroundStyle(MistStyle.secondary)
+                Button {
+                    revealUID = false; copiedUID = false; ble.identifyCard()
+                } label: {
+                    Label(ble.identifying ? "正在识别…" : "识别卡片", systemImage: "viewfinder")
+                        .frame(minHeight: 44)
+                }.disabled(ble.busy).accessibilityIdentifier("device.identify")
+                Text(ble.identifyMessage).font(.subheadline)
+                    .accessibilityIdentifier("device.identify.status")
+                if ble.identifying {
+                    Button("取消本次识别", role: .cancel) { ble.cancelIdentification() }
+                        .frame(minHeight: 44).accessibilityIdentifier("device.identify.cancel")
+                }
+                if let card = ble.identifiedCard {
+                    Text("UID · " + (revealUID ? card.uidHex : card.maskedUID)).font(.subheadline.monospaced())
+                    HStack {
+                        Button(revealUID ? "遮蔽 UID" : "显示 UID") { revealUID.toggle() }
+                        Button(copiedUID ? "已复制 UID" : "复制 UID") {
+                            UIPasteboard.general.setItems([["public.utf8-plain-text": card.uidHex]],
+                                options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(60)])
+                            copiedUID = true
+                        }
+                    }.frame(minHeight: 44)
+                    Text("ATQA 0x" + card.atqaHex + " · SAK 0x" + card.sakHex).font(.subheadline.monospaced())
+                    Text(card.candidate).font(.subheadline)
+                    Text("类型仅为候选，不能据 SAK 判断可克隆或可写 UID。UID 仅本地显示，复制由你主动触发。")
+                        .font(.footnote).foregroundStyle(MistStyle.secondary)
+                }
+                Text("本版仅完成寻卡里程碑；读扇区、写卡留待后续。成功后保留连接；取消或异常会断开隔离。")
+                    .font(.caption).foregroundStyle(MistStyle.secondary)
+            }
+        }
     }
     private var standardDeviceInformation: some View {
         VStack(alignment: .leading, spacing: 10) {

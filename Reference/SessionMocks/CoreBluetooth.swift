@@ -53,7 +53,8 @@ public final class CBPeripheral {
     public init(name: String, services: [CBService]) { self.name = name; self.services = services }
     public func discoverServices(_ uuids: [CBUUID]?) {}
     public func discoverCharacteristics(_ uuids: [CBUUID]?, for service: CBService) {}
-    public func maximumWriteValueLength(for type: CBCharacteristicWriteType) -> Int { 20 }
+    public var writeLimit = 20
+    public func maximumWriteValueLength(for type: CBCharacteristicWriteType) -> Int { writeLimit }
     public func readValue(for characteristic: CBCharacteristic) { reads.append(characteristic) }
     public func writeValue(_ data: Data, for characteristic: CBCharacteristic, type: CBCharacteristicWriteType) { writes.append(data) }
     public func setNotifyValue(_ enabled: Bool, for characteristic: CBCharacteristic) { characteristic.isNotifying = enabled; subscriptions += 1 }

@@ -13,7 +13,7 @@ swiftc -emit-module -emit-library -module-name CoreBluetooth Reference/SessionMo
   -o build/ble-session-mocks/libCoreBluetooth.dylib
 swiftc -I build/ble-session-mocks -L build/ble-session-mocks -lCoreBluetooth \
   -Xlinker -rpath -Xlinker "$PWD/build/ble-session-mocks" \
-  LinkCard/PCRProtocol.swift LinkCard/BLEProfiles.swift LinkCard/PCRBluetooth.swift \
+  LinkCard/PCRProtocol.swift LinkCard/PN532Identify.swift LinkCard/BLEProfiles.swift LinkCard/PCRBluetooth.swift \
   Reference/BLESessionChecks.swift -o build/ble-session-checks
 build/ble-session-checks | tee build/logs/ble-session-checks.log
 

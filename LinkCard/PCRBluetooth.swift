@@ -45,6 +45,22 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
     @Published private(set) var canQuery = false
     @Published private(set) var canReadDeviceInformation = false
     @Published private(set) var readingDeviceInformation = false
+    @Published private(set) var identifying = false
+    @Published private(set) var identifiedCard: PN532Card?
+    @Published private(set) var identifyMessage = "仅识别 ISO 14443A；尚未寻卡。"
+    private var identifyStep: NFCProIdentify.Step?
+    private var identifyExchange: PN532Exchange?
+    private var identifyReply: [UInt8]?
+    private var identifyGeneration = 0
+    private var identifyWait: DispatchWorkItem?
+    private var identifySettling = false
+    private var identifyChannel = [String]()
+    private var pendingCard: PN532Card?
+    var canIdentify: Bool {
+        connected && ready && !busy && !closing && NFCProIdentify.permits(
+            name: selected?.name ?? "", builtinProfile: connectionProfile == .builtin,
+            channel: identifyChannel, model: deviceInformation["2A24"])
+    }
     /// UUID-keyed, display-only values. Never persisted or logged.
     @Published private(set) var deviceInformation = [String: String]()
     var modelExplanation: String {
@@ -253,6 +269,10 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         if suppressSession { sessionSuppressed = true; retryAfterDisconnect = false }
         retryWork?.cancel(); retryWork = nil; dismissConnectionPrompt()
         deadline?.cancel(); scanRequested = false; scanning = false; central?.stopScan()
+        if identifying && (identifyMessage.hasPrefix("正在") || identifyMessage.hasPrefix("本次")) { identifyMessage = "本次识别已停止；连接已隔离，迟到响应不会用于下一次。" }
+        identifying = false; identifyGeneration += 1; identifyWait?.cancel(); identifyWait = nil
+        identifyStep = nil; identifyExchange = nil; identifyReply = nil; pendingCard = nil
+        identifiedCard = nil; identifySettling = false; identifyChannel = []
         busy = false; ready = false; canQuery = false; connected = false
         canReadDeviceInformation = false; readingDeviceInformation = false
         informationQueue = []; pendingInformation = nil; informationCharacteristics = []
@@ -318,17 +338,118 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         if tx.properties.contains(.write) { writeType = .withResponse }
         drain()
     }
+    /// Explicit click only; never called by discovery, trust, version or connection callbacks.
+    func identifyCard() {
+        guard !busy else { return }
+        guard canIdentify else {
+            identifyMessage = "请连接 PCR-NFCPRO / TD5322A，并使用内置配置的 FF00 通道；不会向其他型号试探。"
+            return
+        }
+        identifying = true; busy = true; identifiedCard = nil; pendingCard = nil
+        identifyMessage = "正在启用易失性读卡模式…"
+        identifyGeneration += 1; identifyStep = nil; identifyExchange = nil
+        identifyReply = nil; identifySettling = false
+        // Wake only, no embedded unvalidated vendor frame. After a quiet interval,
+        // host ACK aborts any old command still pending across a BLE reconnection.
+        sendIdentifyBytes(NFCProIdentify.wake)
+    }
+    func cancelIdentification() {
+        guard identifying else { return }
+        identifyMessage = "已取消本次寻卡；已断开以隔离迟到响应。重新连接后可再试。"
+        disconnect("本次寻卡已取消，连接已隔离。")
+    }
+    private func sendIdentifyBytes(_ data: Data) {
+        guard identifying, let peripheral = peripheral else { return }
+        // 20-byte conservative BLE payload, also bounded by CoreBluetooth's actual limit.
+        let limit = min(20, peripheral.maximumWriteValueLength(for: writeType))
+        guard limit > 0 else { disconnect("设备未提供有效写入上限。", reason: .service); return }
+        fragments = stride(from: 0, to: data.count, by: limit).map {
+            data.subdata(in: $0..<min($0 + limit, data.count))
+        }
+        arm(identifyStep?.timeout ?? 2) { [weak self] in
+            guard let self = self, self.identifying else { return }
+            self.identifyMessage = self.identifyStep == .poll
+                ? "寻卡等待超时，未取得有效结果；不能据此判定无卡。已断开，请重新连接。"
+                : "读卡模式初始化或收尾超时；已停止并断开，不自动重试。"
+            self.disconnect("寻卡事务超时，连接已隔离。", reason: .timeout)
+        }
+        drain()
+    }
+    private func sendIdentifyStep() {
+        guard let step = identifyStep, identifying else { return }
+        identifyExchange = PN532Exchange(command: step.command); identifyReply = nil
+        if step == .poll { identifyMessage = "正在识别卡片…请将一张自有卡放在天线中心。" }
+        sendIdentifyBytes(step.packet)
+    }
+    private func identifyWritesDrained() {
+        guard identifying, !awaitingWrite, fragments.isEmpty else { return }
+        if identifyStep != nil { consumeIdentifyReply(); return }
+        guard !identifySettling else { return }
+        identifySettling = true
+        let generation = identifyGeneration
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self, self.identifying, self.identifyGeneration == generation else { return }
+            self.identifyWait = nil
+            if self.identifyExchange == nil {
+                // Marker differentiates wake wait from abort wait; no response is parsed here.
+                self.identifyExchange = PN532Exchange(command: 0)
+                self.identifySettling = false
+                self.sendIdentifyBytes(NFCProIdentify.ack)
+            } else {
+                self.identifyStep = .sam; self.sendIdentifyStep()
+            }
+        }
+        identifyWait = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+    private func receiveIdentify(_ value: Data) {
+        // Quarantine startup/abort notifications; no live command exists in this interval.
+        guard identifyStep != nil, identifyExchange != nil else { return }
+        do {
+            if let reply = try identifyExchange?.feed(value) {
+                identifyReply = reply; consumeIdentifyReply()
+            }
+        } catch { failIdentification() }
+    }
+    private func consumeIdentifyReply() {
+        guard !awaitingWrite, fragments.isEmpty, let reply = identifyReply,
+              let step = identifyStep, identifying else { return }
+        identifyReply = nil
+        do {
+            if step == .poll { pendingCard = try PN532Card.parse(reply) }
+            else if !reply.isEmpty { throw PN532Error.unexpected }
+            switch step {
+            case .sam: identifyStep = .retries
+            case .retries: identifyStep = .poll
+            case .poll: identifyStep = .fieldOff
+            case .fieldOff:
+                identifiedCard = pendingCard; pendingCard = nil
+                identifyMessage = identifiedCard == nil ? "未发现 ISO 14443A 卡片；可调整位置后再点一次。" : "识别完成 · 射频已关闭 · 保持蓝牙连接"
+                identifying = false; identifyStep = nil; identifyExchange = nil
+                finishQuery("本次寻卡完成 · 保持连接")
+                return
+            }
+            sendIdentifyStep()
+        } catch { failIdentification() }
+    }
+    private func failIdentification() {
+        identifyMessage = "响应校验失败或设备拒绝命令；本次已停止并断开，不切换协议、不自动重发。"
+        disconnect("寻卡响应异常，连接已隔离。", reason: .service)
+    }
     private func drain() {
         guard busy, !closing, let peripheral = peripheral, let tx = tx else { return }
         if writeType == .withResponse {
-            guard !awaitingWrite, !fragments.isEmpty else { return }
-            awaitingWrite = true
-            peripheral.writeValue(fragments.removeFirst(), for: tx, type: .withResponse)
+            guard !awaitingWrite else { return }
+            if !fragments.isEmpty {
+                awaitingWrite = true
+                peripheral.writeValue(fragments.removeFirst(), for: tx, type: .withResponse)
+            }
         } else {
             while peripheral.canSendWriteWithoutResponse && !fragments.isEmpty {
                 peripheral.writeValue(fragments.removeFirst(), for: tx, type: .withoutResponse)
             }
         }
+        identifyWritesDrained()
     }
     private func arm(_ seconds: Double, _ action: @escaping () -> Void) {
         deadline?.cancel(); let work = DispatchWorkItem(block: action); deadline = work
@@ -421,6 +542,7 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
                   write.properties.contains(.write) || write.properties.contains(.writeWithoutResponse),
                   notify.properties.contains(.notify) || notify.properties.contains(.indicate) else { continue }
             tx = write; rx = notify
+            identifyChannel = [s.uuid.uuidString, write.uuid.uuidString, notify.uuid.uuidString]
             writeType = write.properties.contains(.write) ? .withResponse : .withoutResponse
             writeLimit = peripheral.maximumWriteValueLength(for: writeType)
             peripheral.setNotifyValue(true, for: notify)
@@ -467,6 +589,7 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         }
         guard self.peripheral === peripheral, characteristic === rx, busy, !closing else { return }
         guard error == nil, let value = characteristic.value else { disconnect("通知接收失败。", reason: .service); return }
+        if identifying { receiveIdentify(value); return }
         do {
             if let version = try parser.feed(value) {
                 result = version

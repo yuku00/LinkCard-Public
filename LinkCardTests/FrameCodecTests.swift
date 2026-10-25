@@ -1009,3 +1009,73 @@ extension FusionPresentationTests {
         // Reuse the existing three-stage/isolation and owner-release tests too.
     }
 }
+
+// All card identifiers below are synthetic test vectors, never captured card data.
+final class PN532IdentifyTests: XCTestCase {
+    private func response(_ code: UInt8 = 0x4B, _ payload: [UInt8] = [0]) -> Data {
+        let body: [UInt8] = [0xD5, code] + payload
+        return Data([0, 0, 255, UInt8(body.count), UInt8(truncatingIfNeeded: -body.count)] + body + [UInt8(truncatingIfNeeded: -body.reduce(0, { $0 + Int($1) })), 0])
+    }
+    func testEveryNotificationSplitAndCoalescedACK() throws {
+        let packet = NFCProIdentify.ack + response()
+        for split in 0...packet.count {
+            var parser = PN532Exchange(command: 0x4A)
+            let first = try parser.feed(Data(packet.prefix(split)))
+            if let first = first { XCTAssertEqual(first, [0]); XCTAssertEqual(split, packet.count) }
+            else { XCTAssertEqual(try parser.feed(Data(packet.dropFirst(split))), [0]) }
+        }
+        var parser = PN532Exchange(command: 0x4A)
+        var result: [UInt8]?
+        for byte in packet { result = try parser.feed(Data([byte])) ?? result }
+        XCTAssertEqual(result, [0])
+    }
+    func testStrictACKNAKChecksumsAndCorrelation() {
+        let packet = NFCProIdentify.ack + response()
+        for index in [0, 4, 5, 9, 10, 11, 12, packet.count - 2, packet.count - 1] {
+            var corrupt = packet; corrupt[index] ^= 1
+            var p = PN532Exchange(command: 0x4A)
+            XCTAssertThrowsError(try p.feed(corrupt), "mutation at \(index)")
+        }
+        for invalid in [response(), Data([0,0,255,255,0,0]), NFCProIdentify.ack + response(0x15), NFCProIdentify.ack + NFCProIdentify.ack,
+                        packet + Data([0]), packet + response(), Data(repeating: 0, count: 1025), Data([0,0,255,255,255,0])] {
+            var p = PN532Exchange(command: 0x4A); XCTAssertThrowsError(try p.feed(invalid))
+        }
+        var p = PN532Exchange(command: 0x4A)
+        XCTAssertThrowsError(try p.feed(NFCProIdentify.ack + Data([0,0,255,1,255,127,129,0])))
+    }
+    func testCardLengthsATSNoCardAndCandidates() throws {
+        XCTAssertNil(try PN532Card.parse([0]))
+        for length in [4, 7, 10] {
+            let uid = Array(repeating: UInt8(0xA5), count: length)
+            let card = try XCTUnwrap(PN532Card.parse([1,1,0,4,8,UInt8(length)] + uid))
+            XCTAssertEqual(card.uid, uid); XCTAssertEqual(card.atqaHex, "0004")
+            XCTAssertEqual(card.sakHex, "08"); XCTAssertFalse(card.maskedUID.contains("A5"))
+            XCTAssertTrue(card.candidate.contains("候选"))
+        }
+        XCTAssertNotNil(try PN532Card.parse([1,1,0,4,0x20,4,0xA5,0xA5,0xA5,0xA5,2,0]))
+        for bad: [UInt8] in [[0,0], [2], [1,1,0,4,8,3,1,2,3], [1,1,0,4,8,4],
+                            [1,2,0,4,8,4,1,2,3,4], [1,1,0,4,0x20,4,1,2,3,4],
+                            [1,1,0,4,8,4,1,2,3,4,0], [1,1,0,4,4,4,1,2,3,4]] {
+            XCTAssertThrowsError(try PN532Card.parse(bad))
+        }
+    }
+    func testCommandAllowlistAndModelBoundary() {
+        XCTAssertEqual(NFCProIdentify.Step.sam.packet, Data([0,0,255,5,251,212,20,1,20,1,2,0]))
+        XCTAssertEqual(NFCProIdentify.Step.poll.packet, Data([0,0,255,4,252,212,74,1,0,225,0]))
+        XCTAssertEqual(NFCProIdentify.Step.allCases.count, 4)
+        for name in ["PCR-NFCPRO", "PCR-NFCPRO(BLE)"] {
+            XCTAssertTrue(NFCProIdentify.permits(name: name, builtinProfile: true, channel: ["FF00","FF02","FF01"], model: "TD5322A"))
+        }
+        for name in ["PCR-NFCPRO clone", "PCR532", "PcrGP_V2.0(BLE)", ""] {
+            XCTAssertFalse(NFCProIdentify.permits(name: name, builtinProfile: true, channel: ["FF00","FF02","FF01"], model: nil))
+        }
+        XCTAssertFalse(NFCProIdentify.permits(name: "PCR-NFCPRO", builtinProfile: false, channel: ["FF00","FF02","FF01"], model: nil))
+        XCTAssertFalse(NFCProIdentify.permits(name: "PCR-NFCPRO", builtinProfile: true, channel: ["FFE0","FFE1","FFE2"], model: nil))
+        XCTAssertFalse(NFCProIdentify.permits(name: "PCR-NFCPRO", builtinProfile: true, channel: ["FF00","FF02","FF01"], model: "OTHER"))
+    }
+    func testDisconnectedClickIsSafeAndNotFakeSuccess() {
+        let b = PCRBluetooth(); b.identifyCard()
+        XCTAssertFalse(b.identifying); XCTAssertFalse(b.busy); XCTAssertNil(b.identifiedCard)
+        XCTAssertTrue(b.identifyMessage.contains("请连接"))
+    }
+}

@@ -404,6 +404,11 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["前台保持连接，按需读取。"].waitForExistence(timeout: 6))
         let read = app.buttons["device.read"]; reveal(read)
         XCTAssertFalse(read.isEnabled, "No device means read stays disabled; no permission bypass")
+        let identify = app.buttons["device.identify"]; reveal(identify); tap(identify)
+        let identifyStatus = app.staticTexts["device.identify.status"]; reveal(identifyStatus)
+        XCTAssertTrue(identifyStatus.label.contains("请连接 PCR-NFCPRO / TD5322A"), "Real button reaches production guard without fake radio success")
+        XCTAssertFalse(app.buttons["device.identify.cancel"].exists)
+        XCTAssertFalse(read.isEnabled)
         // Never tap scan/authorize/connect on an unattended simulator.
         tap(app.buttons["tab.0"])
         // Dithering belongs to Photo mode, not the default Date editor. Enter
