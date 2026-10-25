@@ -28,6 +28,10 @@ def enum(value, allowed, default):
 
 
 def make_report(logs, environment):
+    try:
+        from native_test_runner import safe_progress, public_methods
+    except ModuleNotFoundError:
+        from Tools.native_test_runner import safe_progress, public_methods
     unit = read_result(logs / 'mist-uikit-result.json')
     full = read_result(logs / 'full-app-ui-result.json')
     raw = full.get('test_counts')
@@ -41,8 +45,10 @@ def make_report(logs, environment):
     passed = (unit_status == full_status == 'passed' and scope == 'fullApp'
               and counts == EXPECTED and all(v == 'success' for v in outcomes.values()))
     return {'schema': 1, 'version': '0.9.2', 'build': 28,
-            'stages': outcomes, 'unit': {'status': unit_status},
-            'fullApp': {'status': full_status, 'scope': scope, 'test_counts': counts},
+            'stages': outcomes, 'unit': {'status': unit_status,
+                'runner': safe_progress(unit.get('runner'), public_methods(Path(__file__).resolve().parents[1], 'unit'))},
+            'fullApp': {'status': full_status, 'scope': scope, 'test_counts': counts,
+                'runner': safe_progress(full.get('runner'), public_methods(Path(__file__).resolve().parents[1], 'fullApp'))},
             'native_validation': 'passed' if passed else 'not-validated',
             'artifact_upload': 'not-attested', 'hardware_validation': 'not-performed'}
 
