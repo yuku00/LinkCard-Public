@@ -1105,6 +1105,9 @@ final class PN532IdentifyTests: XCTestCase {
         XCTAssertFalse(NFCProIdentify.permits(name: "PCR-NFCPRO", builtinProfile: true, channel: ["FF00","FF02","FF01"], model: "OTHER"))
     }
     func testCanonicalFF00GateStillRejectsOtherChannels() {
+        for value in ["2A24", "00002a24", "00002a24-0000-1000-8000-00805f9b34fb"] {
+            XCTAssertEqual(BLEProfile.displayUUID(value), "2A24")
+        }
         for channel in [["FF00", "FF02", "FF01"],
                         ["FF00", "FF02", "FF01"].map(BLEProfile.canonicalUUID),
                         ["0000ff00", "0000ff02", "0000ff01"],

@@ -353,8 +353,9 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
     /// Invoked by each semantic discovery; never waits for unseen higher-priority UUIDs.
     func arbitrateDiscovery() {
         guard foreground, !sessionSuppressed, !active else { return }
-        // A pending/visible sheet owns selection until explicit choice/cancel. New broadcasts merge only.
-        guard connectionPrompt == nil, deferredConnectionPrompt == nil, !promptPresentationInFlight else { return }
+        // A visible sheet owns selection until explicit choice/cancel. New broadcasts merge only.
+        // A prompt blocked behind another modal has not been chosen yet; saved auto consent still wins.
+        guard connectionPrompt == nil, !promptPresentationInFlight else { return }
         // Among already visible saved UUIDs, use persisted priority, never RSSI or name.
         if !preferencesWriteFailed, preferences.autoScan, attempts < 3,
            let trust = preferences.trusted.first(where: { saved in
@@ -366,6 +367,8 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
             automaticTarget = trust.id
             connect(device); return
         }
+        // Keep the first deferred candidate stable while merging additional broadcasts.
+        if deferredConnectionPrompt != nil { return }
         // Exhausted retries or autoScan off must not re-confirm an already saved UUID.
         if preferences.trusted.contains(where: { saved in devices.contains { $0.id == saved.id } }) {
             status = preferences.autoScan ? "已记住设备本轮连接已停止；点击扫描可重试。" : "发现已记住设备；自动连接已关闭，可手动连接。"

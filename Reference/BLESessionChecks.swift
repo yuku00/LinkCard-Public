@@ -372,6 +372,20 @@ private final class RejectingPreferencesDefaults: UserDefaults, @unchecked Senda
         advertise(auto,ca,first); auto.enterDeviceFlow()
         precondition(ca.connections == 1 && !auto.scanning)
         auto.setForeground(false)
+        // An unrelated modal delays unknown pairing, but not explicitly saved auto consent.
+        var modalPrefs = BLEPreferences()
+        modalPrefs.trusted = [BLETrust(id: first.identifier, profileID: BLEProfile.builtin.id)]
+        modalPrefs.save()
+        let blocked = PCRBluetooth(); blocked.setForeground(true)
+        let cm = CBCentralManager.latest!; blocked.centralManagerDidUpdateState(cm)
+        blocked.setPresentationBlocker("root.photos", active: true)
+        advertise(blocked,cm,second)
+        precondition(blocked.connectionPrompt == nil && blocked.scanning && cm.connections == 0)
+        advertise(blocked,cm,first)
+        precondition(blocked.active && cm.connections == 1 && blocked.selected?.id == first.identifier)
+        blocked.finishPresentationBlocker("root.photos")
+        precondition(blocked.connectionPrompt == nil && first.writes.isEmpty && first.reads.isEmpty)
+        blocked.setForeground(false)
         // Both already appeared in a manual scan before auto was enabled: persisted order wins.
         saved.autoScan = false; saved.showDiscoveryPrompt = false; saved.save()
         let both = PCRBluetooth(); both.setForeground(true); both.scan()
@@ -416,7 +430,7 @@ private final class RejectingPreferencesDefaults: UserDefaults, @unchecked Senda
                 precondition(p.subscriptions == 1 && rx.isNotifying && !other.characteristics![1].isNotifying)
                 precondition(!b.canIdentify, "Wait for subscription callback")
                 b.peripheral(p, didUpdateNotificationStateFor: rx, error: nil)
-                precondition(b.ready && b.canIdentify == !custom && b.channelSummary.contains(service))
+                precondition(b.ready && b.canIdentify == !custom && b.channelSummary.contains(service.uppercased()))
                 b.readDeviceInformation(); b.peripheral(p, didUpdateValueFor: model, error: nil)
                 precondition(b.deviceInformation["2A24"] == "TD5322A" && b.canIdentify == !custom)
                 if !custom {

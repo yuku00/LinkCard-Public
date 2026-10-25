@@ -49,7 +49,7 @@ struct BLEProfile: Identifiable, Codable, Equatable {
     }
     /// Diagnostic/persistence keys only; retain vendor-specific 128-bit UUIDs intact.
     static func displayUUID(_ value: String) -> String {
-        let upper = value.uppercased()
+        let upper = canonicalUUID(value)
         if upper.hasPrefix("0000"), upper.hasSuffix("-0000-1000-8000-00805F9B34FB"), upper.count == 36 {
             return String(upper.dropFirst(4).prefix(4))
         }
