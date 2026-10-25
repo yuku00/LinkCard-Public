@@ -12,7 +12,12 @@ struct PCRDeviceView: View {
     @State private var copiedUID = false
     private var candidates: [PCRBluetooth.Device] { ble.devices.filter { ble.isCandidate($0) } }
     private var others: [PCRBluetooth.Device] { ble.devices.filter { !ble.isCandidate($0) } }
+    private var identifyBusyReason: String? {
+        guard ble.busy && !ble.identifying else { return nil }
+        return ble.readingDeviceInformation ? "正在读取设备信息，完成后可识别卡片。" : "设备正在处理另一项请求，完成或超时后可识别卡片。"
+    }
     private var disabledReason: String? {
+        if ble.identifying { return "正在识别卡片；请等待完成或取消本次识别。" }
         if ble.busy { return ble.readingDeviceInformation ? "正在读取设备信息…" : "正在等待版本响应，请等待完成；超时将自动断开。" }
         if !ble.connected { return "请先扫描并点选你自己的设备连接。" }
         if !ble.ready { return "等待服务发现与通知订阅；若仍未就绪，请展开高级诊断核对服务与特征。" }
@@ -101,6 +106,8 @@ struct PCRDeviceView: View {
             Text("请确认实物与显示的文本协议型号相符。名称可能被伪装；这不是认证。将只发 PCRPANDA?，不发空命令、不切换模式、不寻卡。")
         }
         .sheet(isPresented: $blePreferences) { BLEPreferencesView(ble: ble) }
+        .bleModalActivity("device.settings", active: blePreferences)
+        .bleModalActivity("device.version", active: confirmVersion)
         .onAppear { ble.enterDeviceFlow() }
         .onChange(of: ble.selected?.id) { _ in copied = false }
     }
@@ -111,13 +118,26 @@ struct PCRDeviceView: View {
                 Text("将启用易失性读卡模式，只识别 ISO 14443A。不读取保护扇区、不改 UID、不写卡、不破解或恢复密钥；不开云 API、不升级固件。")
                     .font(.footnote).foregroundStyle(MistStyle.secondary)
                 Button {
-                    revealUID = false; copiedUID = false; ble.identifyCard()
+                    revealUID = false
+                    copiedUID = false
+                    // Direct production action: no dialog, async dispatch or UI-only success state.
+                    ble.identifyCard()
                 } label: {
                     Label(ble.identifying ? "正在识别…" : "识别卡片", systemImage: "viewfinder")
-                        .frame(minHeight: 44)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
                 }.disabled(ble.busy).accessibilityIdentifier("device.identify")
-                Text(ble.identifyMessage).font(.subheadline)
-                    .accessibilityIdentifier("device.identify.status")
+                HStack(alignment: .top, spacing: 8) {
+                    if ble.identifying { ProgressView().accessibilityHidden(true) }
+                    Text(ble.identifyMessage).font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.updatesFrequently)
+                        .accessibilityIdentifier("device.identify.status")
+                }
+                if let reason = identifyBusyReason {
+                    Text(reason).font(.footnote).foregroundStyle(MistStyle.secondary)
+                        .accessibilityIdentifier("device.identify.disabledReason")
+                }
                 if ble.identifying {
                     Button("取消本次识别", role: .cancel) { ble.cancelIdentification() }
                         .frame(minHeight: 44).accessibilityIdentifier("device.identify.cancel")
@@ -204,7 +224,8 @@ struct PCRDeviceView: View {
                             .frame(minHeight: 44)
                     }.buttonStyle(MistActionStyle()).tint(MistStyle.link)
                 }
-                Button("蓝牙与多设备配置") { blePreferences = true }.frame(minHeight: 44)
+                Button("设备设置") { blePreferences = true }.frame(minHeight: 44)
+                    .accessibilityIdentifier("device.settings")
                 Text("前台跨页面保持连接，退到后台会停止。")
                     .font(.footnote).foregroundStyle(MistStyle.secondary)
             }
@@ -331,6 +352,7 @@ struct LocalCardLibraryView: View {
             .sheet(item: $exported, onDismiss: { LocalCardLibrary.removeExport(exportURL); exportURL = nil }) { item in
                 CardShareSheet(url: item.url)
             }
+            .bleModalActivity("library.modal", active: importing || renameCard != nil || deleteCard != nil || shareCard != nil || exported != nil || library.message != nil)
     }
     @ViewBuilder private func cardActions(_ card: LocalCard) -> some View {
         Button("改名") { newName = card.name; renameCard = card }.frame(minHeight: 44)

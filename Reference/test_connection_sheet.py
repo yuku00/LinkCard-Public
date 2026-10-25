@@ -9,7 +9,7 @@ class ConnectionSheetContracts(unittest.TestCase):
     def test_native_bottom_sheet_and_accessibility(self):
         for fragment in ['.presentationDetents(', '.presentationDragIndicator(.visible)',
                          'typeSize.isAccessibilitySize', 'Form {', 'NavigationStack {',
-                         'minHeight: 44', '.height(380)',
+                         'minHeight: 44', '.height(300)',
                          'selection?.label', '.navigationBarTitleDisplayMode(.inline)']:
             self.assertIn(fragment, SHEET)
         self.assertNotIn('BLEReaderIllustration', SHEET)
@@ -21,13 +21,33 @@ class ConnectionSheetContracts(unittest.TestCase):
         self.assertIn('.disabled(selection == nil || ble.active)', SHEET)
         self.assertNotIn('.rssi', SHEET)
         self.assertIn('guard !initialized else { return }', SHEET)
-    def test_safety_and_configuration_remain_available(self):
-        for fragment in ['DisclosureGroup("高级")',
-                         'BLEPreferencesView(ble: ble)', 'ble.preferences.profiles',
-                         'ble.setDiscoveryPrompt(false)', '未知设备仍需手动确认',
-                         '不会撤销信任', '不自动发送业务命令', '不是认证']:
+    def test_minimal_sheet_and_real_saved_selection(self):
+        for fragment in ['Toggle("自动连接此设备"', 'ble.preferences.trusted.contains',
+                         'loadSelection()', 'ble.suggestedProfile(for: selected)',
+                         'ble.status', '.buttonStyle(.borderedProminent)']:
             self.assertIn(fragment, SHEET)
+        for fragment in ['DisclosureGroup', '.sheet(', 'BLEPreferencesView(ble:',
+                         'setDiscoveryPrompt']:
+            self.assertNotIn(fragment, SHEET)
+        settings = UI[UI.index('struct BLEPreferencesView: View'):]
+        for fragment in ['Picker("设备配置"', 'serviceUUID', 'showDiscoveryPrompt']:
+            self.assertIn(fragment, settings)
         action = SHEET[SHEET.index('guard let selected = selection'):SHEET.index('} label: {', SHEET.index('guard let selected = selection'))]
         self.assertNotIn('cancelConnectionPrompt()', action)
         self.assertNotIn('dismiss()', action)
+    def test_identify_feedback_and_real_modal_round_trips(self):
+        view = (R/'LinkCard/LocalDeviceViews.swift').read_text()
+        identify = view[view.index('private var identificationCard'):view.index('private var standardDeviceInformation')]
+        self.assertIn('ble.identifyCard()', identify)
+        self.assertIn('.frame(maxWidth: .infinity, minHeight: 44)', identify)
+        self.assertIn('device.identify.disabledReason', identify)
+        self.assertIn('Text(ble.identifyMessage)', identify)
+        self.assertIn('.updatesFrequently', identify)
+        for forbidden in ['confirmationDialog', '.sheet(', 'print(', 'try?']:
+            self.assertNotIn(forbidden, identify)
+        tests = (R/'LinkCardUITests/LinkCardFullAppTouchTests.swift').read_text()
+        self.assertEqual(tests.count('    func test'), 4)
+        self.assertEqual(tests.count('        verifyRealIdentifyGuard()'), 2)
+        self.assertIn('device.settings.done', tests)
+        self.assertIn('verifyPreviewPhotoPickerCancelAfterVerticalDrags()', tests)
 if __name__ == '__main__': unittest.main()

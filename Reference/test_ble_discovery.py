@@ -28,7 +28,7 @@ class BLEDiscoveryContracts(unittest.TestCase):
         self.assertEqual(BLE.count('peripheral.writeValue('), 2)
 
     def test_binding_and_explicit_priority_not_rssi(self):
-        finish = BLE[BLE.index('private func finishDiscovery'):BLE.index('private func scheduleRetry')]
+        finish = BLE[BLE.index('func finishDiscovery'):BLE.index('private func scheduleRetry')]
         self.assertIn('preferences.trusted.first', finish)
         self.assertIn('$0.id == saved.id', finish)
         self.assertIn('$0.id == trust.profileID', finish)
@@ -41,14 +41,16 @@ class BLEDiscoveryContracts(unittest.TestCase):
         method = BLE[BLE.index('func setDiscoveryPrompt'):BLE.index('func addProfile')]
         self.assertNotIn('trusted', method)
         self.assertNotIn('autoScan =', method)
-        finish = BLE[BLE.index('private func finishDiscovery'):BLE.index('private func scheduleRetry')]
+        finish = BLE[BLE.index('func finishDiscovery'):BLE.index('private func scheduleRetry')]
         self.assertLess(finish.index('connect(device)'), finish.index('showDiscoveryPrompt'))
         self.assertIn('@State private var remember = false', UI)
         self.assertIn('if !value { dismissConnectionPrompt() }', method)
         self.assertIn('if !promptDismissalIsProgrammatic { cancelConnectionPrompt() }', BLE)
         self.assertIn('.sheet(item: $ble.connectionPrompt, onDismiss:', UI)
         self.assertEqual(UI.count('ble.connectionPromptDidDisappear()'), 1)
-        self.assertNotIn('.onDisappear', UI)
+        host = UI.split('private struct BLEDiscoveryHost:')[1].split('private struct BLEConnectionConfirmation:')[0]
+        self.assertNotIn('.onDisappear', host)
+        self.assertNotIn('.onDisappear { ble.cancelConnectionPrompt()', UI)
         confirm = BLE[BLE.index('func confirmConnection'):BLE.index('func resumeDiscovery')]
         self.assertLess(confirm.index('dismissConnectionPrompt()'), confirm.index('connect(device)'))
         dismiss = BLE[BLE.index('private func dismissConnectionPrompt'):BLE.index('func connectionPromptDidDisappear')]

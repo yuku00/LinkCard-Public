@@ -56,11 +56,26 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
     private var identifySettling = false
     private var identifyChannel = [String]()
     private var pendingCard: PN532Card?
+    @Published private(set) var identifyPhase = "idle"
+    @Published private(set) var identifyFailurePhase: String?
+    /// Pure readiness explanation for UI; no I/O, identifiers or protocol bytes.
+    var identifyUnavailableReason: String? {
+        if busy { return identifying ? "正在识别，请等待本次结果或取消。" : "设备正忙，请等待当前操作完成后再识别。" }
+        if closing { return "连接正在结束，请重新连接后识别。" }
+        if !connected { return "请先连接已记住的设备或选择新设备。" }
+        if !ready { return "连接尚未就绪，请等待服务发现和通知订阅完成。" }
+        if connectionProfile != .builtin { return "当前为自定义连接配置；识别需要内置 PCR 配置。" }
+        if !PCRRoute.isNFCPro(selected?.name ?? "") { return "当前型号未准入；仅支持精确匹配的 PCR-NFCPRO / TD5322A，不向其他型号试探。" }
+        if identifyChannel != ["FF00", "FF02", "FF01"] { return "当前不是识别所需的 FF00 通道；不会切换协议试探。" }
+        if let model = deviceInformation["2A24"], model != "TD5322A" { return "标准型号信息未确认 TD5322A；识别已停止，请检查设备型号。" }
+        return nil
+    }
     var canIdentify: Bool {
-        connected && ready && !busy && !closing && NFCProIdentify.permits(
+        identifyUnavailableReason == nil && NFCProIdentify.permits(
             name: selected?.name ?? "", builtinProfile: connectionProfile == .builtin,
             channel: identifyChannel, model: deviceInformation["2A24"])
     }
+    var preferencesRestoreMessage: String? { preferences.restorationWarning }
     /// UUID-keyed, display-only values. Never persisted or logged.
     @Published private(set) var deviceInformation = [String: String]()
     var modelExplanation: String {
@@ -91,6 +106,15 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
     @Published var connectionPrompt: Device?
     private var foreground = false
     private var sessionSuppressed = false
+    private var previousCentralState: CBManagerState?
+    private var resumeAfterClosing = false
+    /// A manual cancel is scoped to this cycle, not the app lifetime.
+    private func beginDiscoveryCycle() {
+        sessionSuppressed = false; attempts = 0; automaticTarget = nil
+        automaticAttempt = false; retryAfterDisconnect = false
+        retryWork?.cancel(); retryWork = nil
+        resumeAfterClosing = active && closing
+    }
     private var automaticAttempt = false
     private var attempts = 0
     private var retryWork: DispatchWorkItem?
@@ -98,20 +122,72 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
     private var retryAfterDisconnect = false
     private var automaticTarget: UUID?
     private var promptDismissalIsProgrammatic = false
+    private var promptPresentationInFlight = false
+    private var deferredConnectionPrompt: Device?
+    private var deferredPromptIsManual = false
+    private var presentationBlockers = Set<String>()
+    private var presentationReleaseWork: [String: DispatchWorkItem] = [:]
+
+    /// Shared root arbitration, driven only by explicit modal state transitions.
+    /// The small release grace covers UIKit dismissal animations (Photos/file pickers
+    /// do not expose SwiftUI onDismiss). New requests cancel the pending release.
+    func setPresentationBlocker(_ key: String, active: Bool) {
+        presentationReleaseWork.removeValue(forKey: key)?.cancel()
+        if active {
+            presentationBlockers.insert(key)
+            if let prompt = connectionPrompt {
+                deferredConnectionPrompt = prompt
+                promptDismissalIsProgrammatic = true
+                connectionPrompt = nil // Deferral is not user cancellation.
+            }
+        } else if presentationBlockers.contains(key) {
+            let work = DispatchWorkItem { [weak self] in self?.finishPresentationBlocker(key) }
+            presentationReleaseWork[key] = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
+        }
+    }
+    func finishPresentationBlocker(_ key: String) {
+        presentationReleaseWork.removeValue(forKey: key)?.cancel()
+        presentationBlockers.remove(key)
+        flushDeferredConnectionPrompt()
+    }
+    private func queueConnectionPrompt(_ device: Device?, manual: Bool) {
+        deferredConnectionPrompt = device; deferredPromptIsManual = manual
+        flushDeferredConnectionPrompt()
+    }
+    private func flushDeferredConnectionPrompt() {
+        guard presentationBlockers.isEmpty, !promptPresentationInFlight,
+              foreground, central?.state == .poweredOn, !active, !scanning,
+              let pending = deferredConnectionPrompt else { return }
+        // Re-resolve current scan results and saved UUIDs at presentation time.
+        guard let current = devices.first(where: { $0.id == pending.id }),
+              !preferences.trusted.contains(where: { $0.id == current.id }),
+              deferredPromptIsManual || (!sessionSuppressed && preferences.showDiscoveryPrompt && isCandidate(current)) else {
+            deferredConnectionPrompt = nil; return
+        }
+        deferredConnectionPrompt = nil
+        promptDismissalIsProgrammatic = false
+        connectionPrompt = current
+    }
+    func connectionPromptDidAppear() { promptPresentationInFlight = true }
     private func dismissConnectionPrompt() {
+        deferredConnectionPrompt = nil
         promptDismissalIsProgrammatic = true
         connectionPrompt = nil
     }
     func connectionPromptDidDisappear() {
+        promptPresentationInFlight = false
         if !promptDismissalIsProgrammatic { cancelConnectionPrompt() }
+        flushDeferredConnectionPrompt()
     }
 
     func setForeground(_ value: Bool) {
         guard foreground != value else { return }
         foreground = value
         if value {
-            // Cancellation remains effective until explicit Resume/Scan, including tab changes.
-            if preferences.autoScan && !sessionSuppressed { scanAutomatically() }
+            beginDiscoveryCycle()
+            if let warning = preferences.restorationWarning { status = warning; return }
+            if preferences.autoScan { scanAutomatically() }
         } else {
             retryWork?.cancel(); retryWork = nil; retryAfterDisconnect = false; dismissConnectionPrompt()
             if active || scanning || scanRequested {
@@ -123,31 +199,41 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
     func enterDeviceFlow() {
         if foreground && preferences.autoScan && !sessionSuppressed && !active && !scanning { scanAutomatically() }
     }
+    private func preferenceChangeAllowed() -> Bool {
+        guard let warning = preferences.restorationWarning else { return true }
+        status = warning; return false
+    }
     func setAutomaticScanning(_ value: Bool) {
+        guard preferenceChangeAllowed() else { return }
         preferences.autoScan = value; preferences.save()
         if value { resumeDiscovery() }
-        else { stopScan(); retryWork?.cancel(); dismissConnectionPrompt() }
+        else { stopScan(); retryWork?.cancel(); retryWork = nil; retryAfterDisconnect = false; dismissConnectionPrompt() }
     }
     func setDiscoveryPrompt(_ value: Bool) {
+        guard preferenceChangeAllowed() else { return }
         preferences.showDiscoveryPrompt = value; preferences.save()
         if !value { dismissConnectionPrompt() }
     }
     func addProfile(_ profile: BLEProfile) -> String? {
+        if let warning = preferences.restorationWarning { return warning }
         if let error = profile.validationError { return error }
         guard preferences.profiles.count < 33, !preferences.profiles.contains(where: { $0.id == profile.id }) else { return "配置已存在或达到 32 个自定义配置上限。" }
         preferences.profiles.append(profile); preferences.save(); return nil
     }
     func removeProfile(_ id: UUID) {
+        guard preferenceChangeAllowed() else { return }
         guard id != BLEProfile.builtin.id else { return }
         preferences.profiles.removeAll { $0.id == id }
         preferences.trusted.removeAll { $0.profileID == id }; preferences.save()
         if connectionProfile.id == id && active { disconnect("使用中的配置已移除，连接停止。") }
     }
     func forget(_ id: UUID) {
+        guard preferenceChangeAllowed() else { return }
         preferences.trusted.removeAll { $0.id == id }; preferences.save()
         if selected?.id == id && active { disconnect("已忘记设备并断开。") }
     }
     func prioritize(_ id: UUID) {
+        guard preferenceChangeAllowed() else { return }
         guard let index = preferences.trusted.firstIndex(where: { $0.id == id }) else { return }
         let item = preferences.trusted.remove(at: index); preferences.trusted.insert(item, at: 0); preferences.save()
     }
@@ -158,18 +244,29 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         preferences.trusted.first(where: { $0.id == device.id })?.profileID ??
         preferences.profiles.first(where: { $0.matches(name: device.name, services: device.advertisedServices) })?.id ?? BLEProfile.builtin.id
     }
+    private func connectTrusted(_ device: Device) -> Bool {
+        guard let trust = preferences.trusted.first(where: { $0.id == device.id }),
+              let profile = preferences.profiles.first(where: { $0.id == trust.profileID }),
+              profile.validationError == nil else { return false }
+        confirmConnection(device, profileID: profile.id, remember: true)
+        return true
+    }
     func requestConnection(_ device: Device) {
         guard foreground, !active else { return }
+        if connectTrusted(device) { return }
         stopScan(); retryWork?.cancel(); retryWork = nil
-        sessionSuppressed = true; promptDismissalIsProgrammatic = false; connectionPrompt = device
+        sessionSuppressed = true; queueConnectionPrompt(device, manual: true)
     }
     func cancelConnectionPrompt() {
-        dismissConnectionPrompt(); sessionSuppressed = true; retryWork?.cancel(); stopScan()
-        status = "已取消本次自动发现；点击扫描可重新开始。"
+        dismissConnectionPrompt(); sessionSuppressed = true; retryWork?.cancel(); retryWork = nil; retryAfterDisconnect = false; stopScan()
+        status = "已取消本次发现；已记住设备仍保留，下次进入前台或蓝牙重新开启时按设置恢复。"
     }
     func confirmConnection(_ device: Device, profileID: UUID, remember: Bool) {
         guard foreground, !active, central?.state == .poweredOn,
-              let profile = preferences.profiles.first(where: { $0.id == profileID }), profile.validationError == nil else { return }
+              let profile = preferences.profiles.first(where: { $0.id == profileID }), profile.validationError == nil else {
+            status = "连接尚不可用；请检查系统蓝牙、当前连接状态和所选配置。"; return
+        }
+        guard !remember || preferenceChangeAllowed() else { return }
         guard !remember || preferences.trusted.count < 100 || preferences.trusted.contains(where: { $0.id == device.id }) else {
             status = "已达 100 个信任设备上限，请先忘记不再使用的设备。"; return
         }
@@ -179,6 +276,9 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
             if let index = preferences.trusted.firstIndex(where: { $0.id == device.id }) { preferences.trusted[index] = binding }
             else { preferences.trusted.append(binding) }
             preferences.save()
+        } else if preferences.restorationWarning == nil {
+            // Explicitly turning Remember off revokes this UUID, unlike dismissing a sheet.
+            preferences.trusted.removeAll { $0.id == device.id }; preferences.save()
         }
         automaticAttempt = preferences.autoScan && preferences.trusted.contains { $0.id == device.id && $0.profileID == profile.id }
         if automaticAttempt { attempts = 1; automaticTarget = device.id }
@@ -186,14 +286,15 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
     }
     func resumeDiscovery() { sessionSuppressed = false; attempts = 0; scan() }
     private func scanAutomatically() {
-        guard foreground, preferences.autoScan, !sessionSuppressed, !active, !scanning, retryWork == nil else { return }
+        guard foreground, preferences.autoScan, !sessionSuppressed, attempts < 3, !active, !scanning, retryWork == nil else { return }
         // Never trigger the initial system permission dialog merely by opening the App.
         guard CBCentralManager.authorization == .allowedAlways else {
             status = "自动发现需要蓝牙授权；首次请点击扫描并允许系统权限。"; return
         }
         startScanRequest()
     }
-    private func finishDiscovery() {
+    // Internal completion seam is exercised by the host coordinator tests; not a timer bypass in UI.
+    func finishDiscovery() {
         stopScan()
         guard foreground, !sessionSuppressed, !active else { return }
         // Wait for the complete scan window, then use explicit saved order, not arrival/RSSI.
@@ -202,14 +303,20 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
                (automaticTarget == nil || automaticTarget == saved.id) && devices.contains { $0.id == saved.id }
            }),
            let device = devices.first(where: { $0.id == trust.id }),
-           let profile = preferences.profiles.first(where: { $0.id == trust.profileID }) {
+           let profile = preferences.profiles.first(where: { $0.id == trust.profileID }), profile.validationError == nil {
             dismissConnectionPrompt(); connectionProfile = profile; automaticAttempt = true; attempts += 1
             automaticTarget = trust.id
             connect(device); return
         }
+        // Exhausted retries or autoScan off must not re-confirm an already saved UUID.
+        if preferences.trusted.contains(where: { saved in devices.contains { $0.id == saved.id } }) {
+            status = preferences.autoScan ? "已记住设备本轮连接已停止；点击扫描可重试。" : "发现已记住设备；自动连接已关闭，可手动连接。"
+            return
+        }
         if preferences.showDiscoveryPrompt {
-            promptDismissalIsProgrammatic = false
-            connectionPrompt = devices.first(where: { isCandidate($0) })
+            queueConnectionPrompt(devices.first(where: { device in
+                isCandidate(device) && !preferences.trusted.contains { $0.id == device.id }
+            }), manual: false)
         }
     }
     private func scheduleRetry() {
@@ -265,11 +372,18 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         retryAfterDisconnect = automaticAttempt && foreground && !sessionSuppressed
         disconnect(message, reason: .timeout, suppressSession: false)
     }
-    func disconnect(_ message: String = "已手动断开；点击扫描可恢复。", reason: DisconnectReason = .user, suppressSession: Bool = true) {
+    func disconnect(_ message: String = "已手动断开；本轮不再自动重连。", reason: DisconnectReason = .user, suppressSession: Bool = true) {
         if suppressSession { sessionSuppressed = true; retryAfterDisconnect = false }
+        resumeAfterClosing = false
         retryWork?.cancel(); retryWork = nil; dismissConnectionPrompt()
         deadline?.cancel(); scanRequested = false; scanning = false; central?.stopScan()
-        if identifying && (identifyMessage.hasPrefix("正在") || identifyMessage.hasPrefix("本次")) { identifyMessage = "本次识别已停止；连接已隔离，迟到响应不会用于下一次。" }
+        if identifying {
+            identifyFailurePhase = identifyPhase
+            if identifyMessage.hasPrefix("正在") || identifyMessage.hasPrefix("本次") {
+                identifyMessage = "识别已停止：" + message + " 迟到响应不会用于下一次。"
+            }
+            identifyPhase = reason == .user || reason == .background ? "cancelled" : "failed"
+        }
         identifying = false; identifyGeneration += 1; identifyWait?.cancel(); identifyWait = nil
         identifyStep = nil; identifyExchange = nil; identifyReply = nil; pendingCard = nil
         identifiedCard = nil; identifySettling = false; identifyChannel = []
@@ -340,13 +454,22 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
     }
     /// Explicit click only; never called by discovery, trust, version or connection callbacks.
     func identifyCard() {
-        guard !busy else { return }
+        guard !busy else {
+            if !identifying { identifyPhase = "blocked" }
+            identifyMessage = identifyUnavailableReason ?? "设备正忙，请稍后再试。"
+            status = identifyMessage
+            return
+        }
         guard canIdentify else {
-            identifyMessage = "请连接 PCR-NFCPRO / TD5322A，并使用内置配置的 FF00 通道；不会向其他型号试探。"
+            identifyPhase = "blocked"
+            identifyMessage = identifyUnavailableReason ?? "当前设备未通过识别准入检查；不发送命令。"
+            status = identifyMessage
             return
         }
         identifying = true; busy = true; identifiedCard = nil; pendingCard = nil
-        identifyMessage = "正在启用易失性读卡模式…"
+        identifyPhase = "starting"; identifyFailurePhase = nil
+        identifyMessage = "正在启动识别：唤醒读卡通道…"
+        status = identifyMessage
         identifyGeneration += 1; identifyStep = nil; identifyExchange = nil
         identifyReply = nil; identifySettling = false
         // Wake only, no embedded unvalidated vendor frame. After a quiet interval,
@@ -378,7 +501,13 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
     private func sendIdentifyStep() {
         guard let step = identifyStep, identifying else { return }
         identifyExchange = PN532Exchange(command: step.command); identifyReply = nil
-        if step == .poll { identifyMessage = "正在识别卡片…请将一张自有卡放在天线中心。" }
+        switch step {
+        case .sam: identifyPhase = "configuring"; identifyMessage = "正在配置易失性读卡模式…"
+        case .retries: identifyPhase = "limiting"; identifyMessage = "正在设置有限寻卡次数…"
+        case .poll: identifyPhase = "polling"; identifyMessage = "正在识别卡片…请将一张自有卡放在天线中心。"
+        case .fieldOff: identifyPhase = "finishing"; identifyMessage = "正在关闭射频并确认本次结果…"
+        }
+        status = identifyMessage
         sendIdentifyBytes(step.packet)
     }
     private func identifyWritesDrained() {
@@ -393,6 +522,9 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
             if self.identifyExchange == nil {
                 // Marker differentiates wake wait from abort wait; no response is parsed here.
                 self.identifyExchange = PN532Exchange(command: 0)
+                self.identifyPhase = "synchronizing"
+                self.identifyMessage = "正在同步读卡通道，隔离旧响应…"
+                self.status = self.identifyMessage
                 self.identifySettling = false
                 self.sendIdentifyBytes(NFCProIdentify.ack)
             } else {
@@ -425,6 +557,7 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
             case .fieldOff:
                 identifiedCard = pendingCard; pendingCard = nil
                 identifyMessage = identifiedCard == nil ? "未发现 ISO 14443A 卡片；可调整位置后再点一次。" : "识别完成 · 射频已关闭 · 保持蓝牙连接"
+                identifyPhase = "completed"
                 identifying = false; identifyStep = nil; identifyExchange = nil
                 finishQuery("本次寻卡完成 · 保持连接")
                 return
@@ -456,7 +589,10 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: work)
     }
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        let previousState = previousCentralState
+        previousCentralState = central.state
         if central.state == .poweredOn {
+            if previousState != .poweredOn { beginDiscoveryCycle() }
             if scanRequested { beginScan() } else { scanAutomatically() }
             return
         }
@@ -497,12 +633,18 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         connected = true; status = "已连接，正在发现服务（不发送业务命令）…"
         peripheral.discoverServices(nil)
     }
+    private func resumeDiscoveryAfterClosing() {
+        guard resumeAfterClosing else { return }
+        resumeAfterClosing = false
+        scanAutomatically()
+    }
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         guard self.peripheral === peripheral else { return }
         let retry = !closing && automaticAttempt
-        disconnect("连接失败，请检查设备供电或占用情况。", reason: .service, suppressSession: false)
+        if !closing { disconnect("连接失败，请检查设备供电或占用情况。", reason: .service, suppressSession: false) }
         self.peripheral = nil; active = false
         if retry || retryAfterDisconnect { retryAfterDisconnect = false; scheduleRetry() }
+        resumeDiscoveryAfterClosing()
     }
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         guard self.peripheral === peripheral else { return }
@@ -510,6 +652,7 @@ final class PCRBluetooth: NSObject, ObservableObject, CBCentralManagerDelegate, 
         if !closing { disconnect("设备掉线；当前请求已取消。", reason: .remote, suppressSession: busy) }
         self.peripheral = nil; active = false; retryAfterDisconnect = false
         if retry { scheduleRetry() }
+        resumeDiscoveryAfterClosing()
     }
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard self.peripheral === peripheral, !closing else { return }

@@ -79,15 +79,40 @@ struct BLEPreferences: Codable {
     /// Array order is explicit user priority; never choose by RSSI/name.
     var trusted = [BLETrust]()
     private static let key = "linkcard.ble.preferences.v1"
-    static func load() -> BLEPreferences {
-        guard let data = UserDefaults.standard.data(forKey: key), data.count <= 131072,
+    /// Never encoded. A failed restore must not silently erase/overwrite saved consent.
+    private(set) var restorationWarning: String?
+    private enum CodingKeys: String, CodingKey { case formatVersion, autoScan, showDiscoveryPrompt, profiles, trusted }
+    init() {}
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        formatVersion = try values.decode(Int.self, forKey: .formatVersion)
+        // Older records may omit optional settings; missing consent fails closed.
+        autoScan = try values.decodeIfPresent(Bool.self, forKey: .autoScan) ?? false
+        showDiscoveryPrompt = try values.decodeIfPresent(Bool.self, forKey: .showDiscoveryPrompt) ?? false
+        profiles = try values.decode([BLEProfile].self, forKey: .profiles)
+        trusted = try values.decode([BLETrust].self, forKey: .trusted)
+    }
+    private static func restoreFailed() -> Self {
+        var value = Self()
+        value.autoScan = false; value.showDiscoveryPrompt = false
+        value.restorationWarning = "已保存的蓝牙设置暂时无法恢复；原数据已保留，自动连接与设置保存已暂停。可临时手动连接，请勿重置应用数据。"
+        return value
+    }
+    static func load(from defaults: UserDefaults = .standard) -> BLEPreferences {
+        guard defaults.object(forKey: key) != nil else { return Self() }
+        guard let data = defaults.data(forKey: key), data.count <= 131072,
               let value = try? JSONDecoder().decode(Self.self, from: data), value.formatVersion == 1,
               value.profiles.count <= 33, value.trusted.count <= 100,
               value.profiles.contains(.builtin), value.profiles.allSatisfy({ $0.validationError == nil }),
               Set(value.profiles.map(\.id)).count == value.profiles.count,
               Set(value.trusted.map(\.id)).count == value.trusted.count,
-              value.trusted.allSatisfy({ trust in value.profiles.contains { $0.id == trust.profileID } }) else { return Self() }
+              value.trusted.allSatisfy({ trust in value.profiles.contains { $0.id == trust.profileID } }) else { return restoreFailed() }
         return value
     }
-    func save() { if let data = try? JSONEncoder().encode(self) { UserDefaults.standard.set(data, forKey: Self.key) } }
+    @discardableResult
+    func save(to defaults: UserDefaults = .standard) -> Bool {
+        guard restorationWarning == nil, let data = try? JSONEncoder().encode(self) else { return false }
+        defaults.set(data, forKey: Self.key)
+        return defaults.data(forKey: Self.key) == data
+    }
 }

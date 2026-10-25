@@ -40,7 +40,7 @@ def make_report(logs, environment):
     scope = enum(full.get('scope'), {'fullApp', 'sidebar-diagnostic'}, 'unknown')
     passed = (unit_status == full_status == 'passed' and scope == 'fullApp'
               and counts == EXPECTED and all(v == 'success' for v in outcomes.values()))
-    return {'schema': 1, 'version': '0.9.0', 'build': 26,
+    return {'schema': 1, 'version': '0.9.1', 'build': 27,
             'stages': outcomes, 'unit': {'status': unit_status},
             'fullApp': {'status': full_status, 'scope': scope, 'test_counts': counts},
             'native_validation': 'passed' if passed else 'not-validated',
@@ -88,7 +88,7 @@ def main():
     destination = Path('build/public')
     destination.mkdir(parents=True, exist_ok=True)
     (destination / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
-    lines = ['LinkCard 0.9.0 build26: schema-limited build log']
+    lines = ['LinkCard 0.9.1 build27: schema-limited build log']
     lines.extend(key + ': ' + value for key, value in report['stages'].items())
     lines += ['unit: ' + report['unit']['status'], 'fullApp: ' + report['fullApp']['status'],
               'native_validation: ' + report['native_validation'],

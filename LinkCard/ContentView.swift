@@ -101,7 +101,6 @@ struct ContentView: View {
             workbench.frames = frames
             // Diagnostic geometry is non-published; never feed it into root State.
         }
-        .bleDiscoveryHost(ble)
         .foregroundStyle(MistStyle.ink).tint(MistStyle.link)
     }
     private var interactiveContent: some View {
@@ -159,6 +158,11 @@ struct ContentView: View {
                     }
             }
         }
+        .bleModalActivity("root.photos", active: photoPickerPresented)
+        .bleModalActivity("root.nfc", active: confirmSend || nfc.busy)
+        .bleModalActivity("root.logs", active: showLogs)
+        .bleDiscoveryHost(ble)
+        .environment(\.blePresentationCoordinator, ble)
         // Apply outside all content-producing modifiers, including the tab inset.
         // An environment on the inner ZStack does not reach safeAreaInset siblings.
         .environmentObject(cardBlur)

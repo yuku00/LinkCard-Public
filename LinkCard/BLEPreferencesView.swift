@@ -1,8 +1,31 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 import SwiftUI
 
+private struct BLEPresentationEnvironment: EnvironmentKey {
+    static let defaultValue: PCRBluetooth? = nil
+}
+extension EnvironmentValues {
+    var blePresentationCoordinator: PCRBluetooth? {
+        get { self[BLEPresentationEnvironment.self] }
+        set { self[BLEPresentationEnvironment.self] = newValue }
+    }
+}
+private struct BLEModalActivity: ViewModifier {
+    @Environment(\.blePresentationCoordinator) private var ble
+    let key: String
+    let active: Bool
+    func body(content: Content) -> some View {
+        content
+            .onAppear { ble?.setPresentationBlocker(key, active: active) }
+            .onChange(of: active) { ble?.setPresentationBlocker(key, active: $0) }
+            .onDisappear { ble?.setPresentationBlocker(key, active: false) }
+    }
+}
 /// Attach once to the persistent root, not individual tab bodies.
 extension View {
+    func bleModalActivity(_ key: String, active: Bool) -> some View {
+        modifier(BLEModalActivity(key: key, active: active))
+    }
     func bleDiscoveryHost(_ ble: PCRBluetooth) -> some View { modifier(BLEDiscoveryHost(ble: ble)) }
 }
 private struct BLEDiscoveryHost: ViewModifier {
@@ -10,7 +33,10 @@ private struct BLEDiscoveryHost: ViewModifier {
     @Environment(\.scenePhase) private var scenePhase
     func body(content: Content) -> some View {
         content
-            .onAppear { ble.setForeground(scenePhase == .active) }
+            .onAppear {
+                if scenePhase == .active { ble.setForeground(true) }
+                else if scenePhase == .background { ble.setForeground(false) }
+            }
             .onChange(of: scenePhase) { phase in
                 switch phase {
                 case .active: ble.setForeground(true)
@@ -25,6 +51,7 @@ private struct BLEDiscoveryHost: ViewModifier {
                 ble.connectionPromptDidDisappear()
             }) { device in
                 BLEConnectionConfirmation(ble: ble, device: device)
+                    .onAppear { ble.connectionPromptDidAppear() }
             }
     }
 }
@@ -35,12 +62,13 @@ private struct BLEConnectionConfirmation: View {
     @State private var profileID = BLEProfile.builtin.id
     @State private var remember = false
     @State private var selectedID: UUID?
-    @State private var settings = false
     @State private var attempted = false
     @State private var initialized = false
     private var candidates: [PCRBluetooth.Device] {
-        let matches = ble.devices.filter { ble.isCandidate($0) || $0.id == device.id }
-        return matches.contains(where: { $0.id == device.id }) ? matches : [device] + matches
+        ble.devices.filter { candidate in
+            (ble.isCandidate(candidate) || candidate.id == device.id) &&
+                !ble.preferences.trusted.contains { $0.id == candidate.id }
+        }
     }
     private var selection: PCRBluetooth.Device? {
         candidates.first { $0.id == selectedID }
@@ -49,16 +77,14 @@ private struct BLEConnectionConfirmation: View {
         NavigationStack {
             Form {
                 Section {
-                    HStack(spacing: 12) {
-                        Image(systemName: "wave.3.right")
-                            .font(.title2).foregroundStyle(MistStyle.accent)
-                            .frame(width: 36, height: 44).accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(selection?.label ?? "选择设备").font(.headline)
-                            Text(attempted ? ble.status : "已发现 · 请核对自有设备")
-                                .font(.subheadline).foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
+                    HStack(spacing: 8) {
+                        Image(systemName: "wave.3.right").foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        Text(selection?.label ?? "选择设备").font(.headline)
+                            .accessibilityIdentifier("connection.device")
+                        Spacer(minLength: 8)
+                        Text(connectionState).font(.subheadline).foregroundStyle(.secondary)
+                            .accessibilityIdentifier("connection.state")
                     }
                     if candidates.count > 1 {
                         Picker("设备", selection: $selectedID) {
@@ -68,56 +94,61 @@ private struct BLEConnectionConfirmation: View {
                             }
                         }.frame(minHeight: 44)
                     }
-                    Toggle("记住并自动连接", isOn: $remember).frame(minHeight: 44)
+                    Toggle("自动连接此设备", isOn: $remember).frame(minHeight: 44)
+                        .disabled(selection == nil || ble.active)
+                        .accessibilityIdentifier("connection.remember")
                     Button {
                         guard let selected = selection else { return }
                         attempted = true
                         ble.confirmConnection(selected, profileID: profileID, remember: remember)
                     } label: {
                         Text("连接").frame(maxWidth: .infinity, minHeight: 44)
-                    }.buttonStyle(MistActionStyle()).tint(MistStyle.accent)
+                    }.buttonStyle(.borderedProminent)
                         .disabled(selection == nil || ble.active)
-                }
-                Section {
-                    DisclosureGroup("高级") {
-                        Picker("设备配置", selection: $profileID) {
-                            ForEach(ble.preferences.profiles) { Text($0.name).tag($0.id) }
-                        }.frame(minHeight: 44)
-                        Text("名称与服务不是认证。连接只发现服务和订阅通知，不自动发送业务命令。")
-                            .font(.footnote).foregroundStyle(.secondary)
-                        Text("已信任设备按保存顺序连接；失败最多尝试 3 次。取消或手动断开会暂停自动连接。")
-                            .font(.footnote).foregroundStyle(.secondary)
-                        Text("关闭发现弹窗不会撤销信任；未知设备仍需手动确认。")
-                            .font(.footnote).foregroundStyle(.secondary)
-                        Button("不再显示发现弹窗") { ble.setDiscoveryPrompt(false) }
-                            .frame(minHeight: 44)
-                        Button("蓝牙与多设备设置") { settings = true }.frame(minHeight: 44)
-                    }.frame(minHeight: 44)
+                        .accessibilityIdentifier("connection.connect")
+                    if attempted {
+                        Text(ble.status).font(.footnote).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("connection.result")
+                    }
                 }
             }
             .navigationTitle("连接设备")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { ble.cancelConnectionPrompt() }.frame(minHeight: 44)
+                    Button("关闭") { ble.cancelConnectionPrompt() }
+                        .accessibilityIdentifier("connection.close")
                 }
             }
         }
-        .buttonStyle(MistActionStyle())
-        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.height(380), .large])
+        .buttonStyle(.automatic)
+        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : (candidates.count > 1 || attempted ? [.height(380), .large] : [.height(300), .large]))
         .presentationDragIndicator(.visible)
         .onAppear {
             guard !initialized else { return }
             initialized = true
             if candidates.count == 1 { selectedID = device.id }
-            profileID = ble.suggestedProfile(for: device)
+            loadSelection()
         }
         .onChange(of: selectedID) { _ in
-            remember = false
             attempted = false
-            if let selected = selection { profileID = ble.suggestedProfile(for: selected) }
+            loadSelection()
         }
-        .sheet(isPresented: $settings) { BLEPreferencesView(ble: ble) }
+        .onChange(of: ble.preferences.trusted) { _ in loadSelection() }
+    }
+    private var connectionState: String {
+        guard let selected = selection else { return "请选择" }
+        if ble.selected?.id == selected.id && ble.active {
+            return ble.connected ? (ble.ready ? "已就绪" : "准备中") : "连接中"
+        }
+        return "已发现"
+    }
+    private func loadSelection() {
+        guard let selected = selection else { remember = false; return }
+        // A draft only: cancellation never writes trust. Reopen from persisted preferences.
+        remember = ble.preferences.trusted.contains { $0.id == selected.id }
+        profileID = ble.suggestedProfile(for: selected)
     }
 }
 
@@ -126,6 +157,8 @@ struct BLEPreferencesView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var adding = false
+    @State private var configurationDeviceID: UUID?
+    @State private var configurationProfileID = BLEProfile.builtin.id
     var body: some View {
         NavigationStack {
             Form {
@@ -154,6 +187,26 @@ struct BLEPreferencesView: View {
                     }
                     Text("扫描窗口结束后，从本轮发现的已信任设备按此顺序选择一台。连接中不抢连；失败仅原目标有限重试，不切换别的设备。取消/手动断开后须点扫描或恢复才再次尝试。")
                 }
+                Section("高级连接配置") {
+                    Picker("设备", selection: $configurationDeviceID) {
+                        Text("请选择设备").tag(nil as UUID?)
+                        ForEach(ble.devices) { device in
+                            Text(device.label + " · " + device.maskedID).tag(Optional(device.id))
+                        }
+                    }
+                    Picker("设备配置", selection: $configurationProfileID) {
+                        ForEach(ble.preferences.profiles) { Text($0.name).tag($0.id) }
+                    }
+                    Button("使用此配置连接") {
+                        guard let device = ble.devices.first(where: { $0.id == configurationDeviceID }) else { return }
+                        let remembered = ble.preferences.trusted.contains { $0.id == device.id }
+                        ble.confirmConnection(device, profileID: configurationProfileID, remember: remembered)
+                        if ble.active { dismiss() }
+                    }.disabled(configurationDeviceID == nil || ble.active)
+                    Text(ble.status).font(.footnote)
+                    Text("仅用于需要手动选择配置的设备；不新增自动连接授权，不自动发送业务命令。名称与服务不是认证。")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 Section("配置与内置适配器") {
                     ForEach(ble.preferences.profiles) { profile in
                         VStack(alignment: .leading) {
@@ -168,8 +221,16 @@ struct BLEPreferencesView: View {
                     Text("配置仅含发现与 GATT 通道数据。无脚本下载、无自定义原始命令；协议只能选本 App 已实现且有证据的适配器或仅连接。自定义名称不会改变 NFCPRO / PCR 实际命令门禁。")
                 }
             }.navigationTitle("蓝牙与设备适配")
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+                .toolbar { ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }.accessibilityIdentifier("device.settings.done")
+                } }
+                .onChange(of: configurationDeviceID) { _ in
+                    if let device = ble.devices.first(where: { $0.id == configurationDeviceID }) {
+                        configurationProfileID = ble.suggestedProfile(for: device)
+                    }
+                }
                 .sheet(isPresented: $adding) { BLEProfileEditor(ble: ble) }
+                .bleModalActivity("device.profile", active: adding)
         }
         .buttonStyle(MistActionStyle())
     }

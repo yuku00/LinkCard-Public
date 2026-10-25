@@ -34,6 +34,49 @@ import Foundation
         let data = try! JSONEncoder().encode(preferences)
         let decoded = try! JSONDecoder().decode(BLEPreferences.self, from: data)
         precondition(decoded.formatVersion == 1 && decoded.trusted.isEmpty && decoded.autoScan && decoded.showDiscoveryPrompt)
-        print("PASS: BLE profile validation, UUID aliases, adapters and format v1. No CoreBluetooth exercised.")
+        let suiteName = "LinkCard.BLEProfileChecks." + UUID().uuidString
+        let store = UserDefaults(suiteName: suiteName)!
+        defer { store.removePersistentDomain(forName: suiteName) }
+        let key = "linkcard.ble.preferences.v1"
+        var saved = BLEPreferences()
+        let deviceID = UUID()
+        saved.trusted = [BLETrust(id: deviceID, profileID: BLEProfile.builtin.id)]
+        saved.autoScan = false; saved.showDiscoveryPrompt = false
+        precondition(saved.save(to: store))
+        let restored = BLEPreferences.load(from: store)
+        precondition(restored.trusted == saved.trusted && restored.profiles == saved.profiles)
+        precondition(!restored.autoScan && !restored.showDiscoveryPrompt && restored.restorationWarning == nil)
+        let goodData = store.data(forKey: key)!
+        let encoded = try! JSONSerialization.jsonObject(with: goodData) as! [String: Any]
+        precondition(encoded["restorationWarning"] == nil)
+        for bad in [Data("invalid".utf8), Data(repeating: 0, count: 131073)] {
+            store.set(bad, forKey: key)
+            var failed = BLEPreferences.load(from: store)
+            precondition(failed.restorationWarning != nil && !failed.autoScan && !failed.showDiscoveryPrompt)
+            failed.autoScan = true
+            precondition(!failed.save(to: store) && store.data(forKey: key) == bad)
+        }
+        var unknownVersion = encoded; unknownVersion["formatVersion"] = 2
+        let future = try! JSONSerialization.data(withJSONObject: unknownVersion)
+        store.set(future, forKey: key)
+        precondition(BLEPreferences.load(from: store).restorationWarning != nil)
+        precondition(store.data(forKey: key) == future)
+        var missingOptional = encoded; missingOptional.removeValue(forKey: "showDiscoveryPrompt")
+        store.set(try! JSONSerialization.data(withJSONObject: missingOptional), forKey: key)
+        let migrated = BLEPreferences.load(from: store)
+        precondition(migrated.restorationWarning == nil && !migrated.showDiscoveryPrompt && migrated.trusted == saved.trusted)
+        var missingIdentity = encoded; missingIdentity.removeValue(forKey: "trusted")
+        let incomplete = try! JSONSerialization.data(withJSONObject: missingIdentity)
+        store.set(incomplete, forKey: key)
+        let incompleteRestore = BLEPreferences.load(from: store)
+        precondition(incompleteRestore.restorationWarning != nil && !incompleteRestore.save(to: store))
+        precondition(store.data(forKey: key) == incomplete)
+        var brokenBinding = saved
+        brokenBinding.trusted[0].profileID = UUID()
+        store.set(try! JSONEncoder().encode(brokenBinding), forKey: key)
+        precondition(BLEPreferences.load(from: store).restorationWarning != nil)
+        store.set(goodData, forKey: key)
+        precondition(BLEPreferences.load(from: store).trusted.first?.profileID == BLEProfile.builtin.id)
+        print("PASS: profile validation, stable UUID binding, actual UserDefaults save/load, optional-field migration, corrupt/future/invalid binding preservation. No CoreBluetooth exercised.")
     }
 }

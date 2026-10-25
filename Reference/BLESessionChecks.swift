@@ -101,10 +101,187 @@ import CoreBluetooth
         let (back,_,_,_) = connected(); back.identifyCard(); back.setForeground(false)
         precondition(!back.identifying && !back.busy && back.lastDisconnectReason == .background)
         let (unknown,_,pu,_) = connected("PCR-NFCPRO clone"); unknown.identifyCard()
-        precondition(pu.writes.isEmpty && !unknown.identifying)
+        precondition(pu.writes.isEmpty && !unknown.identifying && unknown.identifyPhase == "blocked")
+        precondition(unknown.status == unknown.identifyMessage && !unknown.identifyMessage.isEmpty)
+        let (locked,_,pl,fields) = connected()
+        locked.readDeviceInformation(); locked.identifyCard()
+        precondition(locked.busy && !locked.identifying && pl.writes.isEmpty)
+        precondition(locked.identifyMessage.contains("正忙") && locked.status == locked.identifyMessage)
+        for field in fields { locked.peripheral(pl, didUpdateValueFor: field, error: nil) }
+        locked.identifyCard()
+        precondition(locked.identifying && locked.identifyPhase == "starting" && locked.status == locked.identifyMessage)
+        let write = pl.services![1].characteristics![0]
+        locked.peripheral(pl, didWriteValueFor: write, error: NSError(domain: "synthetic", code: 1))
+        precondition(!locked.busy && locked.identifyPhase == "failed" && locked.identifyFailurePhase == "starting")
+        precondition(locked.identifyMessage.contains("写入失败"))
         print("PASS: actual NFCPRO coordinator, synthetic transport only: 3-byte MTU, both write modes, early response, busy guard, finite no-card, success, repeated click, startup/poll cancel, late notification quarantine, reconnect, timeout and background.")
     }
+    static func recoveryChecks() {
+        let id = UUID()
+        var saved = BLEPreferences()
+        saved.trusted = [BLETrust(id: id, profileID: BLEProfile.builtin.id)]
+        precondition(saved.save())
+        let restored = BLEPreferences.load()
+        precondition(restored.trusted == saved.trusted && restored.autoScan)
+        let b = PCRBluetooth(); b.setForeground(true)
+        let c = CBCentralManager.latest!
+        b.centralManagerDidUpdateState(c)
+        let p = CBPeripheral(name: "renamed", services: [], identifier: id)
+        func discover(_ peripheral: CBPeripheral) {
+            b.centralManager(c, didDiscover: peripheral, advertisementData: [CBAdvertisementDataLocalNameKey: peripheral.name ?? ""], rssi: -50)
+        }
+        discover(p); b.finishDiscovery()
+        precondition(b.active && b.connectionPrompt == nil && c.connections == 1)
+        precondition(p.writes.isEmpty && p.reads.isEmpty, "Auto-connect never reads card or device information")
+        b.disconnect(); b.centralManager(c, didDisconnectPeripheral: p, error: nil)
+        let scans = c.scans
+        b.enterDeviceFlow(); b.centralManagerDidUpdateState(c)
+        precondition(!b.scanning && c.scans == scans, "Tab re-entry and duplicate poweredOn do not defeat manual cancel")
+        c.state = .poweredOff; b.centralManagerDidUpdateState(c)
+        c.state = .poweredOn; b.centralManagerDidUpdateState(c)
+        precondition(b.scanning && c.scans == scans + 1)
+        discover(p); b.finishDiscovery()
+        precondition(b.active && b.connectionPrompt == nil)
+        b.disconnect(); b.centralManager(c, didDisconnectPeripheral: p, error: nil)
+        b.setForeground(false); b.setForeground(true)
+        precondition(b.scanning, "New foreground restores saved auto permission")
+        discover(p); b.finishDiscovery()
+        // Background-close callback arrives after the next foreground event.
+        b.setForeground(false); b.setForeground(true)
+        precondition(!b.scanning)
+        b.centralManager(c, didDisconnectPeripheral: p, error: nil)
+        precondition(b.scanning)
+        discover(p)
+        b.setAutomaticScanning(false)
+        b.requestConnection(b.devices[0])
+        precondition(b.active && b.connectionPrompt == nil, "Manual saved selection does not ask twice")
+        b.disconnect(); b.centralManager(c, didDisconnectPeripheral: p, error: nil)
+        b.scan(); discover(p); b.finishDiscovery()
+        precondition(b.connectionPrompt == nil && !b.active, "Auto-off cannot produce a prompt for saved UUID")
+        b.confirmConnection(b.devices[0], profileID: BLEProfile.builtin.id, remember: false)
+        precondition(!BLEPreferences.load().trusted.contains { $0.id == id })
+        b.disconnect(); b.centralManager(c, didDisconnectPeripheral: p, error: nil)
+        p.name = "PCR-NFCPRO"
+        b.scan(); discover(p); b.finishDiscovery()
+        precondition(b.connectionPrompt?.id == id)
+        b.cancelConnectionPrompt(); b.connectionPromptDidDisappear()
+        precondition(!b.scanning)
+        // A matching broadcast name with another UUID must not inherit trust.
+        saved.autoScan = true; precondition(saved.save())
+        let unknown = PCRBluetooth(); unknown.setForeground(true)
+        let cu = CBCentralManager.latest!; unknown.centralManagerDidUpdateState(cu)
+        let clone = CBPeripheral(name: "PCR-NFCPRO", services: [])
+        unknown.centralManager(cu, didDiscover: clone, advertisementData: [CBAdvertisementDataLocalNameKey: "PCR-NFCPRO"], rssi: -20)
+        unknown.finishDiscovery()
+        precondition(!unknown.active && unknown.connectionPrompt?.id == clone.identifier)
+        unknown.cancelConnectionPrompt()
+        precondition(BLEPreferences.load().trusted == saved.trusted, "Sheet cancellation never revokes trust")
+        // Advanced settings uses the existing explicit confirmation API.
+        var custom = BLEProfile.builtin
+        custom.id = UUID(); custom.name = "Connection only"; custom.adapterID = "connect-only"
+        precondition(unknown.addProfile(custom) == nil)
+        unknown.scan()
+        unknown.centralManager(cu, didDiscover: p, advertisementData: [CBAdvertisementDataLocalNameKey: "PCR-NFCPRO"], rssi: -50)
+        unknown.confirmConnection(unknown.devices[0], profileID: custom.id, remember: true)
+        precondition(BLEPreferences.load().trusted.first?.profileID == custom.id && cu.connections == 1)
+        precondition(p.writes.isEmpty && p.reads.isEmpty)
+        unknown.setForeground(false)
+        unknown.centralManager(cu, didDisconnectPeripheral: p, error: nil)
+        CBCentralManager.authorization = .denied
+        let denied = PCRBluetooth(); denied.setForeground(true)
+        precondition(!denied.scanning)
+        CBCentralManager.authorization = .allowedAlways
+        denied.setForeground(false); denied.setForeground(true)
+        let ca = CBCentralManager.latest!; denied.centralManagerDidUpdateState(ca)
+        precondition(denied.scanning)
+        denied.setForeground(false)
+        BLEPreferences().save()
+        print("PASS: recovery cycles, duplicate state, delayed close, UUID-only saved trust, prompt cancellation, explicit revocation, profile persistence and authorization recovery; synthetic transport only.")
+    }
+    static func presentationChecks() {
+        BLEPreferences().save()
+        let b = PCRBluetooth(); b.setForeground(true)
+        let c = CBCentralManager.latest!; b.centralManagerDidUpdateState(c)
+        let p = CBPeripheral(name: "PCR-NFCPRO", services: [])
+        func discover() {
+            b.centralManager(c, didDiscover: p, advertisementData: [CBAdvertisementDataLocalNameKey: "PCR-NFCPRO"], rssi: -40)
+        }
+        // Exercise every shared root lease against the actual production coordinator.
+        for key in ["root.photos", "root.nfc", "root.logs", "root.profile", "device.settings", "device.profile", "library.modal", "wallpaper.photos"] {
+            b.scan(); b.setPresentationBlocker(key, active: true); discover(); b.finishDiscovery()
+            precondition(b.connectionPrompt == nil && !b.active && p.writes.isEmpty)
+            b.finishPresentationBlocker(key)
+            precondition(b.connectionPrompt?.id == p.identifier, "Modal dismissal resumes, never cancels discovery")
+            b.connectionPromptDidAppear()
+            b.setPresentationBlocker(key, active: true)
+            precondition(b.connectionPrompt == nil)
+            b.finishPresentationBlocker(key)
+            precondition(b.connectionPrompt == nil, "Old sheet must finish dismissal first")
+            b.connectionPromptDidDisappear()
+            precondition(b.connectionPrompt?.id == p.identifier, "Programmatic deferral is not user cancellation")
+            b.cancelConnectionPrompt(); b.connectionPromptDidDisappear()
+        }
+        b.scan(); b.setPresentationBlocker("root.photos", active: true)
+        b.setPresentationBlocker("device.profile", active: true)
+        discover(); b.finishDiscovery()
+        b.finishPresentationBlocker("root.photos")
+        precondition(b.connectionPrompt == nil, "Nested lease cannot release another modal")
+        b.finishPresentationBlocker("device.profile")
+        precondition(b.connectionPrompt != nil)
+        b.connectionPromptDidAppear()
+        b.connectionPrompt = nil // Interactive swipe, unlike a programmatic close.
+        b.connectionPromptDidDisappear(); b.finishDiscovery()
+        precondition(b.connectionPrompt == nil, "Real user dismissal suppresses current cycle")
+        b.scan(); b.setPresentationBlocker("root.photos", active: true); discover(); b.finishDiscovery()
+        b.scan() // Replaced scan invalidates the queued stale device.
+        b.finishPresentationBlocker("root.photos")
+        precondition(b.connectionPrompt == nil && b.devices.isEmpty)
+        discover(); b.finishDiscovery(); b.connectionPromptDidAppear()
+        b.setPresentationBlocker("root.logs", active: true)
+        b.confirmConnection(b.devices[0], profileID: BLEProfile.builtin.id, remember: true)
+        b.connectionPromptDidDisappear(); b.finishPresentationBlocker("root.logs")
+        precondition(b.active && b.connectionPrompt == nil && c.cancellations == 0)
+        precondition(BLEPreferences.load().trusted.contains { $0.id == p.identifier })
+        precondition(p.writes.isEmpty && p.reads.isEmpty, "Presentation never issues business commands")
+        b.disconnect(); b.centralManager(c, didDisconnectPeripheral: p, error: nil)
+        b.setForeground(false); b.setForeground(true); discover(); b.finishDiscovery()
+        precondition(b.active && b.connectionPrompt == nil, "Saved trust is not re-confirmed after modal return")
+        b.setForeground(false); BLEPreferences().save()
+        print("PASS: root Photos/NFC/log/profile/settings/file leases, nested release, stale candidate, real swipe cancel, deferred/programmatic close and persisted trust; production coordinator with host transport.")
+    }
+    static func retryBoundChecks() {
+        let p = CBPeripheral(name: "PCR-NFCPRO", services: [])
+        var saved = BLEPreferences()
+        saved.trusted = [BLETrust(id: p.identifier, profileID: BLEProfile.builtin.id)]
+        saved.save()
+        let b = PCRBluetooth(); b.setForeground(true)
+        let c = CBCentralManager.latest!; b.centralManagerDidUpdateState(c)
+        for attempt in 1...3 {
+            precondition(b.scanning)
+            b.centralManager(c, didDiscover: p, advertisementData: [CBAdvertisementDataLocalNameKey: "PCR-NFCPRO"], rssi: -40)
+            b.finishDiscovery()
+            precondition(b.active && c.connections == attempt && b.connectionPrompt == nil)
+            b.centralManager(c, didFailToConnect: p, error: nil)
+            RunLoop.main.run(until: Date().addingTimeInterval(attempt < 3 ? Double(attempt * 2) + 0.1 : 0.1))
+        }
+        precondition(!b.active && !b.scanning && c.connections == 3 && b.connectionPrompt == nil)
+        b.centralManagerDidUpdateState(c); b.enterDeviceFlow()
+        // Page entry must not reopen scanning after budget exhaustion either.
+        precondition(!b.scanning && c.connections == 3)
+        b.setForeground(false)
+        BLEPreferences().save()
+    }
     static func main() {
+        // Host executable's own defaults domain only; preserve any pre-existing fixture.
+        let key = "linkcard.ble.preferences.v1"
+        let original = UserDefaults.standard.object(forKey: key)
+        defer {
+            if let original = original { UserDefaults.standard.set(original, forKey: key) }
+            else { UserDefaults.standard.removeObject(forKey: key) }
+        }
+        recoveryChecks()
+        presentationChecks()
+        retryBoundChecks()
         identifyChecks()
         let (b, c, p, fields) = connected()
         precondition(!b.canQuery, "NFCPRO must never send text commands")
@@ -129,9 +306,12 @@ import CoreBluetooth
         let scans = cm.scans
         manual.disconnect()
         manual.centralManager(cm, didDisconnectPeripheral: pm, error: nil)
-        manual.setForeground(false); manual.setForeground(true); manual.enterDeviceFlow()
+        manual.enterDeviceFlow()
         precondition(!manual.active && !manual.scanning && cm.scans == scans && cm.connections == 1)
+        manual.setForeground(false); manual.setForeground(true); manual.enterDeviceFlow()
+        precondition(!manual.active && manual.scanning && cm.scans == scans + 1 && cm.connections == 1)
         precondition(manual.lastDisconnectReason == .user)
+        manual.setForeground(false)
 
         let (remote, cr, pr, _) = connected()
         remote.centralManager(cr, didDisconnectPeripheral: pr, error: nil)

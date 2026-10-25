@@ -404,10 +404,12 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["前台保持连接，按需读取。"].waitForExistence(timeout: 6))
         let read = app.buttons["device.read"]; reveal(read)
         XCTAssertFalse(read.isEnabled, "No device means read stays disabled; no permission bypass")
-        let identify = app.buttons["device.identify"]; reveal(identify); tap(identify)
-        let identifyStatus = app.staticTexts["device.identify.status"]; reveal(identifyStatus)
-        XCTAssertTrue(identifyStatus.label.contains("请连接 PCR-NFCPRO / TD5322A"), "Real button reaches production guard without fake radio success")
-        XCTAssertFalse(app.buttons["device.identify.cancel"].exists)
+        // Open/close a real settings sheet before the real identify tap.
+        let settings = app.buttons["device.settings"]; reveal(settings); tap(settings)
+        let done = app.buttons["device.settings.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 6)); tap(done)
+        wait(done, "exists == false")
+        verifyRealIdentifyGuard()
         XCTAssertFalse(read.isEnabled)
         // Never tap scan/authorize/connect on an unattended simulator.
         tap(app.buttons["tab.0"])
@@ -458,6 +460,27 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         capture("settings-sliders-real-touch")
         try verifyFourBlurChannelsRemainIndependentAcrossRelaunch()
         verifyPreviewPhotoPickerCancelAfterVerticalDrags()
+        // Four-blur persistence check relaunched the real app. Photos has now
+        // dismissed; verify the first identify action in that fresh BLE session.
+        tap(app.buttons["tab.2"])
+        verifyRealIdentifyGuard()
+    }
+    private func verifyRealIdentifyGuard() {
+        let status = app.staticTexts["device.identify.status"]; reveal(status)
+        let before = status.label
+        let identify = app.buttons["device.identify"]; reveal(identify)
+        XCTAssertTrue(identify.isEnabled, "Disconnected tap must reach the production guard")
+        tap(identify) // One physical coordinate tap; never invoke an action/test hook.
+        let changed = NSPredicate(format: "label != %@ AND label != ''", before)
+        expectation(for: changed, evaluatedWith: status)
+        waitForExpectations(timeout: 3)
+        reveal(status)
+        XCTAssertTrue(status.isHittable, "The real guard result must be visible beside the button")
+        XCTAssertFalse(app.buttons["device.identify.cancel"].exists)
+        XCTAssertFalse(app.buttons["已取下卡片，读取一次版本"].exists)
+        XCTAssertFalse(app.buttons["通过 NFC 发送"].exists)
+        XCTAssertFalse(app.buttons["取消会话"].exists)
+        // No status/UID values or card screenshots are written to public logs.
     }
     private func pixels(_ image: UIImage, _ rect: CGRect) -> [UInt8] {
         let cg = image.cgImage!

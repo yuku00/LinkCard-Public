@@ -74,6 +74,7 @@ struct FusionShell<Content: View>: View {
             .animation(liveDrag == nil ? spring : nil, value: progress)
         }
         .sheet(isPresented: $state.profile) { FusionProfileView(store: person) }
+        .bleModalActivity("root.profile", active: state.profile)
         .onChange(of: keyboard) { visible in
             if visible && !workbench.expanded { workbench.expanded = true }
         }

@@ -59,7 +59,7 @@ jobs:
         if: success() && steps.build.outcome == 'success' && steps.gates.outcome == 'success'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: LinkCard-0.9.0-build26-IPA
+          name: LinkCard-0.9.1-build27-IPA
           path: |
             build/export/LinkCard-TrollStore.ipa
             build/export/LinkCard-TrollStore.ipa.sha256
@@ -72,7 +72,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: LinkCard-0.9.0-build26-results
+          name: LinkCard-0.9.1-build27-results
           path: |
             build/public/result.json
             build/public/build.log

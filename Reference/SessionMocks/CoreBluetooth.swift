@@ -1,6 +1,6 @@
 // Deterministic transport double. Used only by host regression checks, never linked into the app.
 import Foundation
-public enum CBManagerAuthorization { case allowedAlways }
+public enum CBManagerAuthorization { case allowedAlways, denied, restricted, notDetermined }
 public enum CBManagerState { case poweredOn, poweredOff, unauthorized, unsupported, unknown }
 public enum CBCharacteristicWriteType { case withResponse, withoutResponse }
 public let CBCentralManagerOptionShowPowerAlertKey = "power"
@@ -42,7 +42,7 @@ public final class CBService {
     }
 }
 public final class CBPeripheral {
-    public let identifier = UUID()
+    public let identifier: UUID
     public var name: String?
     public weak var delegate: CBPeripheralDelegate?
     public var services: [CBService]?
@@ -50,7 +50,7 @@ public final class CBPeripheral {
     public var reads = [CBCharacteristic]()
     public var writes = [Data]()
     public var subscriptions = 0
-    public init(name: String, services: [CBService]) { self.name = name; self.services = services }
+    public init(name: String, services: [CBService], identifier: UUID = UUID()) { self.name = name; self.services = services; self.identifier = identifier }
     public func discoverServices(_ uuids: [CBUUID]?) {}
     public func discoverCharacteristics(_ uuids: [CBUUID]?, for service: CBService) {}
     public var writeLimit = 20
@@ -60,7 +60,7 @@ public final class CBPeripheral {
     public func setNotifyValue(_ enabled: Bool, for characteristic: CBCharacteristic) { characteristic.isNotifying = enabled; subscriptions += 1 }
 }
 public final class CBCentralManager {
-    public static var authorization: CBManagerAuthorization { .allowedAlways }
+    public static var authorization: CBManagerAuthorization = .allowedAlways
     public static var latest: CBCentralManager!
     public var state: CBManagerState = .poweredOn
     public var cancellations = 0

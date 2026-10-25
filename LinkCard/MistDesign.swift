@@ -155,6 +155,7 @@ struct WallpaperSettings: View {
     @AppStorage("appearance.blur") private var blur = 18.0
     @AppStorage("appearance.veil") private var veil = 0.42
     @State private var selected: PhotosPickerItem?
+    @State private var photoPickerPresented = false
     @State private var loading = false
     var body: some View {
         MistPanel(id: "settings.wallpaper") {
@@ -162,7 +163,7 @@ struct WallpaperSettings: View {
                 Label("壁纸与柔雾", systemImage: "photo.on.rectangle.angled").font(.headline)
                 Text("让界面像你，也让卡片保持清晰。")
                     .font(.subheadline).foregroundStyle(MistStyle.secondary)
-                PhotosPicker(selection: $selected, matching: .images) {
+                Button { photoPickerPresented = true } label: {
                     Label(store.image == nil ? "从照片选择壁纸" : "更换壁纸", systemImage: "photo.badge.plus")
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }.buttonStyle(MistActionStyle()).disabled(loading)
@@ -194,6 +195,8 @@ struct WallpaperSettings: View {
         }.alert("壁纸提示", isPresented: Binding(get: { store.message != nil }, set: { if !$0 { store.message = nil } })) {
             Button("好") { store.message = nil }
         } message: { Text(store.message ?? "") }
+        .photosPicker(isPresented: $photoPickerPresented, selection: $selected, matching: .images)
+        .bleModalActivity("wallpaper.photos", active: photoPickerPresented || store.message != nil)
     }
 
 }
