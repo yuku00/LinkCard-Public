@@ -36,6 +36,16 @@ class NativeRunnerTests(unittest.TestCase):
         for v in [True, -1, float('nan'), float('inf'), 3601, {}, []]:
             self.assertIsNone(m.safe_progress({'elapsed_seconds': v}, set())['elapsed_seconds'])
 
+    def test_checkpoint_progress_is_fixed_vocabulary_only(self):
+        p = m.Progress(set())
+        p.consume('NATIVE_STEP blur-persistence\n')
+        self.assertEqual(p.data['last_public_step'], 'blur-persistence')
+        p.consume('NATIVE_STEP /private/SECRET\n')
+        self.assertEqual(p.data['last_public_step'], 'blur-persistence')
+        out = m.safe_progress({'last_public_step': '/private/SECRET', 'step_elapsed_seconds': float('inf')}, set())
+        self.assertIsNone(out['last_public_step'])
+        self.assertIsNone(out['step_elapsed_seconds'])
+
     def test_progress_observes_real_xctest_formats_not_arbitrary_text(self):
         ident = 'PN532IdentifyTests/testEveryNotificationSplitAndCoalescedACK'
         p = m.Progress({ident})
@@ -72,7 +82,7 @@ class NativeRunnerTests(unittest.TestCase):
                 self.assertFalse(any(c[0] == 'open' for c in calls))
                 self.assertIn(['xcrun', 'simctl', 'boot', udid], calls)
                 self.assertIn(['xcrun', 'simctl', 'bootstatus', udid, '-b'], calls)
-                self.assertIn(['xcrun', 'simctl', 'spawn', udid, 'launchctl', 'print', 'system'], calls)
+                self.assertIn(['xcrun', 'simctl', 'spawn', udid, '/usr/bin/true'], calls)
                 self.assertEqual(runner.result['runner']['simulator_boot_phase'], 'ready')
                 self.assertNotIn(udid, runner.path.read_text())
             finally:

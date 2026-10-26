@@ -13,7 +13,7 @@ jobs:
     timeout-minutes: 30
     env:
       PYTHONDONTWRITEBYTECODE: '1'
-      LINKCARD_UI_SCOPE: fullApp
+      LINKCARD_UI_SCOPE: sidebar
     defaults:
       run:
         shell: bash
@@ -33,7 +33,7 @@ jobs:
             python3 -m unittest discover -s Reference -v
           } > build/logs/validation.log 2>&1
 
-      - name: Build IPA and execute native unit plus all four fullApp tests
+      - name: Diagnostic only: native unit and stalled sidebar method (IPA gate stays closed)
         id: build
         run: |
           mkdir -p build/logs

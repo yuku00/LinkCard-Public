@@ -405,11 +405,13 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         verifyWorkbenchVerticalWithKeyboardAndLifecycle()
     }
     func testSidebarActionsTabsSettingsAndSafety() throws {
+        print("NATIVE_STEP sidebar-start")
         for entry in [(1, "你的文件，安静留在本机。"), (2, "前台保持连接，按需读取。"), (0, "200 × 200 · 单色电子纸")] {
             open(); tap(app.buttons["drawer.\(entry.0)"])
             XCTAssertTrue(app.staticTexts[entry.1].waitForExistence(timeout: 6))
             panel("expanded"); wait(app.buttons["fusion.close"], "hittable == false")
         }
+        print("NATIVE_STEP tabs")
         tap(app.buttons["tab.1"])
         XCTAssertTrue(app.staticTexts["你的文件，安静留在本机。"].waitForExistence(timeout: 6))
         tap(app.buttons["tab.2"])
@@ -417,16 +419,19 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         let read = app.buttons["device.read"]; reveal(read)
         XCTAssertFalse(read.isEnabled, "No device means read stays disabled; no permission bypass")
         // Open/close a real settings sheet before the real identify tap.
+        print("NATIVE_STEP device-settings")
         let settings = app.buttons["device.settings"]; reveal(settings); tap(settings)
         let done = app.buttons["device.settings.done"]
         XCTAssertTrue(done.waitForExistence(timeout: 6)); tap(done)
         wait(done, "exists == false")
+        print("NATIVE_STEP identify-first")
         verifyRealIdentifyGuard()
         XCTAssertFalse(read.isEnabled)
         // Never tap scan/authorize/connect on an unattended simulator.
         tap(app.buttons["tab.0"])
         // Dithering belongs to Photo mode, not the default Date editor. Enter
         // through the user's mode button; never open Photos or grant permission.
+        print("NATIVE_STEP photo-mode")
         let photoMode = app.buttons["照片"]; reveal(photoMode); tap(photoMode)
         let ditherRow = app.switches.matching(identifier: "create.dither").firstMatch
         let dither = try visibleLeafControl(ditherRow, type: .switch)
@@ -437,6 +442,7 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         XCTAssertEqual(original, "1", "A fresh editor defaults to dithering enabled")
         let changedDither = original == "0" ? "1" : "0"
         capture("dither-before-real-leaf-tap")
+        print("NATIVE_STEP dither-change")
         tap(dither) // Exactly one dynamic-frame coordinate tap, not the outer row.
         waitForValue(dither, row: ditherRow, expected: changedDither)
         XCTAssertNotEqual(dither.value as? String, originalDither, "The real switch must toggle")
@@ -447,12 +453,14 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         reveal(temporaryDate); tap(temporaryDate)
         reveal(photoMode); tap(photoMode); reveal(ditherRow)
         waitForValue(dither, row: ditherRow, expected: changedDither)
+        print("NATIVE_STEP dither-restore")
         tap(dither) // One restoring tap; never retry a failed state change.
         waitForValue(dither, row: ditherRow, expected: original)
         XCTAssertEqual(dither.value as? String, originalDither, "Restore the user's original toggle value")
         XCTAssertEqual(ditherRow.value as? String, originalDither)
         print("FULLAPP dither restored leaf=\(String(describing: dither.value)) row=\(String(describing: ditherRow.value))")
         capture("dither-restored-after-second-real-leaf-tap")
+        print("NATIVE_STEP send-confirmation")
         let dateMode = app.buttons["日期"].firstMatch; reveal(dateMode); tap(dateMode)
         let send = app.buttons["create.send"]; reveal(send); wait(send, "enabled == true")
         tap(send)
@@ -461,6 +469,7 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         XCTAssertFalse(app.buttons["通过 NFC 发送"].exists)
         let status = app.staticTexts["nfc.status"]; reveal(status)
         XCTAssertEqual(status.label, "准备好内容，即可发送到设备", "Cancel must not start a CoreNFC session")
+        print("NATIVE_STEP blur-sliders")
         tap(app.buttons["fusion.settings"])
         let wallpaper = app.sliders["blur.wallpaper"]
         try slide(wallpaper, to: 0.75)
@@ -470,10 +479,13 @@ final class LinkCardFullAppTouchTests: XCTestCase {
         try slide(workbench, to: 0.45)
         XCTAssertTrue(app.sliders["blur.controls"].exists)
         capture("settings-sliders-real-touch")
+        print("NATIVE_STEP blur-persistence")
         try verifyFourBlurChannelsRemainIndependentAcrossRelaunch()
+        print("NATIVE_STEP photo-picker")
         verifyPreviewPhotoPickerCancelAfterVerticalDrags()
         // Four-blur persistence check relaunched the real app. Photos has now
         // dismissed; verify the first identify action in that fresh BLE session.
+        print("NATIVE_STEP identify-final")
         tap(app.buttons["tab.2"])
         verifyRealIdentifyGuard()
     }

@@ -13,6 +13,7 @@ PHASES = {'not-started', 'inventory', 'create', 'simulator-launch', 'boot', 'boo
 BOOT_PHASES = {'not-started', 'inventory', 'create', 'simulator-launch', 'boot', 'bootstatus',
                'readiness', 'ready', 'failed', 'waiting-backboard', 'waiting-data-migration',
                'waiting-system-app', 'waiting-boot'}
+PUBLIC_STEPS = {'tabs', 'identify-first', 'photo-mode', 'blur-sliders', 'blur-persistence', 'photo-picker', 'identify-final', 'sidebar-start', 'dither-change', 'send-confirmation', 'device-settings', 'dither-restore'}
 PROCESS_STATES = {'not-started', 'running', 'exited', 'terminated', 'killed', 'unknown'}
 
 
@@ -57,6 +58,10 @@ def safe_progress(raw, allowed):
         out[key] = value if type(value) is int and 0 <= value <= 100000 else None
     last = raw.get('last_public_test')
     out['last_public_test'] = last if type(last) is str and last in allowed else None
+    step = raw.get('last_public_step')
+    out['last_public_step'] = step if type(step) is str and step in PUBLIC_STEPS else None
+    elapsed = raw.get('step_elapsed_seconds')
+    out['step_elapsed_seconds'] = round(elapsed, 2) if type(elapsed) in (int, float) and 0 <= elapsed <= 3600 else None
     return out
 
 
@@ -65,12 +70,17 @@ class Progress:
         self.allowed = allowed
         self.started = set()
         self.completed = set()
+        self.step_at = None
         self.data = {'phase': 'not-started', 'timeout_at': 'none',
                      'simulator_boot_phase': 'not-started', 'runner_process_state': 'not-started',
                      'tests_started': 0, 'tests_completed': 0, 'last_public_test': None,
                      'cleanup': 'not-started'}
 
     def consume(self, line):
+        step = line.strip().removeprefix('NATIVE_STEP ') if line.startswith('NATIVE_STEP ') else None
+        if step in PUBLIC_STEPS:
+            self.data['last_public_step'] = step
+            self.step_at = time.monotonic()
         # Match XCTest's two public output formats; never preserve the input line.
         m = re.search(r"Test Case '-\[(?:\w+\.)?(\w+) (test\w+)\]' (started|passed|failed|skipped)", line)
         if not m:
@@ -147,6 +157,8 @@ class NativeRunner:
         self.process = None
 
     def save(self):
+        if self.progress.step_at is not None:
+            self.progress.data['step_elapsed_seconds'] = time.monotonic() - self.progress.step_at
         self.progress.data['elapsed_seconds'] = round(time.monotonic() - self.started, 2)
         self.result['runner'] = safe_progress(self.progress.data, self.progress.allowed)
         self.path.write_text(json.dumps(self.result, indent=2) + '\n')
@@ -198,7 +210,9 @@ class NativeRunner:
             check = json.loads(self.command(['xcrun', 'simctl', 'list', 'devices', '--json'], 15))
             assert any(d['udid'] == self.udid and d.get('state') == 'Booted' and d.get('isAvailable')
                        for group in check['devices'].values() for d in group)
-            self.command(['xcrun', 'simctl', 'spawn', self.udid, 'launchctl', 'print', 'system'], 15)
+            # Verify executable service availability without enumerating the entire
+            # launchd system domain (observed 15s timeout before XCTest started).
+            self.command(['xcrun', 'simctl', 'spawn', self.udid, '/usr/bin/true'], 15)
             self.progress.data['simulator_boot_phase'] = 'ready'
         finally:
             self.progress.data['simulator_startup_seconds'] = round(time.monotonic() - boot_start, 2)
