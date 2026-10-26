@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import shutil
 import subprocess
 import time
 
@@ -13,7 +14,6 @@ PHASES = {'not-started', 'inventory', 'create', 'simulator-launch', 'boot', 'boo
 BOOT_PHASES = {'not-started', 'inventory', 'create', 'simulator-launch', 'boot', 'bootstatus',
                'readiness', 'ready', 'failed', 'waiting-backboard', 'waiting-data-migration',
                'waiting-system-app', 'waiting-boot'}
-PUBLIC_STEPS = {'tabs', 'identify-first', 'photo-mode', 'blur-sliders', 'blur-persistence', 'photo-picker', 'identify-final', 'sidebar-start', 'dither-change', 'send-confirmation', 'device-settings', 'dither-restore'}
 PROCESS_STATES = {'not-started', 'running', 'exited', 'terminated', 'killed', 'unknown'}
 
 
@@ -58,10 +58,6 @@ def safe_progress(raw, allowed):
         out[key] = value if type(value) is int and 0 <= value <= 100000 else None
     last = raw.get('last_public_test')
     out['last_public_test'] = last if type(last) is str and last in allowed else None
-    step = raw.get('last_public_step')
-    out['last_public_step'] = step if type(step) is str and step in PUBLIC_STEPS else None
-    elapsed = raw.get('step_elapsed_seconds')
-    out['step_elapsed_seconds'] = round(elapsed, 2) if type(elapsed) in (int, float) and 0 <= elapsed <= 3600 else None
     return out
 
 
@@ -70,17 +66,12 @@ class Progress:
         self.allowed = allowed
         self.started = set()
         self.completed = set()
-        self.step_at = None
         self.data = {'phase': 'not-started', 'timeout_at': 'none',
                      'simulator_boot_phase': 'not-started', 'runner_process_state': 'not-started',
                      'tests_started': 0, 'tests_completed': 0, 'last_public_test': None,
                      'cleanup': 'not-started'}
 
     def consume(self, line):
-        step = line.strip().removeprefix('NATIVE_STEP ') if line.startswith('NATIVE_STEP ') else None
-        if step in PUBLIC_STEPS:
-            self.data['last_public_step'] = step
-            self.step_at = time.monotonic()
         # Match XCTest's two public output formats; never preserve the input line.
         m = re.search(r"Test Case '-\[(?:\w+\.)?(\w+) (test\w+)\]' (started|passed|failed|skipped)", line)
         if not m:
@@ -157,8 +148,6 @@ class NativeRunner:
         self.process = None
 
     def save(self):
-        if self.progress.step_at is not None:
-            self.progress.data['step_elapsed_seconds'] = time.monotonic() - self.progress.step_at
         self.progress.data['elapsed_seconds'] = round(time.monotonic() - self.started, 2)
         self.result['runner'] = safe_progress(self.progress.data, self.progress.allowed)
         self.path.write_text(json.dumps(self.result, indent=2) + '\n')
@@ -218,36 +207,71 @@ class NativeRunner:
             self.progress.data['simulator_startup_seconds'] = round(time.monotonic() - boot_start, 2)
             self.save()
 
+    def execute(self, command, logfile):
+        if time.monotonic() >= self.deadline:
+            raise BudgetExceeded()
+        with (self.logs / logfile).open('a') as output, (self.logs / logfile).open() as reader:
+            reader.seek(0, os.SEEK_END)
+            self.process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+            self.progress.data['runner_process_state'] = 'running'
+            while True:
+                for line in reader:
+                    self.progress.consume(line)
+                self.save()
+                code = self.process.poll()
+                if code is not None:
+                    for line in reader:
+                        self.progress.consume(line)
+                    break
+                if time.monotonic() >= self.deadline:
+                    raise BudgetExceeded()
+                time.sleep(0.5)
+            self.progress.data['runner_process_state'] = 'exited'
+            reap_group(self.process)
+            self.process = None
+        return code
+
+    def prepare_products(self, derived, logfile):
+        # Compile once while no test simulator is running. Copy immutable build
+        # products into the fullApp's separate directory; never share live state.
+        self.progress.data['phase'] = 'build'
+        self.save()
+        products = Path(derived) / 'Build/Products'
+        if self.suite == 'unit':
+            architecture = os.uname().machine
+            assert architecture in {'arm64', 'x86_64'}
+            command = ['xcodebuild', 'build-for-testing', '-project', 'LinkCard.xcodeproj',
+                       '-scheme', 'LinkCard', '-configuration', 'Debug', '-sdk', 'iphonesimulator',
+                       '-destination', 'generic/platform=iOS Simulator', '-derivedDataPath', derived,
+                       'ARCHS=' + architecture, 'ONLY_ACTIVE_ARCH=YES',
+                       'CODE_SIGNING_ALLOWED=NO', 'CODE_SIGNING_REQUIRED=NO',
+                       'CODE_SIGN_IDENTITY=', 'DEVELOPMENT_TEAM=']
+            if self.execute(command, logfile) != 0:
+                raise RuntimeError('test-build-failed')
+        else:
+            source = Path('build/UnitDerivedData/Build/Products')
+            assert (self.logs / 'native-products-ready').is_file()
+            assert source.is_dir() and not products.exists()
+            shutil.copytree(source, products, symlinks=True)
+        plans = list(products.glob('*.xctestrun'))
+        assert len(plans) == 1
+        if self.suite == 'unit':
+            (self.logs / 'native-products-ready').touch()
+        return plans[0]
+
     def run(self, selections, bundle, logfile, derived):
         try:
             self.save()
+            plan = self.prepare_products(derived, logfile)
             self.boot()
-            self.progress.data['phase'] = 'build'
-            command = ['xcodebuild', 'test', '-project', 'LinkCard.xcodeproj', '-scheme', 'LinkCard',
-                       '-configuration', 'Debug', '-sdk', 'iphonesimulator',
+            self.progress.data['phase'] = 'test-startup'
+            command = ['xcodebuild', 'test-without-building', '-xctestrun', str(plan),
                        '-destination', 'platform=iOS Simulator,id=' + self.udid, '-destination-timeout', '90',
                        '-parallel-testing-enabled', 'NO', '-maximum-concurrent-test-simulator-destinations', '1',
-                       *selections, '-derivedDataPath', derived, '-resultBundlePath', str(self.logs / bundle),
+                       *selections, '-resultBundlePath', str(self.logs / bundle),
                        'CODE_SIGNING_ALLOWED=NO', 'CODE_SIGNING_REQUIRED=NO', 'CODE_SIGN_IDENTITY=', 'DEVELOPMENT_TEAM=']
-            with (self.logs / logfile).open('w') as output, (self.logs / logfile).open() as reader:
-                self.process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
-                self.progress.data['runner_process_state'] = 'running'
-                while True:
-                    for line in reader:
-                        self.progress.consume(line)
-                    self.save()
-                    code = self.process.poll()
-                    if code is not None:
-                        for line in reader:
-                            self.progress.consume(line)
-                        break
-                    if time.monotonic() >= self.deadline:
-                        raise BudgetExceeded()
-                    time.sleep(0.5)
-                self.progress.data['runner_process_state'] = 'exited'
-                self.result.update(status='passed' if code == 0 else 'failed', exit_code=code)
-                reap_group(self.process)
-                self.process = None
+            code = self.execute(command, logfile)
+            self.result.update(status='passed' if code == 0 else 'failed', exit_code=code)
             self.progress.data['phase'] = 'results'
             summary = json.loads(self.command(['xcrun', 'xcresulttool', 'get', 'test-results', 'summary',
                                               '--path', str(self.logs / bundle)], 30))

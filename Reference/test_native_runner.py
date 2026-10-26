@@ -36,15 +36,49 @@ class NativeRunnerTests(unittest.TestCase):
         for v in [True, -1, float('nan'), float('inf'), 3601, {}, []]:
             self.assertIsNone(m.safe_progress({'elapsed_seconds': v}, set())['elapsed_seconds'])
 
-    def test_checkpoint_progress_is_fixed_vocabulary_only(self):
-        p = m.Progress(set())
-        p.consume('NATIVE_STEP blur-persistence\n')
-        self.assertEqual(p.data['last_public_step'], 'blur-persistence')
-        p.consume('NATIVE_STEP /private/SECRET\n')
-        self.assertEqual(p.data['last_public_step'], 'blur-persistence')
-        out = m.safe_progress({'last_public_step': '/private/SECRET', 'step_elapsed_seconds': float('inf')}, set())
-        self.assertIsNone(out['last_public_step'])
-        self.assertIsNone(out['step_elapsed_seconds'])
+    def test_full_app_uses_separate_copy_without_recompiling(self):
+        old = Path.cwd()
+        with tempfile.TemporaryDirectory() as folder:
+            try:
+                os.chdir(folder)
+                unit = m.NativeRunner('unit', 420, 'unit.json')
+                commands = []
+                def build(command, logfile):
+                    commands.append(command)
+                    products = Path('build/UnitDerivedData/Build/Products')
+                    products.mkdir(parents=True)
+                    (products / 'LinkCard.xctestrun').write_text('same-build-plan')
+                    return 0
+                unit.execute = build
+                with patch.object(m.os, 'uname', return_value=type('Host', (), {'machine': 'arm64'})()):
+                    unit.prepare_products('build/UnitDerivedData', 'unit.log')
+                full = m.NativeRunner('fullApp', 1200, 'full.json')
+                full.execute = lambda *a: self.fail('FullApp must not recompile')
+                plan = full.prepare_products('build/FullAppDerivedData', 'full.log')
+                self.assertEqual(plan.read_text(), 'same-build-plan')
+                self.assertIn('FullAppDerivedData', str(plan))
+                self.assertEqual(commands[0][1], 'build-for-testing')
+                self.assertNotEqual(plan.stat().st_ino, Path('build/UnitDerivedData/Build/Products/LinkCard.xctestrun').stat().st_ino)
+            finally:
+                os.chdir(old)
+
+    def test_compilation_finishes_before_simulator_boot(self):
+        old = Path.cwd()
+        with tempfile.TemporaryDirectory() as folder:
+            try:
+                os.chdir(folder)
+                runner = m.NativeRunner('unit', 420, 'unit.json')
+                events = []
+                runner.prepare_products = lambda *a: events.append('prepare') or Path('safe.xctestrun')
+                runner.boot = lambda: events.append('boot')
+                runner.execute = lambda *a: events.append('test') or 0
+                runner.udid = '12345678-1234-1234-1234-123456789012'
+                runner.command = lambda *a, **kw: b'{"passedTests":0,"failedTests":0,"skippedTests":0,"totalTestCount":0}'
+                with patch('builtins.print'):
+                    runner.run([], 'result', 'native.log', 'derived')
+                self.assertEqual(events, ['prepare', 'boot', 'test'])
+            finally:
+                os.chdir(old)
 
     def test_progress_observes_real_xctest_formats_not_arbitrary_text(self):
         ident = 'PN532IdentifyTests/testEveryNotificationSplitAndCoalescedACK'
@@ -98,6 +132,7 @@ class NativeRunnerTests(unittest.TestCase):
                     runner.progress.data['phase'] = 'bootstatus'
                     raise m.BudgetExceeded()
                 runner.boot = boot
+                runner.prepare_products = lambda *a: Path('safe.xctestrun')
                 with patch('builtins.print'):
                     result = runner.run([], 'none', 'test.log', 'derived')
                 self.assertEqual(result['status'], 'timeout')
