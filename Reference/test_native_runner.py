@@ -116,7 +116,8 @@ class NativeRunnerTests(unittest.TestCase):
                 self.assertFalse(any(c[0] == 'open' for c in calls))
                 self.assertIn(['xcrun', 'simctl', 'boot', udid], calls)
                 self.assertIn(['xcrun', 'simctl', 'bootstatus', udid, '-b'], calls)
-                self.assertIn(['xcrun', 'simctl', 'spawn', udid, '/usr/bin/true'], calls)
+                self.assertEqual(calls[-1], ['xcrun', 'simctl', 'bootstatus', udid, '-b'])
+                self.assertFalse(any(c[1:3] == ['simctl', 'spawn'] for c in calls))
                 self.assertEqual(runner.result['runner']['simulator_boot_phase'], 'ready')
                 self.assertNotIn(udid, runner.path.read_text())
             finally:
