@@ -33,7 +33,7 @@ jobs:
             python3 -m unittest discover -s Reference -v
           } > build/logs/validation.log 2>&1
 
-      - name: Diagnostic only: native unit and stalled sidebar method (IPA gate stays closed)
+      - name: Diagnostic native unit and stalled sidebar method - IPA gate stays closed
         id: build
         run: |
           mkdir -p build/logs
