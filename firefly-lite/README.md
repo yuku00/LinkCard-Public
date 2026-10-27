@@ -2,7 +2,9 @@
 
 独立重写的 RootHide Theos 源码项目，目标 iOS 16.6。MIT。包 ID 与偏好域均为 `dev.fireflylite.badgeglow`，不复用旧插件授权、二进制、包 ID、设置或颜色依赖。
 
-**状态：已实现源码；本地主机静态/纯 C/卸载分支测试通过。未成功编译、未产出 deb、未真机验证。完整 iOS16.6 类头核验仍是缺口，见 docs/API-EVIDENCE.md。**
+**状态：已通过 GitHub Actions macOS 构建，产出真实 RootHide deb；主机测试与 Apple Foundation 断言通过。未真机验证。完整 iOS16.6 类头核验仍是缺口，见 docs/API-EVIDENCE.md。**
+
+首次成功构建：[Actions #40444208442](https://github.com/yuku00/LinkCard-Public/actions/runs/40444208442)。编译成功不代表 SpringBoard 注入、偏好清理或真机稳定性通过。
 
 ## 功能与设计
 - 应用角标为正数或非空非零文本时显示柔和静态光晕；无角标立即移除。不是独立读取通知中心，关闭角标的通知不触发。
@@ -59,8 +61,9 @@ dpkg-deb -c packages/*.deb
 python3 tests/check.py
 ```
 已执行：plist 解析、schema/依赖/禁止 API 静态检查、11 个直接编译执行的纯 C 断言、6 个 prerm 生命周期分支、清理失败不阻断卸载。
-未执行：Objective-C 编译/链接/签名、原生设置运行、SpringBoard hooks、CFPreferences 跨进程、实际 dpkg 安装/卸载、视觉效果、功耗与性能。
+已在 CI 完成：Objective-C/Objective-C++ 编译、链接、签名、RootHide 打包、包 ID/架构与文件清单检查。
+未执行：原生设置运行、SpringBoard hooks、CFPreferences 跨进程、实际 dpkg 安装/卸载、视觉效果、功耗与性能。
 
-Apple 环境另可在临时目录编译 `tests/apple-logic.m` + `Shared/FLPreferences.m`，链接 Foundation/CoreFoundation，执行 12 个角标类型断言（不写偏好）；该测试本次未运行。它也不能代替设备验收。
+Apple 环境在临时目录编译 `tests/apple-logic.m` + `Shared/FLPreferences.m`，链接 Foundation/CoreFoundation；12 个角标类型断言已在 CI 通过（不写偏好）。它不能代替设备验收。
 
 没有 HTML 截图冒充原生预览；本包暂不附虚假的 UI 实测图。
