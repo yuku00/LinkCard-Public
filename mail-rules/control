@@ -1,6 +1,6 @@
 Package: dev.mailrules.probe
 Name: Mail Rules
-Version: 0.2.0
+Version: 0.3.0
 Architecture: iphoneos-arm64e
 Description: Account-scoped sender hiding for a non-threaded single inbox. Runtime predicate verification required; disabled by default.
 Maintainer: Mail Rules

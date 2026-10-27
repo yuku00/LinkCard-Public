@@ -1,4 +1,24 @@
 #import "RuleCore.h"
+#import <objc/message.h>
+static id ConvertibleGet(id object, NSString *name) {
+    SEL sel=NSSelectorFromString(name);
+    NSMethodSignature *sig=[object methodSignatureForSelector:sel];
+    if (!sig || sig.numberOfArguments!=2 || strcmp(sig.methodReturnType,@encode(id))!=0) return nil;
+    return ((id(*)(id,SEL))objc_msgSend)(object,sel);
+}
+NSString *MRReadAddress(id convertible) {
+    @try {
+        id address=ConvertibleGet(convertible,@"emailAddressValue");
+        return MRNormalize(ConvertibleGet(address ?: convertible,@"stringValue"));
+    } @catch (__unused NSException *e) { return nil; }
+}
+NSString *MRIdentityKey(id representation, NSMutableDictionary *identities) {
+    if (!representation || ![NSPropertyListSerialization propertyList:representation isValidForFormat:NSPropertyListBinaryFormat_v1_0]) return nil;
+    for (NSString *key in identities) if ([identities[key] isEqual:representation]) return key;
+    NSString *key = [@"object:" stringByAppendingString:NSUUID.UUID.UUIDString];
+    identities[key] = representation;
+    return key;
+}
 NSString *MRNormalize(NSString *input) {
     if (![input isKindOfClass:NSString.class]) return nil;
     NSString *s = [input stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];

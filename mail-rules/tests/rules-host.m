@@ -7,8 +7,27 @@
 - (BOOL)isEqual:(id)o {return [o isKindOfClass:FixtureAddress.class] && [self.stringValue isEqual:[o stringValue]];}
 - (NSUInteger)hash {return self.stringValue.hash;}
 @end
+@interface ForwardedAddress : NSProxy
+@property(strong) FixtureAddress *target;
+@end
+@implementation ForwardedAddress
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector { return [self.target methodSignatureForSelector:selector]; }
+- (void)forwardInvocation:(NSInvocation *)invocation { [invocation invokeWithTarget:self.target]; }
+@end
 static id Address(NSString *s) {FixtureAddress *a=[FixtureAddress new]; a.stringValue=MRNormalize(s); return a;}
 int main(void) { @autoreleasepool {
+    NSMutableDictionary *identities=[NSMutableDictionary dictionary];
+    NSDictionary *serialized=@{@"id":@"fixture-account-A",@"type":@1};
+    NSString *key=MRIdentityKey(serialized,identities);
+    assert(key.length && [MRIdentityKey([serialized copy],identities) isEqual:key]);
+    NSData *stored=[NSPropertyListSerialization dataWithPropertyList:identities format:NSPropertyListBinaryFormat_v1_0 options:0 error:NULL];
+    NSMutableDictionary *reloaded=[NSPropertyListSerialization propertyListWithData:stored options:NSPropertyListMutableContainers format:NULL error:NULL];
+    assert([MRIdentityKey(serialized,reloaded) isEqual:key]);
+    assert(![MRIdentityKey(@{@"id":@"fixture-account-B"},reloaded) isEqual:key]);
+    assert(!MRIdentityKey(nil,reloaded) && !MRIdentityKey([NSObject new],reloaded));
+    ForwardedAddress *forwarded=[ForwardedAddress alloc]; forwarded.target=Address(@"A.B+tag@EXAMPLE.COM");
+    assert([MRReadAddress(forwarded) isEqual:@"A.B+tag@example.com"]);
+    assert(!MRReadAddress(nil) && !MRReadAddress(@42));
     assert([MRNormalize(@" A.B+tag@EXAMPLE.COM ") isEqual:@"A.B+tag@example.com"]);
     for(NSString *bad in @[@"",@"a",@"a@@b",@"Name <a@b>",@"a b@c",@".a@b",@"a..b@c",@"a@-b"]) assert(!MRNormalize(bad));
     for(NSUInteger n=0;n<4;n++) for(int i=0;i<2;i++) for(int s=0;s<2;s++) for(int t=0;t<2;t++) for(int q=0;q<2;q++) assert(MRScope(i,s,n,t,q)==(i && !s && n==1 && !t && !q));
