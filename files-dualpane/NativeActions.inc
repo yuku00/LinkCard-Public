@@ -32,7 +32,9 @@ static void InstallNativeActions(void) {
             }),method_getTypeEncoding(lm));
             SEL reuse=@selector(prepareForReuse); Method rm=class_getInstanceMethod(cls,reuse); IMP ro=method_getImplementation(rm);
             class_replaceMethod(cls,reuse,imp_implementationWithBlock(^(UICollectionViewCell *v){
+                objc_setAssociatedObject(v,&FPCellResettingKey,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                 StyleCell(v,NO); ((void(*)(id,SEL))ro)(v,reuse);
+                objc_setAssociatedObject(v,&FPCellResettingKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             }),method_getTypeEncoding(rm));
             SEL selected=@selector(setSelected:); Method sm=class_getInstanceMethod(cls,selected); IMP so=method_getImplementation(sm);
             class_replaceMethod(cls,selected,imp_implementationWithBlock(^(UICollectionViewCell *v,BOOL value){

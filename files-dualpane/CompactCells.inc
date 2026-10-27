@@ -5,9 +5,9 @@ static NSInteger FPNameLines(CGFloat availableHeight, CGFloat lineHeight) {
 static CGFloat FPCompactRowHeight(CGFloat nameLine, CGFloat detailLine) {
     return MAX(44,ceil(2*nameLine+detailLine+8));
 }
-static char CellStyleKey;
+static char CellStyleKey, FPCellResettingKey;
 static BOOL IsPaneListCell(UICollectionViewCell *cell) {
-    if(!PaneForResponder(cell)) return NO;
+    if(objc_getAssociatedObject(cell,&FPCellResettingKey) || !PaneForResponder(cell)) return NO;
     UICollectionView *collection=nil;
     for(UIView *v=cell.superview;v;v=v.superview) if([v isKindOfClass:UICollectionView.class]) { collection=(id)v; break; }
     if(!collection || !InExperiment(collection.delegate)) return NO;
