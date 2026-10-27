@@ -20,13 +20,12 @@ jobs:
           persist-credentials: false
       - name: Static safety checks
         run: |
-          python3 tests/check.py
-          python3 tests/check_lifecycle.py
-          python3 tests/check_experiment.py
-      - name: Execute production MRC wrappers on host
+          python3 tests/check_dualpane.py
+      - name: Execute production transient state wrappers on host
         run: |
-          clang -fno-objc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation tests/lifecycle-host.m -o "$RUNNER_TEMP/lifecycle-host"
-          "$RUNNER_TEMP/lifecycle-host"
+          python3 tests/state_host.py "$RUNNER_TEMP/state-host.m"
+          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation "$RUNNER_TEMP/state-host.m" -o "$RUNNER_TEMP/state-host"
+          "$RUNNER_TEMP/state-host"
       - name: Prepare RootHide Theos
         run: |
           brew install make ldid dpkg
@@ -46,7 +45,7 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.filesdualpane.nativeprobe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.3.0
+          test "$(dpkg-deb -f "$deb" Version)" = 0.4.0
           dpkg-deb -x "$deb" "$RUNNER_TEMP/files-package"
           binary=$(python3 -c 'import os,pathlib; print(next(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("files-package").rglob("FilesNativeProbe.dylib")))')
           test -n "$binary"
