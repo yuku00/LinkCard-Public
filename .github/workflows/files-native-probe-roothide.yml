@@ -24,18 +24,20 @@ jobs:
           python3 tests/check_actions.py
           python3 tests/check_060.py
           python3 tests/check_070.py
-          python3 tests/check_071.py
-          python3 tests/check_073.py
+          python3 tests/check_074.py
       - name: Execute native current location fixture
         run: |
           python3 tests/location_host.py "$RUNNER_TEMP/location-host.m"
           clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation "$RUNNER_TEMP/location-host.m" -o "$RUNNER_TEMP/location-host"
           "$RUNNER_TEMP/location-host"
-      - name: Execute production selection visual and restore policy
+      - name: Execute production style synchronous reentry and restore policy
         run: |
-          python3 tests/ui_host.py "$RUNNER_TEMP/ui-host.m"
+          python3 tests/style_host.py "$RUNNER_TEMP/ui-host.m"
           clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation -framework CoreGraphics "$RUNNER_TEMP/ui-host.m" -o "$RUNNER_TEMP/ui-host"
           "$RUNNER_TEMP/ui-host"
+          python3 tests/style_host.py "$RUNNER_TEMP/style-mutant.m" --mutate-margin
+          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation -framework CoreGraphics "$RUNNER_TEMP/style-mutant.m" -o "$RUNNER_TEMP/style-mutant"
+          if "$RUNNER_TEMP/style-mutant" > "$RUNNER_TEMP/mutant.log" 2>&1; then echo 'FAIL: margin regression escaped fixture'; exit 1; else echo 'PASS: deliberate zero-margin mutant rejected'; fi
       - name: Execute production Swift generic bridge host model
         run: |
           python3 tests/swift_host.py "$RUNNER_TEMP/swift-host.swift"
@@ -66,7 +68,6 @@ jobs:
       - name: Build native experiment arm64 and arm64e
         run: |
           set -o pipefail
-          chmod 755 layout/DEBIAN/postrm
           gmake package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide 2>&1 | tee "$RUNNER_TEMP/files-probe-build.log"
       - name: Verify package
         run: |
@@ -76,7 +77,7 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.filesdualpane.nativeprobe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.7.3
+          test "$(dpkg-deb -f "$deb" Version)" = 0.7.4
           dpkg-deb -x "$deb" "$RUNNER_TEMP/files-package"
           binary=$(python3 -c 'import os,pathlib; print(next(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("files-package").rglob("FilesNativeProbe.dylib")))')
           test -n "$binary"

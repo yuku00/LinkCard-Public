@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 r=Path(__file__).resolve().parents[1]
-s=(r/'DualPane.m').read_text(); cross=(r/'CrossPane.inc').read_text(); style=(r/'CompactCells.inc').read_text()
+s=(r/'DualPane.m').read_text(); cross=(r/'CrossPane.inc').read_text()
 prefix='''#import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #include <assert.h>
@@ -63,11 +63,9 @@ core=(r/'FileCore.inc').read_text()
 abi=s[s.index('static BOOL ABI('):s.index('static void Set(')]
 selection=cross[:cross.index('static void FPNotice')]
 selection=selection.replace('#include "NativeLocation.inc"','')
-policy=style[style.index('static NSInteger FPNameLines'):style.index('static char CellStyleKey')]
+policy=''
 main='''
 int main(void) { @autoreleasepool {
-    assert(FPNameLines(28,17)==1); assert(FPNameLines(34,17)==2);
-    assert(FPCompactRowHeight(16,13)==53); assert(FPCompactRowHeight(35,29)==107);
     NSURL *root=[NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString] isDirectory:YES];
     NSFileManager *fm=NSFileManager.defaultManager;
     assert([fm createDirectoryAtURL:root withIntermediateDirectories:NO attributes:nil error:nil]);
@@ -106,7 +104,7 @@ int main(void) { @autoreleasepool {
     assert(FPTransferOne([left URLByAppendingPathComponent:@"missing"],right,YES));
     assert([fm removeItemAtURL:root error:nil]);
     full.fullDocumentManagerViewController=nil; full.hierarchyController=nil; cv.delegate=nil;
-    puts("PASS production core: bounded row policy, offscreen selection/source/target mapping, missing URL rejects whole selection, copy/move, conflict retains source, self/descendant rejection");
+    puts("PASS production core: offscreen selection/source/target mapping, missing URL rejects whole selection, copy/move, conflict retains source, self/descendant rejection");
 } return 0; }
 '''
 Path(sys.argv[1]).write_text(prefix+abi+core+selection+policy+main)

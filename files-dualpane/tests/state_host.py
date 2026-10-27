@@ -46,16 +46,16 @@ int main(void) { @autoreleasepool {
     nativeState.mostRecentlyVisitedLocation=[@"native-folder" dataUsingEncoding:NSUTF8StringEncoding];
     nativeState.mostRecentEffectiveRootLocation=[@"provider-root" dataUsingEncoding:NSUTF8StringEncoding];
     nativeState.selectedTab=@1;
-    paneStates[left.stateIdentifier]=FPNativeInitialState(original);
-    paneStates[right.stateIdentifier]=FPNativeInitialState(original);
+    paneStates[left.stateIdentifier]=[DOCUserInterfaceState new];
+    paneStates[right.stateIdentifier]=[DOCUserInterfaceState new];
     id l=[store interfaceStateForConfiguration:left], r=[store interfaceStateForConfiguration:right];
-    assert(l!=r && l!=nativeState && r!=nativeState && reads==2);
-    assert([[l mostRecentlyVisitedLocation] isEqual:nativeState.mostRecentlyVisitedLocation]);
-    assert([[r mostRecentEffectiveRootLocation] isEqual:nativeState.mostRecentEffectiveRootLocation]);
-    assert([[l selectedTab] isEqual:@1]);
+    assert(l!=r && l!=nativeState && r!=nativeState && reads==0);
+    assert(![l mostRecentlyVisitedLocation]);
+    assert(![r mostRecentEffectiveRootLocation]);
+    assert(![l selectedTab]);
     [l setMostRecentlyVisitedLocation:[@"left navigated" dataUsingEncoding:NSUTF8StringEncoding]];
     assert(![[l mostRecentlyVisitedLocation] isEqual:[r mostRecentlyVisitedLocation]]);
-    assert([[r mostRecentlyVisitedLocation] isEqual:nativeState.mostRecentlyVisitedLocation]);
+    assert(![r mostRecentlyVisitedLocation]);
     id replacement=[DOCUserInterfaceState new];
     [store updateInterfaceState:replacement forConfiguration:left];
     assert([store interfaceStateForConfiguration:left]==replacement);
@@ -67,12 +67,17 @@ int main(void) { @autoreleasepool {
     [store updateInterfaceState:l forConfiguration:original];
     [store _writeUserInterfaceStateToDefaultsForConfiguration:original];
     [store _writeMostRecentUserInterfaceStateToDefaultsForConfiguration:original];
-    assert(reads==3 && updates==1 && writes==2);
+    assert(reads==1 && updates==1 && writes==2);
     [paneStates removeAllObjects];
     [store updateInterfaceState:l forConfiguration:left];
     assert([store interfaceStateForConfiguration:left]!=nil && paneStates.count==0);
-    assert(reads==3 && updates==1 && writes==2);
-    puts("PASS actual production state wrappers: native initial location cloned without shared mutable state, separate panes, original passthrough, no owned persistence, late callback does not recreate retained state");
+    assert(reads==1 && updates==1 && writes==2);
+    Config *reopened=[Config new]; reopened.stateIdentifier=@"dev.filesdualpane.session.new-unique-id";
+    paneStates[reopened.stateIdentifier]=[DOCUserInterfaceState new];
+    id fresh=[store interfaceStateForConfiguration:reopened];
+    [store updateInterfaceState:l forConfiguration:left];
+    assert([store interfaceStateForConfiguration:reopened]==fresh && paneStates.count==1);
+    puts("PASS actual production state wrappers: empty independent states without reading native history, separate panes, original passthrough, no owned persistence, late callback does not recreate retained state");
 } return 0; }
 '''
 Path(sys.argv[1]).write_text(prefix+helpers+state+main)

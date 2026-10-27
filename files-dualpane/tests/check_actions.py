@@ -5,10 +5,10 @@ assert 'InstallPreviewGuards' not in s and 'BlockPreview' not in s
 c=(r/'CompactCells.inc').read_text()
 assert 'showActions' not in s and '左栏 · 操作' not in s
 assert 'FPPaneMenu(self,0)' in s and 'FPPaneMenu(self,1)' in s
-assert 'IsPaneListCell(v)' in a and 'InExperiment(collection.delegate)' in c
+assert 'IsPaneListCell(cell)' in a and 'InExperiment(collection.delegate)' in a
 assert 'numberOfLines=3' not in c and 'CGSizeMake(20,20)' in c
-assert 'preferredLayoutAttributesFittingAttributes:' in a
-assert 'CellStyleKey,nil' in c and 'hadStyle && !IsPaneListCell(v)' in a
+assert 'preferredLayoutAttributesFittingAttributes:' not in a
+assert 'CellStyleKey,nil' in c and 'if(!compact)' in c
 assert '确认删除所选项目' in a and '无法恢复' in a
 assert 'startAccessingSecurityScopedResource' in s and 'stopAccessingSecurityScopedResource' in q
 assert 'NSFileCoordinatorReadingWithoutChanges' in q
