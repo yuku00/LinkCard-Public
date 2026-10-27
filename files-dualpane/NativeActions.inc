@@ -7,16 +7,22 @@ static void CollectLabels(UIView *v, NSMutableArray<UILabel *> *labels) {
     if([v isKindOfClass:UILabel.class]) [labels addObject:(id)v];
     for(UIView *child in v.subviews) CollectLabels(child,labels);
 }
+#include "CompactImages.inc"
 static char CellStyleKey;
 static BOOL IsPaneListCell(UICollectionViewCell *cell) {
     if(!PaneForResponder(cell)) return NO;
     UICollectionView *collection=nil;
     for(UIView *v=cell.superview;v;v=v.superview) if([v isKindOfClass:UICollectionView.class]) { collection=(id)v; break; }
-    return collection && InExperiment(collection.delegate) && cell.bounds.size.width>=collection.bounds.size.width*0.75;
+    if(!collection || !InExperiment(collection.delegate)) return NO;
+    id controller=collection.delegate; SEL list=NSSelectorFromString(@"accessibilityIsInListMode");
+    if(!ABI([controller class],NSStringFromSelector(list),"B@:") || !((BOOL(*)(id,SEL))[controller methodForSelector:list])(controller,list)) return NO;
+    return cell.bounds.size.width>=collection.bounds.size.width*0.75;
 }
 static void ImproveCell(UICollectionViewCell *cell) {
     NSDictionary *saved=objc_getAssociatedObject(cell,&CellStyleKey);
-    if(!IsPaneListCell(cell)) {
+    BOOL compact=IsPaneListCell(cell);
+    FPCompactImages(cell.contentView,compact);
+    if(!compact) {
         if(saved[@"config"]) {
             UIListContentConfiguration *config=[(UIListContentConfiguration *)cell.contentConfiguration copy];
             if([config isKindOfClass:UIListContentConfiguration.class]) {
@@ -35,10 +41,10 @@ static void ImproveCell(UICollectionViewCell *cell) {
     if([cell.contentConfiguration isKindOfClass:UIListContentConfiguration.class]) {
         UIListContentConfiguration *config=[(UIListContentConfiguration *)cell.contentConfiguration copy];
         if(!saved) objc_setAssociatedObject(cell,&CellStyleKey,@{@"config":[config copy]},OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        if(config.textProperties.numberOfLines!=3 || config.imageProperties.maximumSize.width!=24) {
+        if(config.textProperties.numberOfLines!=3 || config.imageProperties.maximumSize.width!=22) {
             config.textProperties.numberOfLines=3;
             config.textProperties.lineBreakMode=NSLineBreakByTruncatingTail;
-            config.imageProperties.maximumSize=CGSizeMake(24,24);
+            config.imageProperties.maximumSize=CGSizeMake(22,22);
             cell.contentConfiguration=config;
         }
         return;

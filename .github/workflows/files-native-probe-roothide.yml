@@ -22,6 +22,7 @@ jobs:
         run: |
           python3 tests/check_dualpane.py
           python3 tests/check_actions.py
+          python3 tests/check_060.py
       - name: Execute coordinated preview fixture and scope lifecycle
         run: |
           python3 tests/preview_host.py "$RUNNER_TEMP/preview-host.m"
@@ -51,7 +52,7 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.filesdualpane.nativeprobe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.5.0
+          test "$(dpkg-deb -f "$deb" Version)" = 0.6.0
           dpkg-deb -x "$deb" "$RUNNER_TEMP/files-package"
           binary=$(python3 -c 'import os,pathlib; print(next(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("files-package").rglob("FilesNativeProbe.dylib")))')
           test -n "$binary"

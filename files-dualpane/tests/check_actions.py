@@ -7,7 +7,7 @@ for token in ('userToggledSelectionMode','selectAllItems','deselectAllItems','pe
 assert 'Get(full,@"currentItemCollectionViewController")!=target' in s
 assert 'canPerformAction:sel' in s
 assert 'IsPaneListCell(v)' in a and 'InExperiment(collection.delegate)' in a
-assert 'numberOfLines=3' in a and 'CGSizeMake(24,24)' in a
+assert 'numberOfLines=3' in a and 'CGSizeMake(22,22)' in a
 assert 'preferredLayoutAttributesFittingAttributes:' in a
 assert 'CellStyleKey,nil' in a
 assert '确认删除所选项目' in a and '无法恢复' in a

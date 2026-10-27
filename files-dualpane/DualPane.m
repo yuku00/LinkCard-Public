@@ -74,6 +74,9 @@ static BOOL InstallStateIsolation(void) {
 @property(nonatomic,strong) UIViewController *nativeSplit;
 @property(nonatomic,strong) id configuration;
 @property(nonatomic,strong) id sourceObserver;
+@property(nonatomic) BOOL initialListStarted;
+@property(nonatomic) NSUInteger listAttempts;
+- (void)applyInitialList;
 - (void)showActions;
 - (void)previewURLs:(NSArray<NSURL *> *)urls;
 - (void)unsupported;
@@ -107,6 +110,29 @@ static BOOL InExperiment(id v) {
     UIViewController *child=self.nativeSplit; [self addChildViewController:child];
     child.view.frame=self.view.bounds; child.view.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
     [self.view addSubview:child.view]; [child didMoveToParentViewController:self];
+}
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    if(!self.initialListStarted) { self.initialListStarted=YES; [self applyInitialList]; }
+}
+- (void)applyInitialList {
+    if(!self.parentViewController || !self.nativeSplit) return;
+    id full=Get(self.nativeSplit,@"fullDocumentManagerViewController");
+    id current=Get(full,@"currentItemCollectionViewController");
+    if(InExperiment(current) && ABI([full class],@"performViewAsList:","v@:@")) {
+        // Native semantic action supplies its own enum. Never guess setDisplayMode: values.
+        SEL sel=NSSelectorFromString(@"performViewAsList:");
+        ((void(*)(id,SEL,id))[full methodForSelector:sel])(full,sel,nil);
+        if(ABI([current class],@"accessibilityIsInListMode","B@:")) {
+            SEL check=NSSelectorFromString(@"accessibilityIsInListMode");
+            if(((BOOL(*)(id,SEL))[current methodForSelector:check])(current,check)) return;
+        }
+        // A missing/unconfirmed implementation leaves native layout and a visible fallback.
+        self.parentViewController.navigationItem.prompt=@"列表未确认：请用本栏原生菜单选择列表";
+        return;
+    }
+    if(++self.listAttempts>=10) { self.parentViewController.navigationItem.prompt=@"列表不可用：保留原生布局"; return; }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/4),dispatch_get_main_queue(),^{ [self applyInitialList]; });
 }
 - (void)showActions {
     id full=Get(self.nativeSplit,@"fullDocumentManagerViewController");
@@ -165,6 +191,7 @@ static BOOL InExperiment(id v) {
 - (void)close { for(UIViewController *p=self.parentViewController;p;p=p.parentViewController) if([p isKindOfClass:FPDualContainer.class]) { [(FPDualContainer *)p close]; return; } }
 @end
 #include "NativeActions.inc"
+#include "BridgeSnapshot.inc"
 static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *outConfig, id *outObserver, UIViewController **outOriginal) {
     char build[64]={0}; size_t length=sizeof(build); sysctlbyname("kern.osversion",build,&length,NULL,0);
     if(strcmp(build,"20G75") || !NSThread.isMainThread) return @"requires main thread and iOS build 20G75";
@@ -201,11 +228,14 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
 }
 
 @implementation FPDualContainer
+- (void)captureBridge { FPOfferBridgeCapture(self); }
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"双窗格 · 0.5.0"; self.view.backgroundColor=UIColor.systemBackgroundColor;
+    [super viewDidLoad]; self.title=@"双窗格 · 0.6.0"; self.view.backgroundColor=UIColor.systemBackgroundColor;
     self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStyleDone target:self action:@selector(close)];
+    self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"桥接采集" style:UIBarButtonItemStylePlain target:self action:@selector(captureBridge)];
+    self.navigationItem.rightBarButtonItem.enabled=!FPBridgeCaptured;
     self.mode=[[UISegmentedControl alloc] initWithItems:@[@"并排",@"左栏",@"右栏"]];
-    self.mode.selectedSegmentIndex=self.view.bounds.size.width>=700 ? 0 : 1;
+    self.mode.selectedSegmentIndex=0; // Both panes, including narrow phones.
     [self.mode addTarget:self action:@selector(changeMode) forControlEvents:UIControlEventValueChanged];
     self.navigationItem.titleView=self.mode;
     self.stack=[[UIStackView alloc] init]; self.stack.axis=UILayoutConstraintAxisHorizontal; self.stack.distribution=UIStackViewDistributionFillEqually;
@@ -230,10 +260,6 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
 }
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    if(!self.userSelectedMode) {
-        NSInteger automatic=self.view.bounds.size.width>=700 ? 0 : 1;
-        if(self.mode.selectedSegmentIndex!=automatic) { self.mode.selectedSegmentIndex=automatic; [self applyMode]; }
-    }
     for(FPBrowserPane *pane in self.panes) {
         // Public size classes, not guessed private sidebar enum values.
         UIUserInterfaceSizeClass size=pane.view.bounds.size.width<600 ? UIUserInterfaceSizeClassCompact : UIUserInterfaceSizeClassRegular;

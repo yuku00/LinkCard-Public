@@ -2,6 +2,7 @@
 #import <objc/runtime.h>
 #import <sys/sysctl.h>
 #include <string.h>
+#include "ColdStart.inc"
 
 @interface FPEntry : NSObject
 + (instancetype)shared;
@@ -14,7 +15,7 @@
         if(![scene isKindOfClass:UIWindowScene.class] || scene.activationState!=UISceneActivationStateForegroundActive) continue;
         for(UIWindow *window in ((UIWindowScene *)scene).windows) {
             UIViewController *root=window.rootViewController;
-            if(window.isKeyWindow && root && !root.presentedViewController) { FPDualPanePresent(root); return; }
+            if(window.isKeyWindow && root && !root.presentedViewController) { FPColdConsumed=YES; FPDualPanePresent(root); return; }
         }
     }
 }
@@ -34,6 +35,7 @@ __attribute__((constructor)) static void FPStart(void) {
         if(![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.apple.DocumentsApp"]) return;
         char build[64]={0}; size_t size=sizeof(build); sysctlbyname("kern.osversion",build,&size,NULL,0);
         if(strcmp(build,"20G75")) return;
+        FPInstallColdStart();
         Method m=class_getInstanceMethod(UIViewController.class,@selector(viewDidAppear:)); IMP original=method_getImplementation(m);
         method_setImplementation(m,imp_implementationWithBlock(^(UIViewController *self,BOOL animated){
             ((void(*)(id,SEL,BOOL))original)(self,@selector(viewDidAppear:),animated);
