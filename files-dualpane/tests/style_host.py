@@ -167,7 +167,7 @@ int main(void) { @autoreleasepool {
     before=writes; int aBefore=accessoryWrites, bBefore=backgroundWrites;
     FPStyleVisibleCell(list);
     assert(writes==before+1 && accessoryWrites==aBefore+1 && backgroundWrites==bBefore+1);
-    assert([list.accessories isEqual:@[provider,back]] && list.isSelected);
+    assert(([list.accessories isEqual:@[provider,back]] && list.isSelected));
     assert(list.backgroundConfiguration.backgroundColor.alpha==0.18 && list.backgroundConfiguration.nativeMarker==nativeBackground.nativeMarker);
     UIListContentConfiguration *styled=list.contentConfiguration;
     assert(styled.textProperties.font.pointSize==14 && styled.secondaryTextProperties.font.pointSize==13);
@@ -193,7 +193,7 @@ int main(void) { @autoreleasepool {
     UICellAccessory *newProvider=[UICellAccessory new];
     NSArray *newAccessories=@[newProvider,[UICellAccessoryDisclosureIndicator new],back,[UICellAccessoryMultiselect new]];
     list.reenter=NO; list.accessories=newAccessories; list.reenter=YES;
-    FPStyleVisibleCell(list); assert([list.accessories isEqual:@[newProvider,back]]);
+    FPStyleVisibleCell(list); assert(([list.accessories isEqual:@[newProvider,back]]));
     list.scope=NO; before=writes; aBefore=accessoryWrites; bBefore=backgroundWrites;
     FPStyleVisibleCell(list);
     assert(writes==before+1 && accessoryWrites==aBefore+1 && backgroundWrites==bBefore+1);
@@ -209,7 +209,7 @@ int main(void) { @autoreleasepool {
     list.reenter=NO; list.accessories=@[newProvider,back]; list.backgroundConfiguration=newBackground; list.reenter=YES;
     list.scope=NO; aBefore=accessoryWrites; bBefore=backgroundWrites;
     FPStyleVisibleCell(list);
-    assert(accessoryWrites==aBefore && backgroundWrites==bBefore && [list.accessories isEqual:@[newProvider,back]]);
+    assert((accessoryWrites==aBefore && backgroundWrites==bBefore && [list.accessories isEqual:@[newProvider,back]]));
     assert(list.backgroundConfiguration.nativeMarker==newBackground.nativeMarker);
     // Reuse restores all three channels exactly once, even if setters reenter synchronously.
     list.reenter=NO; list.accessories=newAccessories; list.reenter=YES; list.scope=YES; FPStyleVisibleCell(list);
