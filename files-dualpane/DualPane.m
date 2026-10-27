@@ -76,8 +76,9 @@ static BOOL InstallStateIsolation(void) {
 @property(nonatomic,strong) id sourceObserver;
 @property(nonatomic) BOOL initialListStarted;
 @property(nonatomic) NSUInteger listAttempts;
+@property(nonatomic) NSUInteger homeIndex;
+@property(nonatomic) BOOL homeAttempted;
 - (void)applyInitialList;
-- (void)showActions;
 - (void)previewURLs:(NSArray<NSURL *> *)urls;
 - (void)unsupported;
 - (void)close;
@@ -88,6 +89,8 @@ static BOOL InstallStateIsolation(void) {
 @property(nonatomic,strong) UISegmentedControl *mode;
 @property(nonatomic) BOOL closing;
 @property(nonatomic) BOOL userSelectedMode;
+@property(nonatomic) BOOL transferBusy;
+@property(nonatomic,strong) UILabel *status;
 - (void)close;
 @end
 BOOL FPDualPaneContains(UIViewController *v) {
@@ -100,6 +103,8 @@ static BOOL InExperiment(id v) {
     return NO;
 }
 #include "ScopedPreview.inc"
+#include "FileCore.inc"
+#include "CrossPane.inc"
 @implementation FPBrowserPane
 - (void)dealloc {
     NSString *key=OwnState(_configuration);
@@ -110,6 +115,8 @@ static BOOL InExperiment(id v) {
     UIViewController *child=self.nativeSplit; [self addChildViewController:child];
     child.view.frame=self.view.bounds; child.view.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
     [self.view addSubview:child.view]; [child didMoveToParentViewController:self];
+    UINavigationController *navigation=Get(FPFull(self),@"internalNavigationController");
+    if([navigation isKindOfClass:UINavigationController.class]) navigation.navigationBar.prefersLargeTitles=NO;
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
@@ -125,7 +132,10 @@ static BOOL InExperiment(id v) {
         ((void(*)(id,SEL,id))[full methodForSelector:sel])(full,sel,nil);
         if(ABI([current class],@"accessibilityIsInListMode","B@:")) {
             SEL check=NSSelectorFromString(@"accessibilityIsInListMode");
-            if(((BOOL(*)(id,SEL))[current methodForSelector:check])(current,check)) return;
+            if(((BOOL(*)(id,SEL))[current methodForSelector:check])(current,check)) {
+                if(!self.homeAttempted) { self.homeAttempted=YES; FPRestoreHome(self); }
+                return;
+            }
         }
         // A missing/unconfirmed implementation leaves native layout and a visible fallback.
         self.parentViewController.navigationItem.prompt=@"列表未确认：请用本栏原生菜单选择列表";
@@ -133,26 +143,6 @@ static BOOL InExperiment(id v) {
     }
     if(++self.listAttempts>=10) { self.parentViewController.navigationItem.prompt=@"列表不可用：保留原生布局"; return; }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/4),dispatch_get_main_queue(),^{ [self applyInitialList]; });
-}
-- (void)showActions {
-    id full=Get(self.nativeSplit,@"fullDocumentManagerViewController");
-    UIViewController *target=Get(full,@"currentItemCollectionViewController");
-    if(!InExperiment(target) || ![target isKindOfClass:NSClassFromString(@"Files.DOCItemCollectionViewController")]) return;
-    UIAlertController *menu=[UIAlertController alertControllerWithTitle:@"本栏操作" message:@"操作原生当前目录与真实选择。文件权限、下载及错误由 Files / 提供商处理。" preferredStyle:UIAlertControllerStyleActionSheet];
-    NSArray *actions=@[@[@"选择 / 完成",@"userToggledSelectionMode"],@[@"全选",@"selectAllItems"],@[@"取消选择",@"deselectAllItems"],@[@"重命名",@"performRename:"],@[@"新建文件夹",@"performCreateFolder:"],@[@"属性 / 完整名称",@"performGetInfo:"],@[@"预览",@"performPreview:"],@[@"删除…",@"performDelete:"]];
-    for(NSArray *pair in actions) {
-        NSString *name=pair[1]; BOOL argument=[name hasSuffix:@":"]; SEL sel=NSSelectorFromString(name);
-        if(!ABI(target.class,name,argument ? "v@:@" : "v@:")) continue;
-        UIAlertAction *action=[UIAlertAction actionWithTitle:pair[0] style:[name isEqual:@"performDelete:"] ? UIAlertActionStyleDestructive : UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-            if(!InExperiment(target) || Get(full,@"currentItemCollectionViewController")!=target) return;
-            if(argument) ((void(*)(id,SEL,id))[target methodForSelector:sel])(target,sel,nil);
-            else ((void(*)(id,SEL))[target methodForSelector:sel])(target,sel);
-        }];
-        action.enabled=!argument || [target canPerformAction:sel withSender:nil]; [menu addAction:action];
-    }
-    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    menu.popoverPresentationController.sourceView=self.view; menu.popoverPresentationController.sourceRect=CGRectMake(self.view.bounds.size.width/2,0,1,1);
-    [self presentViewController:menu animated:YES completion:nil];
 }
 - (void)previewURLs:(NSArray<NSURL *> *)urls {
     if(self.presentedViewController || ![urls isKindOfClass:NSArray.class] || !urls.count) return;
@@ -191,7 +181,6 @@ static BOOL InExperiment(id v) {
 - (void)close { for(UIViewController *p=self.parentViewController;p;p=p.parentViewController) if([p isKindOfClass:FPDualContainer.class]) { [(FPDualContainer *)p close]; return; } }
 @end
 #include "NativeActions.inc"
-#include "BridgeSnapshot.inc"
 static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *outConfig, id *outObserver, UIViewController **outOriginal) {
     char build[64]={0}; size_t length=sizeof(build); sysctlbyname("kern.osversion",build,&length,NULL,0);
     if(strcmp(build,"20G75") || !NSThread.isMainThread) return @"requires main thread and iOS build 20G75";
@@ -228,12 +217,10 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
 }
 
 @implementation FPDualContainer
-- (void)captureBridge { FPOfferBridgeCapture(self); }
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"双窗格 · 0.6.1"; self.view.backgroundColor=UIColor.systemBackgroundColor;
+    [super viewDidLoad]; self.title=@"双窗格 · 0.7.0"; self.view.backgroundColor=UIColor.systemBackgroundColor;
     self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStyleDone target:self action:@selector(close)];
-    self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"桥接采集" style:UIBarButtonItemStylePlain target:self action:@selector(captureBridge)];
-    self.navigationItem.rightBarButtonItem.enabled=!FPBridgeCaptured;
+    self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;
     self.mode=[[UISegmentedControl alloc] initWithItems:@[@"并排",@"左栏",@"右栏"]];
     self.mode.selectedSegmentIndex=0; // Both panes, including narrow phones.
     [self.mode addTarget:self action:@selector(changeMode) forControlEvents:UIControlEventValueChanged];
@@ -241,14 +228,19 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
     self.stack=[[UIStackView alloc] init]; self.stack.axis=UILayoutConstraintAxisHorizontal; self.stack.distribution=UIStackViewDistributionFillEqually;
     self.stack.spacing=1; self.stack.backgroundColor=UIColor.separatorColor; self.stack.translatesAutoresizingMaskIntoConstraints=NO;
     [self.view addSubview:self.stack];
-    [NSLayoutConstraint activateConstraints:@[[self.stack.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],[self.stack.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor],[self.stack.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor],[self.stack.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor]]];
+    self.status=[UILabel new]; self.status.translatesAutoresizingMaskIntoConstraints=NO;
+    self.status.font=[UIFont preferredFontForTextStyle:UIFontTextStyleCaption2]; self.status.adjustsFontForContentSizeCategory=YES;
+    self.status.numberOfLines=2; self.status.text=@"长按原生项目操作 · 下方跨栏/首页";
+    [self.view addSubview:self.status];
+    [NSLayoutConstraint activateConstraints:@[[self.status.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:8],[self.status.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-8],[self.status.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor]]];
+    UIBarButtonItem *left=[[UIBarButtonItem alloc] initWithTitle:@"左栏 ⇄ / 首页" menu:FPPaneMenu(self,0)];
+    UIBarButtonItem *right=[[UIBarButtonItem alloc] initWithTitle:@"右栏 ⇄ / 首页" menu:FPPaneMenu(self,1)];
+    self.toolbarItems=@[left,[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil],right];
+    [self.navigationController setToolbarHidden:NO animated:NO];
+    [NSLayoutConstraint activateConstraints:@[[self.stack.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],[self.stack.bottomAnchor constraintEqualToAnchor:self.status.topAnchor],[self.stack.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor],[self.stack.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor]]];
     for(FPBrowserPane *pane in self.panes) {
         [self addChildViewController:pane];
-        UIStackView *column=[UIStackView new]; column.axis=UILayoutConstraintAxisVertical; column.backgroundColor=UIColor.systemBackgroundColor;
-        UIButton *label=[UIButton buttonWithType:UIButtonTypeSystem]; [label setTitle:pane==self.panes.firstObject ? @"左栏 · 操作" : @"右栏 · 操作" forState:UIControlStateNormal]; label.titleLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
-        [label.heightAnchor constraintGreaterThanOrEqualToConstant:44].active=YES;
-        [label addTarget:pane action:@selector(showActions) forControlEvents:UIControlEventTouchUpInside];
-        [column addArrangedSubview:label]; [column addArrangedSubview:pane.view]; [self.stack addArrangedSubview:column]; [pane didMoveToParentViewController:self];
+        [self.stack addArrangedSubview:pane.view]; [pane didMoveToParentViewController:self];
     }
     [self applyMode];
 }
@@ -267,7 +259,9 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
     }
 }
 - (void)close {
-    if(self.closing) return; self.closing=YES;
+    if(self.closing) return;
+    if(self.transferBusy) { FPNotice(self,@"文件任务进行中，请等待明确结果再关闭。"); return; }
+    self.closing=YES;
     [self dismissViewControllerAnimated:YES completion:^{
         for(FPBrowserPane *pane in self.panes) {
             UIViewController *split=pane.nativeSplit;
@@ -292,7 +286,7 @@ void FPDualPanePresent(UIViewController *host) {
     NSMutableArray<FPBrowserPane *> *panes=[NSMutableArray new];
     NSMutableSet *identities=[NSMutableSet new]; NSString *failure=nil;
     for(NSUInteger index=0;index<2;index++) {
-        FPBrowserPane *pane=[FPBrowserPane new]; id config=nil,observer=nil; UIViewController *original=nil;
+        FPBrowserPane *pane=[FPBrowserPane new]; pane.homeIndex=index; id config=nil,observer=nil; UIViewController *original=nil;
         failure=Preflight(host,pane,&config,&observer,&original); if(failure) break;
         if(!InstallStateIsolation()) { failure=@"此系统的临时界面状态接口不兼容；未创建浏览器。"; break; }
         pane.configuration=config; pane.sourceObserver=observer; [panes addObject:pane];

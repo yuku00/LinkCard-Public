@@ -1,0 +1,10 @@
+#!/bin/sh
+# Only this plugin's preferences; never delete Files preferences or documents.
+case "$1" in
+  remove|purge)
+    for directory in /var/mobile/Library/Preferences /var/mobile/Containers/Data/Application/*/Library/Preferences; do
+      [ ! -d "$directory" ] || rm -f "$directory/dev.filesdualpane.home.plist"
+    done
+    ;;
+esac
+exit 0

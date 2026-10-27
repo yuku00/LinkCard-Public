@@ -10,7 +10,7 @@ for token in ('FPColdConsumed=YES; FPDualPanePresent(root)', 'options.URLContext
 for token in ('performViewAsList:', 'accessibilityIsInListMode', '列表不可用', 'initialListStarted'):
     assert token in s, token
 assert 'setDisplayMode:",' not in s
-for token in ('DOCFittingImageView','NSLayoutAttributeWidth','NSLayoutAttributeHeight','c.constant=22','FPImageBoundsKey,nil','pair[1] doubleValue'):
+for token in ('DOCFittingImageView','NSLayoutAttributeWidth','NSLayoutAttributeHeight','c.constant=20','FPImageBoundsKey,nil','pair[1] doubleValue'):
     assert token in i,token
 for token in ('FPBridgeCaptured=YES','indexPathsForSelectedItems','DOCThumbnailFittingImageView','Get(thumb,@"node")','Get(thumb,@"url")','Get(hierarchy,@"lastLocation")','directoryURLGetterInvoked','class_copyMethodList','UIActivityViewController'):
     assert token in b,token

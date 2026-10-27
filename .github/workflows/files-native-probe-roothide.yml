@@ -21,14 +21,13 @@ jobs:
       - name: Static safety checks
         run: |
           python3 tests/check_dualpane.py
-          python3 tests/check_actions.py
           python3 tests/check_060.py
-          python3 tests/check_061.py
-      - name: Execute production bridge presentation gate
+          python3 tests/check_070.py
+      - name: Execute production file core and selection fixtures
         run: |
-          python3 tests/bridge_host.py "$RUNNER_TEMP/bridge-host.m"
-          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation "$RUNNER_TEMP/bridge-host.m" -o "$RUNNER_TEMP/bridge-host"
-          "$RUNNER_TEMP/bridge-host"
+          python3 tests/core_host.py "$RUNNER_TEMP/core-host.m"
+          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation "$RUNNER_TEMP/core-host.m" -o "$RUNNER_TEMP/core-host"
+          "$RUNNER_TEMP/core-host"
       - name: Execute coordinated preview fixture and scope lifecycle
         run: |
           python3 tests/preview_host.py "$RUNNER_TEMP/preview-host.m"
@@ -49,6 +48,7 @@ jobs:
       - name: Build native experiment arm64 and arm64e
         run: |
           set -o pipefail
+          chmod 755 layout/DEBIAN/postrm
           gmake package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide 2>&1 | tee "$RUNNER_TEMP/files-probe-build.log"
       - name: Verify package
         run: |
@@ -58,7 +58,7 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.filesdualpane.nativeprobe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.6.1
+          test "$(dpkg-deb -f "$deb" Version)" = 0.7.0
           dpkg-deb -x "$deb" "$RUNNER_TEMP/files-package"
           binary=$(python3 -c 'import os,pathlib; print(next(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("files-package").rglob("FilesNativeProbe.dylib")))')
           test -n "$binary"
