@@ -1,8 +1,8 @@
 Package: dev.filesdualpane.nativeprobe
 Name: Files DualPane
-Version: 0.7.5
+Version: 0.7.6
 Architecture: iphoneos-arm64e
-Description: Independent native Files panes with stable public content styling and coordinated cross-pane copy/move.
+Description: Independent native Files panes with guarded public and known DOC native styling and coordinated cross-pane copy/move.
 Maintainer: Files DualPane
 Author: Files DualPane
 Section: Tweaks

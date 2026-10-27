@@ -4,39 +4,70 @@ static FPBrowserPane *PaneForResponder(UIResponder *r) {
     return nil;
 }
 #include "CompactCells.inc"
+static char FPCellEventDepthKey, FPDisplayDepthKey;
 static BOOL IsPaneListCell(UICollectionViewCell *cell) {
     if(objc_getAssociatedObject(cell,&FPCellResettingKey) || !PaneForResponder(cell)) return NO;
     UICollectionView *collection=nil;
     for(UIView *v=cell.superview;v;v=v.superview) if([v isKindOfClass:UICollectionView.class]) { collection=(id)v; break; }
     if(!collection || !InExperiment(collection.delegate)) return NO;
-    if([collection.delegate isKindOfClass:NSClassFromString(@"Files.DOCSidebarViewController")]) return YES;
-    id controller=collection.delegate; SEL list=NSSelectorFromString(@"accessibilityIsInListMode");
-    if(!ABI([controller class],NSStringFromSelector(list),"B@:") || !((BOOL(*)(id,SEL))[controller methodForSelector:list])(controller,list)) return NO;
-    return cell.bounds.size.width>=collection.bounds.size.width*0.75;
+    id controller=collection.delegate;
+    if(FPClassInChain(controller,@"Files.DOCSidebarViewController"))
+        return [cell.contentConfiguration isKindOfClass:UIListContentConfiguration.class];
+    if(!FPClassInChain(controller,@"Files.DOCItemCollectionViewController") ||
+       (!FPClassInChain(cell,@"Files.DOCItemCollectionListCell") && !FPClassInChain(cell,@"Files.DOCItemCollectionCell"))) return NO;
+    SEL list=NSSelectorFromString(@"accessibilityIsInListMode");
+    if(!ABI(object_getClass(controller),NSStringFromSelector(list),"B@:") || !((BOOL(*)(id,SEL))[controller methodForSelector:list])(controller,list)) return NO;
+    return collection.bounds.size.width>0 && cell.bounds.size.width>=collection.bounds.size.width*0.75;
 }
 static void FPStyleVisibleCell(UICollectionViewCell *cell) {
     // Do not classify a busy/resetting cell as out-of-scope and restore it mid-apply.
-    if(objc_getAssociatedObject(cell,&FPCellBusyKey) || objc_getAssociatedObject(cell,&FPCellResettingKey)) return;
+    if(objc_getAssociatedObject(cell,&FPCellBusyKey) || objc_getAssociatedObject(cell,&FPCellResettingKey) || [objc_getAssociatedObject(cell,&FPCellEventDepthKey) unsignedIntegerValue]) return;
     StyleCell(cell,IsPaneListCell(cell));
 }
 static void FPHookCell(Class cls) {
-    static NSMutableSet *classes; if(!classes) classes=[NSMutableSet new];
-    for(Class p=cls;p;p=class_getSuperclass(p)) if([classes containsObject:NSStringFromClass(p)]) return;
-    [classes addObject:NSStringFromClass(cls)];
-    SEL layout=@selector(layoutSubviews); Method lm=class_getInstanceMethod(cls,layout); IMP lo=method_getImplementation(lm);
-    class_replaceMethod(cls,layout,imp_implementationWithBlock(^(UICollectionViewCell *cell){
-        ((void(*)(id,SEL))lo)(cell,layout); FPStyleVisibleCell(cell);
-    }),method_getTypeEncoding(lm));
-    SEL update=@selector(updateConfigurationUsingState:); Method um=class_getInstanceMethod(cls,update); IMP uo=method_getImplementation(um);
-    class_replaceMethod(cls,update,imp_implementationWithBlock(^(UICollectionViewCell *cell,UICellConfigurationState *state){
-        ((void(*)(id,SEL,id))uo)(cell,update,state); FPStyleVisibleCell(cell);
-    }),method_getTypeEncoding(um));
-    SEL reuse=@selector(prepareForReuse); Method rm=class_getInstanceMethod(cls,reuse); IMP ro=method_getImplementation(rm);
-    class_replaceMethod(cls,reuse,imp_implementationWithBlock(^(UICollectionViewCell *cell){
-        objc_setAssociatedObject(cell,&FPCellResettingKey,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        @try { StyleCell(cell,NO); ((void(*)(id,SEL))ro)(cell,reuse); }
-        @finally { objc_setAssociatedObject(cell,&FPCellResettingKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
-    }),method_getTypeEncoding(rm));
+    static NSMutableSet *implementations; if(!implementations) implementations=[NSMutableSet new];
+    // An inherited wrapper is already sufficient; an actual override still needs its own hook.
+    for(NSString *name in @[@"updateConfigurationUsingState:",@"_bridgedUpdateConfigurationUsingState:",@"prepareForReuse"]) {
+        BOOL reuse=[name isEqualToString:@"prepareForReuse"];
+        if(!ABI(cls,name,reuse ? "v@:" : "v@:@")) continue;
+        SEL selector=NSSelectorFromString(name); Method method=class_getInstanceMethod(cls,selector);
+        IMP original=method_getImplementation(method);
+        if([implementations containsObject:[NSValue valueWithPointer:(const void *)original]]) continue;
+        IMP replacement;
+        if(reuse) replacement=imp_implementationWithBlock(^(UICollectionViewCell *cell){
+            if(objc_getAssociatedObject(cell,&FPCellResettingKey)) { ((void(*)(id,SEL))original)(cell,selector); return; }
+            objc_setAssociatedObject(cell,&FPCellResettingKey,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            @try { StyleCell(cell,NO); ((void(*)(id,SEL))original)(cell,selector); }
+            @finally { objc_setAssociatedObject(cell,&FPCellResettingKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+        });
+        else replacement=imp_implementationWithBlock(^(UICollectionViewCell *cell,UICellConfigurationState *state){
+            NSUInteger depth=[objc_getAssociatedObject(cell,&FPCellEventDepthKey) unsignedIntegerValue];
+            objc_setAssociatedObject(cell,&FPCellEventDepthKey,@(depth+1),OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            @try { ((void(*)(id,SEL,id))original)(cell,selector,state); }
+            @finally { objc_setAssociatedObject(cell,&FPCellEventDepthKey,depth ? @(depth) : nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+            if(!depth) FPStyleVisibleCell(cell);
+        });
+        [implementations addObject:[NSValue valueWithPointer:(const void *)replacement]];
+        class_replaceMethod(cls,selector,replacement,method_getTypeEncoding(method));
+    }
+}
+static void FPHookDisplay(Class cls) {
+    static NSMutableSet *implementations; if(!implementations) implementations=[NSMutableSet new];
+    SEL display=NSSelectorFromString(@"collectionView:willDisplayCell:forItemAtIndexPath:");
+    if(!ABI(cls,NSStringFromSelector(display),"v@:@@@")) return;
+    Method method=class_getInstanceMethod(cls,display); IMP original=method_getImplementation(method);
+    if([implementations containsObject:[NSValue valueWithPointer:(const void *)original]]) return;
+    IMP replacement=imp_implementationWithBlock(^(id owner,UICollectionView *cv,UICollectionViewCell *cell,NSIndexPath *path){
+        NSUInteger depth=[objc_getAssociatedObject(cell,&FPDisplayDepthKey) unsignedIntegerValue];
+        objc_setAssociatedObject(cell,&FPDisplayDepthKey,@(depth+1),OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        @try { ((void(*)(id,SEL,id,id,id))original)(owner,display,cv,cell,path); }
+        @finally { objc_setAssociatedObject(cell,&FPDisplayDepthKey,depth ? @(depth) : nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+        if(depth || !InExperiment(owner)) return;
+        if(IsPaneListCell(cell)) FPHookCell(object_getClass(cell));
+        FPStyleVisibleCell(cell);
+    });
+    [implementations addObject:[NSValue valueWithPointer:(const void *)replacement]];
+    class_replaceMethod(cls,display,replacement,method_getTypeEncoding(method));
 }
 static void FPRestorePaneStyles(UIViewController *owner) {
     if(!InExperiment(owner)) return;
@@ -46,17 +77,17 @@ static void FPRestorePaneStyles(UIViewController *owner) {
     for(UIViewController *child in owner.childViewControllers) FPRestorePaneStyles(child);
 }
 static void InstallNativeActions(void) {
-    for(NSString *name in @[@"Files.DOCItemCollectionViewController",@"Files.DOCSidebarViewController"]) {
-        Class cls=NSClassFromString(name);
-        SEL display=NSSelectorFromString(@"collectionView:willDisplayCell:forItemAtIndexPath:");
-        if(!ABI(cls,NSStringFromSelector(display),"v@:@@@")) continue;
-        Method method=class_getInstanceMethod(cls,display); IMP old=method_getImplementation(method);
-        class_replaceMethod(cls,display,imp_implementationWithBlock(^(id owner,UICollectionView *cv,UICollectionViewCell *cell,NSIndexPath *path){
-            ((void(*)(id,SEL,id,id,id))old)(owner,display,cv,cell,path);
-            if(!InExperiment(owner) || ![cell.contentConfiguration isKindOfClass:UIListContentConfiguration.class]) return;
-            FPHookCell(cell.class); FPStyleVisibleCell(cell);
-        }),method_getTypeEncoding(method));
+    Class item=NSClassFromString(@"Files.DOCItemCollectionViewController"), sidebar=NSClassFromString(@"Files.DOCSidebarViewController");
+    if(item) FPHookDisplay(item);
+    if(sidebar) FPHookDisplay(sidebar);
+    // Once at pane creation, cover already-loaded Swift/KVO overrides without scanning layouts.
+    unsigned count=0; Class __unsafe_unretained *classes=objc_copyClassList(&count);
+    for(unsigned i=0;i<count;i++) {
+        for(Class parent=class_getSuperclass(classes[i]);parent;parent=class_getSuperclass(parent)) {
+            if(parent==item || parent==sidebar) { FPHookDisplay(classes[i]); break; }
+        }
     }
+    free(classes);
     Class c=NSClassFromString(@"Files.DOCItemCollectionViewController");
     for(NSString *name in @[@"performDelete:",@"performDeleteNow:",@"delete:"]) {
         if(!ABI(c,name,"v@:@")) continue;
