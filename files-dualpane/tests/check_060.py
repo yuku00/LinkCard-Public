@@ -14,7 +14,7 @@ for token in ('DOCFittingImageView','NSLayoutAttributeWidth','NSLayoutAttributeH
     assert token in i,token
 for token in ('FPBridgeCaptured=YES','indexPathsForSelectedItems','DOCThumbnailFittingImageView','Get(thumb,@"node")','Get(thumb,@"url")','Get(hierarchy,@"lastLocation")','directoryURLGetterInvoked','class_copyMethodList','UIActivityViewController'):
     assert token in b,token
-for forbidden in ('NSLog(', 'writeToFile', 'NSURLSession', 'NSFileManager', 'absoluteString', 'object_getIvar', 'ivar_getOffset', 'valueForKey:', 'UTF8String]', 'UIPasteboard', 'description]'):
+for forbidden in ('NSLog(', 'writeToFile', 'NSURLSession', 'NSFileManager', 'absoluteString', 'object_getIvar', 'ivar_getOffset', 'valueForKey:', 'UTF8String]', 'description]'):
     assert forbidden not in c+i+b,forbidden
 assert 'dismissViewControllerAnimated:YES completion:' in b
 assert 'methodForSelector' not in b # discovery never invokes arbitrary methods

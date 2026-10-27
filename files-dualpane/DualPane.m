@@ -230,7 +230,7 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
 @implementation FPDualContainer
 - (void)captureBridge { FPOfferBridgeCapture(self); }
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"双窗格 · 0.6.0"; self.view.backgroundColor=UIColor.systemBackgroundColor;
+    [super viewDidLoad]; self.title=@"双窗格 · 0.6.1"; self.view.backgroundColor=UIColor.systemBackgroundColor;
     self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStyleDone target:self action:@selector(close)];
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"桥接采集" style:UIBarButtonItemStylePlain target:self action:@selector(captureBridge)];
     self.navigationItem.rightBarButtonItem.enabled=!FPBridgeCaptured;

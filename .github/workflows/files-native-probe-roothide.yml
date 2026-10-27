@@ -23,6 +23,12 @@ jobs:
           python3 tests/check_dualpane.py
           python3 tests/check_actions.py
           python3 tests/check_060.py
+          python3 tests/check_061.py
+      - name: Execute production bridge presentation gate
+        run: |
+          python3 tests/bridge_host.py "$RUNNER_TEMP/bridge-host.m"
+          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation "$RUNNER_TEMP/bridge-host.m" -o "$RUNNER_TEMP/bridge-host"
+          "$RUNNER_TEMP/bridge-host"
       - name: Execute coordinated preview fixture and scope lifecycle
         run: |
           python3 tests/preview_host.py "$RUNNER_TEMP/preview-host.m"
@@ -52,12 +58,13 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.filesdualpane.nativeprobe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.6.0
+          test "$(dpkg-deb -f "$deb" Version)" = 0.6.1
           dpkg-deb -x "$deb" "$RUNNER_TEMP/files-package"
           binary=$(python3 -c 'import os,pathlib; print(next(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("files-package").rglob("FilesNativeProbe.dylib")))')
           test -n "$binary"
           lipo -info "$binary"
           lipo "$binary" -verify_arch arm64 arm64e
+          python3 tests/verify_signed.py "$binary"
           dpkg-deb -I "$deb"
           dpkg-deb -c "$deb"
           shasum -a 256 packages/*.deb > packages/SHA256SUMS
