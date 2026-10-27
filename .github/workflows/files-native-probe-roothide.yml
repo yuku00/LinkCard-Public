@@ -19,7 +19,13 @@ jobs:
         with:
           persist-credentials: false
       - name: Static safety checks
-        run: python3 tests/check.py
+        run: |
+          python3 tests/check.py
+          python3 tests/check_lifecycle.py
+      - name: Execute production MRC wrappers on host
+        run: |
+          clang -fno-objc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation tests/lifecycle-host.m -o "$RUNNER_TEMP/lifecycle-host"
+          "$RUNNER_TEMP/lifecycle-host"
       - name: Prepare RootHide Theos
         run: |
           brew install make ldid dpkg

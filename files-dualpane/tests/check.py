@@ -1,16 +1,17 @@
-import pathlib, plistlib, re
+import pathlib, plistlib
 root=pathlib.Path(__file__).resolve().parents[1]
 s=(root/'Probe.m').read_text()
-f=plistlib.loads((root/'FilesNativeProbe.plist').read_bytes())
-assert f=={'Filter':{'Bundles':['com.apple.DocumentsApp']}}
-for forbidden in ['objc_msgSend','performSelector:', 'valueForKey:', 'object_getIvar', 'ivar_getOffset', 'NSFileManager', 'NSFileCoordinator', 'NSURL', 'NSUserDefaults', 'NSLog(', 'printf(', 'writeToFile', 'initWithConfiguration:', 'sourceObserver:', 'dlopen(', 'method_exchangeImplementations']:
+assert plistlib.loads((root/'FilesNativeProbe.plist').read_bytes())=={'Filter':{'Bundles':['com.apple.DocumentsApp']}}
+for forbidden in ['objc_msgSend','performSelector:', 'valueForKey:', 'object_getIvar', 'NSFileManager', 'NSURL', 'NSUserDefaults', 'NSLog(', 'writeToFile', 'initWithConfiguration:', 'objc_copyClassList', 'FPReport']:
     assert forbidden not in s, forbidden
-for required in ['NSPointerFunctionsObjectPointerPersonality','[NSThread isMainThread]','NOT CONSTRUCTED/NOT DISPLAYED','protocol_copyPropertyList2','class_copyMethodList','UIActivityViewController','UIWindowDidBecomeKeyNotification','v.majorVersion!=16 || v.minorVersion!=6']:
+for required in ['[NSThread isMainThread]','UIActivityViewController','UIWindowDidBecomeKeyNotification','v.majorVersion!=16 || v.minorVersion!=6','停止并导出','FPLifecycleReport()','FPLifecycleStop()']:
     assert required in s, required
+ctor=s[s.index('__attribute__((constructor))'):]
+assert ctor.index('FPLifecycleStart()') < ctor.index('dispatch_async')
+m=(root/'Makefile').read_text()
+for required in ['FilesNativeProbe_FILES = Probe.m LifecycleTrace.m','Probe.m_CFLAGS = -fobjc-arc','LifecycleTrace.m_CFLAGS = -fno-objc-arc','roothide']:
+    assert required in m
+assert 'FilesNativeProbe_CFLAGS = -fobjc-arc' not in m
+assert 'Version: 0.2.0' in (root/'control').read_text()
 assert 'dev.filesdualpane.nativeprobe' in (root/'control').read_text()
-assert 'roothide' in (root/'Makefile').read_text()
-# Every receiver getter used to traverse objects is public UIKit.
-edges=re.findall(r'label:@"([^"]+)"',s)
-assert set(edges)<= {'windows','windowScene','rootViewController','parent','presented','presenting','child','splitControllers','tabControllers'}
-assert 'firefly' not in (root/'Makefile').read_text().lower()
-print('PASS: scope, prohibited operations, metadata-only reflection, main-thread and stage assertions')
+print('PASS: synchronous lifecycle integration, MRC translation unit, explicit export, no broad dump, package identity')

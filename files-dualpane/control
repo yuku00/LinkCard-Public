@@ -1,8 +1,8 @@
 Package: dev.filesdualpane.nativeprobe
 Name: Files Native Probe
-Version: 0.1.0
+Version: 0.2.0
 Architecture: iphoneos-arm64e
-Description: Explicit, read-only Files UIKit and runtime observation for iOS 16.6. No file operations or second browser.
+Description: Bounded in-memory natural lifecycle trace for Files 16.6 (20G75). Explicit stop/export; no file operations or second browser.
 Maintainer: Files DualPane Research
 Author: Files DualPane Research
 Section: Development
