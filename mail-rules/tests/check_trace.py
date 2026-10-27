@@ -14,6 +14,8 @@ class TraceCoverage(unittest.TestCase):
  def test_privacy_and_lifecycle(self):
   s=(R/'Native.m').read_text(); t=(R/'Trace.m').read_text() if (R/'Trace.m').exists() else ''
   self.assertTrue(t,'Missing production recorder')
+  self.assertEqual(t.count('void MRDShareError('),1,'Duplicate recorder tail')
+  self.assertEqual(t.count('void MRDControl('),1)
   for forbidden in ['localizedDescription','predicateFormat','NSLog(', 'writeToFile:', 'NSURLSession','UIPasteboard']:
    self.assertNotIn(forbidden,t)
   self.assertIn('MRDCanSubmit()',s)

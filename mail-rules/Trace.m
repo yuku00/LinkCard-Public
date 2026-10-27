@@ -109,6 +109,3 @@ void MRDControl(NSString *status,NSString *reason,NSString *path) {
  Init();@synchronized(Lock){if(!Ring)return;BOOL was=Active;Active=YES;MRD(@"share.lifecycle",status,reason,nil,@{@"path":path});Active=was;}
 }
 void MRDShareError(NSError *error) {if(!error)return;Init();@synchronized(Lock){if(!Ring)return;BOOL was=Active;Active=YES;MRD(@"error",@"failed",@"native_exception",nil,MRDError(error));Active=was;}}
-h":path});Active=was;}
-}
-void MRDShareError(NSError *error) {if(!error)return;Init();@synchronized(Lock){if(!Ring)return;BOOL was=Active;Active=YES;MRD(@"error",@"failed",@"native_exception",nil,MRDError(error));Active=was;}}
