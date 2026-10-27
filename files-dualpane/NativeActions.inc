@@ -23,7 +23,13 @@ static void InstallNativeActions(void) {
             static NSMutableSet *classes; if(!classes) classes=[NSMutableSet new];
             NSString *key=NSStringFromClass(cls); if([classes containsObject:key]) return; [classes addObject:key];
             SEL layout=@selector(layoutSubviews); Method lm=class_getInstanceMethod(cls,layout); IMP lo=method_getImplementation(lm);
-            class_replaceMethod(cls,layout,imp_implementationWithBlock(^(UICollectionViewCell *v){ ((void(*)(id,SEL))lo)(v,layout); ImproveCell(v); }),method_getTypeEncoding(lm));
+            class_replaceMethod(cls,layout,imp_implementationWithBlock(^(UICollectionViewCell *v){
+                BOOL hadStyle=objc_getAssociatedObject(v,&CellStyleKey)!=nil;
+                ((void(*)(id,SEL))lo)(v,layout); ImproveCell(v);
+                // Native preview/reuse may have a different width. Re-layout after restoring
+                // original properties rather than retaining the pane's old frame geometry.
+                if(hadStyle && !IsPaneListCell(v)) ((void(*)(id,SEL))lo)(v,layout);
+            }),method_getTypeEncoding(lm));
             SEL fit=@selector(preferredLayoutAttributesFittingAttributes:); Method fm=class_getInstanceMethod(cls,fit); IMP fo=method_getImplementation(fm);
             class_replaceMethod(cls,fit,imp_implementationWithBlock(^id(UICollectionViewCell *v,UICollectionViewLayoutAttributes *attributes){
                 UICollectionViewLayoutAttributes *result=((id(*)(id,SEL,id))fo)(v,fit,attributes);

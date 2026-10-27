@@ -21,6 +21,7 @@ jobs:
       - name: Static safety checks
         run: |
           python3 tests/check_dualpane.py
+          python3 tests/check_actions.py
           python3 tests/check_060.py
           python3 tests/check_070.py
       - name: Execute production Swift generic bridge host model
