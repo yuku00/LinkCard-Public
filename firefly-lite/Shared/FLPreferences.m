@@ -9,14 +9,16 @@ static double FLNumber(id value, double fallback) {
 FLConfig FLReadConfig(void) {
     CFPreferencesSynchronize(FL_DOMAIN, kCFPreferencesCurrentUser, kCFPreferencesAnyHost);
     id enabled = FLGet(CFSTR("Enabled"));
+    id allApps = FLGet(CFSTR("AllApps"));
     // Default off until the user explicitly enables the unverified device build.
     FLConfig c = { [enabled isKindOfClass:NSNumber.class] && [enabled boolValue],
+        [allApps isKindOfClass:NSNumber.class] && [allApps boolValue],
         FLNumber(FLGet(CFSTR("Red")), 0.30), FLNumber(FLGet(CFSTR("Green")), 0.72),
         FLNumber(FLGet(CFSTR("Blue")), 1.0), FLNumber(FLGet(CFSTR("Intensity")), 0.65) };
     return c;
 }
 BOOL FLWriteConfig(FLConfig c) {
-    NSDictionary *values = @{ @"Enabled": @(!!c.enabled), @"Red": @(FLUnit(c.red, 0.30)),
+    NSDictionary *values = @{ @"Enabled": @(!!c.enabled), @"AllApps": @(!!c.allApps), @"Red": @(FLUnit(c.red, 0.30)),
         @"Green": @(FLUnit(c.green, 0.72)), @"Blue": @(FLUnit(c.blue, 1)),
         @"Intensity": @(FLUnit(c.intensity, 0.65)) };
     CFPreferencesSetMultiple((__bridge CFDictionaryRef)values, NULL, FL_DOMAIN,

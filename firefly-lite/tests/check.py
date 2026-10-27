@@ -16,13 +16,22 @@ for forbidden in ('libCSColorPicker', 'NSURLSession', 'system(', 'popen(', 'posi
 assert 'kCFPreferencesCurrentUser' in source and 'kCFPreferencesAnyHost' in source
 assert 'CFNotificationCenterRemoveEveryObserver' in source
 assert 'UIColorPickerViewController' in source
+preferences = (root/'Shared/FLPreferences.m').read_text()
+assert 'id allApps = FLGet(CFSTR("AllApps"));' in preferences
+assert '[allApps isKindOfClass:NSNumber.class] && [allApps boolValue]' in preferences
+assert '@"AllApps": @(!!c.allApps)' in preferences
+assert 'CFPreferencesCopyKeyList(FL_DOMAIN' in preferences  # Clears the entire domain, including new keys.
+assert 'CFPreferencesSetMultiple(NULL, keys, FL_DOMAIN' in preferences
+assert 'config.enabled, config.allApps, badge, [view isFolderIcon]' in (root/'Tweak.mm').read_text()
+assert 'Version: 0.1.1\n' in (root/'control').read_text()
+print('PASS: AllApps read/default/write wiring, whole-domain cleanup and version checks')
 print('PASS: package/domain/filter/dependency and prohibited API checks')
 with tempfile.TemporaryDirectory(prefix='firefly-test-') as tmp:
     tmp = Path(tmp)
     binary = tmp/'logic'
     subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', str(root/'tests/logic.c'), '-lm', '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-    print('PASS: 11 native C boundary/visibility assertions')
+    print('PASS: 25 native C boundary/visibility assertions (both modes, folders, master switch, zero intensity)')
     # Substitute only the helper location; preserve the actual maintainer logic.
     calls = tmp/'calls'
     helper = tmp/'helper'

@@ -48,7 +48,7 @@ static void Update(SBIconView *view) {
     id icon = [view icon];
     BOOL badge = icon && Signature([icon class], @selector(badgeNumberOrString), "@", 2)
         && FLHasBadge([icon badgeNumberOrString]);
-    if (!FLShouldGlow(config.enabled, badge, [view isFolderIcon], YES, config.intensity)) {
+    if (!FLShouldGlow(config.enabled, config.allApps, badge, [view isFolderIcon], YES, config.intensity)) {
         Remove(view); return;
     }
     id candidate = [view _iconImageView];

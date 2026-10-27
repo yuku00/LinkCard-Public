@@ -61,13 +61,13 @@ static void PreferencesNotification(CFNotificationCenterRef center, void *observ
 }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 2; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return section == 0 ? 1 : 2;
+    return 2;
 }
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
     return section == 0 ? @"让待处理事项轻轻亮起" : @"光晕外观";
 }
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
-    return section == 0 ? @"仅在应用图标有角标时发光；通知未产生角标时不触发。关闭后立即移除光晕。"
+    return section == 0 ? @"默认仅有角标的应用发光；开启“全部应用图标发光”后，无角标应用也发光。关闭“启用图标发光”后立即移除所有光晕。"
         : @"无需重新启动即可应用。文件夹不发光；强度为零时不显示。首次使用请先验证当前环境支持 SpringBoard 注入。";
 }
 - (UIColor *)selectedColor {
@@ -81,11 +81,12 @@ static void PreferencesNotification(CFNotificationCenterRef center, void *observ
     cell.textLabel.numberOfLines = 0;
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     if (indexPath.section == 0) {
-        cell.textLabel.text = @"启用图标发光";
+        BOOL allApps = indexPath.row == 1;
+        cell.textLabel.text = allApps ? @"全部应用图标发光" : @"启用图标发光";
         UISwitch *toggle = [UISwitch new];
-        toggle.on = self.config.enabled;
-        toggle.accessibilityLabel = @"启用图标发光";
-        [toggle addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventValueChanged];
+        toggle.on = allApps ? self.config.allApps : self.config.enabled;
+        toggle.accessibilityLabel = cell.textLabel.text;
+        [toggle addTarget:self action:allApps ? @selector(toggleAllApps:) : @selector(toggle:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = toggle;
     } else if (indexPath.row == 0) {
         cell.textLabel.text = @"光晕颜色";
@@ -132,6 +133,7 @@ static void PreferencesNotification(CFNotificationCenterRef center, void *observ
     [self.table reloadData];
 }
 - (void)toggle:(UISwitch *)sender { FLConfig c = self.config; c.enabled = sender.on; self.config = c; [self save]; }
+- (void)toggleAllApps:(UISwitch *)sender { FLConfig c = self.config; c.allApps = sender.on; self.config = c; [self save]; }
 - (void)intensity:(UISlider *)sender { FLConfig c = self.config; c.intensity = sender.value; self.config = c; [self save]; }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];

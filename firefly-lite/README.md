@@ -7,11 +7,12 @@
 首次成功构建：[Actions #40444208442](https://github.com/yuku00/LinkCard-Public/actions/runs/40444208442)。编译成功不代表 SpringBoard 注入、偏好清理或真机稳定性通过。
 
 ## 功能与设计
-- 应用角标为正数或非空非零文本时显示柔和静态光晕；无角标立即移除。不是独立读取通知中心，关闭角标的通知不触发。
+- 默认角标模式：应用角标为正数或非空非零文本时显示柔和静态光晕；无角标立即移除。不是独立读取通知中心。
+- 0.1.1 新增“全部应用图标发光”（默认关闭）：开启后有无角标的应用均发光，关闭回到角标模式。文件夹图标始终排除，文件夹内应用仍按应用处理；总开关关闭或强度为零始终不发光。
 - 总开关、RGB 颜色、0–100% 强度；首次安装默认关闭，默认蓝色，65% 强度。
 - 中文原生 UIKit inset-grouped 设置，系统深浅色、Dynamic Type、VoiceOver 标签，系统 `UIColorPickerViewController`，不依赖 libCSColorPicker/Cephei。
 - 不提供 SpotOn、复杂动画、文件夹单独效果、网络、遥测、下载或 shell respring。
-- 每个可见图标最多一个自有 CALayer；重用更新，离屏、失去角标、强度零、关闭或卸载时移除。弱引用集合，不持有图标视图生命周期；不修改系统图标图层的 shadow 属性。
+- 每个可见图标最多一个自有 CALayer；重用更新，离屏、角标模式下失去角标、强度零、关闭或卸载时移除。弱引用集合，不持有图标视图生命周期；不修改系统图标图层的 shadow 属性。
 - UI 更新串行到主线程；CATransaction 禁用隐式动画。超范围、非数、错误类型参数回退/截断。
 - CFPreferences 两端固定 CurrentUser + AnyHost；Darwin 通知刷新；不用直接 plist 读写混杂缓存。
 - 标准 RootHide scheme；bundle 名相对查找，无绝对资源路径；不复制旧库、不破解授权。
@@ -60,7 +61,7 @@ dpkg-deb -c packages/*.deb
 ```sh
 python3 tests/check.py
 ```
-已执行：plist 解析、schema/依赖/禁止 API 静态检查、11 个直接编译执行的纯 C 断言、6 个 prerm 生命周期分支、清理失败不阻断卸载。
+已执行：plist 解析、schema/依赖/禁止 API 静态检查、25 个直接编译执行的纯 C 断言（两模式、文件夹排除、总开关关闭、离屏与零强度）、6 个 prerm 生命周期分支、清理失败不阻断卸载。
 已在 CI 完成：Objective-C/Objective-C++ 编译、链接、签名、RootHide 打包、包 ID/架构与文件清单检查。
 未执行：原生设置运行、SpringBoard hooks、CFPreferences 跨进程、实际 dpkg 安装/卸载、视觉效果、功耗与性能。
 
