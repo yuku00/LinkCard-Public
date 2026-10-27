@@ -1,0 +1,74 @@
+name: Firefly Lite RootHide
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Standard GitHub-hosted runner; no paid larger runner or signing secrets.
+    runs-on: macos-14
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: firefly-lite
+    env:
+      THEOS: ${{ github.workspace }}/.firefly-theos
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Host checks
+        run: python3 tests/check.py
+      - name: Prepare RootHide Theos
+        run: |
+          brew install make ldid dpkg
+          git clone --depth 1 --recursive --shallow-submodules https://github.com/roothide/theos.git "$THEOS"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+          git -C "$THEOS" rev-parse HEAD
+          git -C "$THEOS" submodule status --recursive
+          command -v ldid
+          command -v dpkg-deb
+      - name: Apple Foundation checks
+        run: |
+          xcrun --sdk macosx clang -fobjc-arc -framework Foundation -framework CoreFoundation tests/apple-logic.m Shared/FLPreferences.m -o "$RUNNER_TEMP/firefly-apple-tests"
+          "$RUNNER_TEMP/firefly-apple-tests"
+      - name: Build RootHide package
+        run: |
+          chmod 755 layout/DEBIAN/prerm
+          gmake clean
+          gmake package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide 2>&1 | tee "$RUNNER_TEMP/firefly-build.log"
+      - name: Inspect package
+        run: |
+          shopt -s nullglob
+          packages=(packages/*.deb)
+          test "${#packages[@]}" -gt 0
+          for deb in "${packages[@]}"; do
+            test "$(dpkg-deb -f "$deb" Package)" = dev.fireflylite.badgeglow
+            test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
+            dpkg-deb -I "$deb"
+            dpkg-deb -c "$deb"
+          done
+          shasum -a 256 packages/*.deb > packages/SHA256SUMS
+      - name: Upload real packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: firefly-lite-roothide-${{ github.sha }}
+          path: |
+            firefly-lite/packages/*.deb
+            firefly-lite/packages/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firefly-lite-build-log-${{ github.run_id }}
+          path: ${{ runner.temp }}/firefly-build.log
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,9 @@
+Package: dev.fireflylite.badgeglow
+Name: Firefly Lite
+Version: 0.1.0
+Architecture: iphoneos-arm64e
+Description: Independent badge glow with native Chinese preferences. Device validation pending.
+Maintainer: Firefly Lite Contributors
+Author: Firefly Lite Contributors
+Section: Tweaks
+Depends: firmware (>= 16.0), firmware (<< 17.0), mobilesubstrate, preferenceloader
