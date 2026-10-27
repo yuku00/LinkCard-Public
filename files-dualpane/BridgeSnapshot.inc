@@ -73,12 +73,12 @@ static void FPOfferBridgeCapture(FPDualContainer *container) {
     [alert addAction:[UIAlertAction actionWithTitle:@"采集并由我选择分享" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){
         if(FPBridgeCaptured) return; FPBridgeCaptured=YES;
         NSString *text=FPBridgeSnapshot(container);
-        dispatch_async(dispatch_get_main_queue(),^{
+        [container dismissViewControllerAnimated:YES completion:^{
             UIActivityViewController *share=[[UIActivityViewController alloc] initWithActivityItems:@[text] applicationActivities:nil];
             share.popoverPresentationController.barButtonItem=container.navigationItem.rightBarButtonItem;
             [container presentViewController:share animated:YES completion:nil];
             container.navigationItem.rightBarButtonItem.enabled=NO;
-        });
+        }];
     }]];
     [container presentViewController:alert animated:YES completion:nil];
 }

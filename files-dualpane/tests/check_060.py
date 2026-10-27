@@ -16,6 +16,7 @@ for token in ('FPBridgeCaptured=YES','indexPathsForSelectedItems','DOCThumbnailF
     assert token in b,token
 for forbidden in ('NSLog(', 'writeToFile', 'NSURLSession', 'NSFileManager', 'absoluteString', 'object_getIvar', 'ivar_getOffset', 'valueForKey:', 'UTF8String]', 'UIPasteboard', 'description]'):
     assert forbidden not in c+i+b,forbidden
+assert 'dismissViewControllerAnimated:YES completion:' in b
 assert 'methodForSelector' not in b # discovery never invokes arbitrary methods
 print('PASS: 0.6 source contracts: once-per-process scene launch, side-by-side, semantic list action, 22pt native icons, opt-in bounded metadata only')
 print('LIMIT: UIKit/Files UI, provider getters and launch routing still require device validation; these are source checks, not simulated UI proof')
