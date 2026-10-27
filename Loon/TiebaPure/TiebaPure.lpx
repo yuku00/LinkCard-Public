@@ -1,4 +1,5 @@
 #!name=贴吧跳转 TiebaPure
+#!icon=https://raw.githubusercontent.com/infinityf4p/TiebaPure-iOS/5a87225190d6a79b1e3ad3b7d846edd407d416c7/TiebaPure/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png
 #!desc=接管贴吧吧页与帖子下载导流，打开 TiebaPure。停用旧规则；需 tieba.baidu.com HTTPS 解密。
 
 [Script]
