@@ -1,5 +1,6 @@
 #import "DualPane.h"
 #import <QuickLook/QuickLook.h>
+#import <UIKit/UIGestureRecognizerSubclass.h>
 #import <objc/runtime.h>
 #import <sys/sysctl.h>
 #include <string.h>
@@ -78,6 +79,13 @@ static BOOL InstallStateIsolation(void) {
 @property(nonatomic) NSUInteger listAttempts;
 @property(nonatomic) NSUInteger homeIndex;
 @property(nonatomic) BOOL homeAttempted;
+@property(nonatomic) BOOL homeTouched;
+@property(nonatomic) NSUInteger homeGeneration;
+@property(nonatomic) NSUInteger homeRevision;
+@property(nonatomic,strong) id downloadSettings;
+@property(nonatomic,strong) NSNumber *savedLargeTitles;
+- (void)homeTouch;
+- (void)restoreWhenReady:(NSUInteger)attempt;
 - (void)applyInitialList;
 - (void)previewURLs:(NSArray<NSURL *> *)urls;
 - (void)unsupported;
@@ -104,6 +112,15 @@ static BOOL InExperiment(id v) {
 #include "ScopedPreview.inc"
 #include "FileCore.inc"
 #include "CrossPane.inc"
+// Observe touches without claiming them or delaying native row/back/menu gestures.
+@interface FPHomeTouchObserver : UIGestureRecognizer
+@property(nonatomic,weak) FPBrowserPane *pane;
+@end
+@implementation FPHomeTouchObserver
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self.pane homeTouch]; self.state=UIGestureRecognizerStateFailed;
+}
+@end
 @implementation FPBrowserPane
 - (void)dealloc {
     NSString *key=OwnState(_configuration);
@@ -115,11 +132,24 @@ static BOOL InExperiment(id v) {
     child.view.frame=self.view.bounds; child.view.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
     [self.view addSubview:child.view]; [child didMoveToParentViewController:self];
     UINavigationController *navigation=Get(FPFull(self),@"internalNavigationController");
-    if([navigation isKindOfClass:UINavigationController.class]) navigation.navigationBar.prefersLargeTitles=NO;
+    if([navigation isKindOfClass:UINavigationController.class]) {
+        self.savedLargeTitles=@(navigation.navigationBar.prefersLargeTitles); navigation.navigationBar.prefersLargeTitles=NO;
+    }
+    FPHomeTouchObserver *touch=[FPHomeTouchObserver new]; touch.pane=self;
+    touch.cancelsTouchesInView=NO; touch.delaysTouchesBegan=NO; touch.delaysTouchesEnded=NO;
+    [self.view addGestureRecognizer:touch];
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     if(!self.initialListStarted) { self.initialListStarted=YES; [self applyInitialList]; }
+    if(!self.homeAttempted) { self.homeAttempted=YES; [self restoreWhenReady:0]; }
+}
+- (void)homeTouch { self.homeTouched=YES; ++self.homeGeneration; }
+- (void)restoreWhenReady:(NSUInteger)attempt {
+    if(!FPHomeMayContinue(self.homeGeneration,self.homeGeneration,self.parentViewController!=nil,self.homeTouched,attempt)) return;
+    if(FPVisibleController(self) || FPBool(self.nativeSplit,@"isShowingCollapsedSidebarViewController")) { FPRestoreHome(self); return; }
+    if(attempt==19) { FPHomeFallback(self,@"首页浏览器尚未就绪，保留浏览；不会再抢占导航。"); return; }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/4),dispatch_get_main_queue(),^{ [self restoreWhenReady:attempt+1]; });
 }
 - (void)applyInitialList {
     if(!self.parentViewController || !self.nativeSplit) return;
@@ -132,7 +162,6 @@ static BOOL InExperiment(id v) {
         if(ABI([current class],@"accessibilityIsInListMode","B@:")) {
             SEL check=NSSelectorFromString(@"accessibilityIsInListMode");
             if(((BOOL(*)(id,SEL))[current methodForSelector:check])(current,check)) {
-                if(!self.homeAttempted) { self.homeAttempted=YES; FPRestoreHome(self); }
                 return;
             }
         }
@@ -217,7 +246,7 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
 
 @implementation FPDualContainer
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"双窗格 · 0.7.1"; self.view.backgroundColor=UIColor.systemBackgroundColor;
+    [super viewDidLoad]; self.title=@"双窗格 · 0.7.2"; self.view.backgroundColor=UIColor.systemBackgroundColor;
     self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;
     UIBarButtonItem *left=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"ellipsis"] menu:FPPaneMenu(self,0)];
     UIBarButtonItem *right=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"ellipsis"] menu:FPPaneMenu(self,1)];
@@ -267,6 +296,9 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
     self.closing=YES;
     [self dismissViewControllerAnimated:YES completion:^{
         for(FPBrowserPane *pane in self.panes) {
+            ++pane.homeGeneration; ++pane.homeRevision; FPRestorePaneStyles(pane);
+            UINavigationController *navigation=Get(FPFull(pane),@"internalNavigationController");
+            if(pane.savedLargeTitles && [navigation isKindOfClass:UINavigationController.class]) navigation.navigationBar.prefersLargeTitles=pane.savedLargeTitles.boolValue;
             UIViewController *split=pane.nativeSplit;
             [split willMoveToParentViewController:nil]; [split.view removeFromSuperview]; [split removeFromParentViewController];
             pane.nativeSplit=nil; pane.sourceObserver=nil;
@@ -286,6 +318,7 @@ static void ShowFailure(UIViewController *host, NSString *reason) {
 }
 void FPDualPanePresent(UIViewController *host) {
     if(!NSThread.isMainThread || host.presentedViewController || host.isBeingDismissed) return;
+    static dispatch_once_t homeOnce; dispatch_once(&homeOnce,^{ InstallHomeLocationTracking(); });
     NSMutableArray<FPBrowserPane *> *panes=[NSMutableArray new];
     NSMutableSet *identities=[NSMutableSet new]; NSString *failure=nil;
     for(NSUInteger index=0;index<2;index++) {

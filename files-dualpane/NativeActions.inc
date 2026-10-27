@@ -9,8 +9,18 @@ static void CollectLabels(UIView *v, NSMutableArray<UILabel *> *labels) {
 }
 #include "CompactImages.inc"
 #include "CompactSelection.inc"
+#include "CompactDisclosure.inc"
 #include "CompactCells.inc"
+#include "CompactSidebar.inc"
+static void FPRestorePaneStyles(UIViewController *owner) {
+    if(!InExperiment(owner)) return;
+    if([owner isKindOfClass:NSClassFromString(@"Files.DOCSidebarViewController")]) FPSidebarUpdate(owner,NO);
+    id collection=Get(owner,@"collectionView");
+    if([collection isKindOfClass:UICollectionView.class]) for(UICollectionViewCell *cell in [(UICollectionView *)collection visibleCells]) StyleCell(cell,NO);
+    for(UIViewController *child in owner.childViewControllers) FPRestorePaneStyles(child);
+}
 static void InstallNativeActions(void) {
+    InstallSidebarStyling();
     Class c=NSClassFromString(@"Files.DOCItemCollectionViewController");
     SEL display=NSSelectorFromString(@"collectionView:willDisplayCell:forItemAtIndexPath:");
     if(ABI(c,NSStringFromSelector(display),"v@:@@@")) {

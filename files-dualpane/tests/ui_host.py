@@ -1,11 +1,24 @@
 from pathlib import Path
 import sys
 r=Path(__file__).resolve().parents[1]
-production=(r/'CompactSelection.inc').read_text()
+production=(r/'CompactSelection.inc').read_text()+(r/'CompactDisclosure.inc').read_text()
+sidebar=(r/'CompactSidebar.inc').read_text()
+production+=sidebar[sidebar.index('static BOOL FPSidebarScope'):sidebar.index('static UIViewController *FPSidebarOwner')]
+production+='static char FPSidebarTitleKey;\n'+sidebar[sidebar.index('static void FPSidebarTitle('):sidebar.index('static void FPSidebarHookCell(')]
 prefix=r'''#import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <objc/runtime.h>
 #include <assert.h>
+#include <math.h>
+static const NSInteger UINavigationItemLargeTitleDisplayModeNever=2;
+@interface UINavigationItem : NSObject
+@property NSInteger largeTitleDisplayMode;
+@end
+@implementation UINavigationItem @end
+@interface UIViewController : NSObject
+@property UINavigationItem *navigationItem;
+@end
+@implementation UIViewController @end
 typedef unsigned long long UIAccessibilityTraits;
 static const UIAccessibilityTraits UIAccessibilityTraitSelected=4;
 static const NSUInteger UIViewAutoresizingFlexibleWidth=2, UIViewAutoresizingFlexibleHeight=16;
@@ -44,6 +57,8 @@ static const NSInteger UIUserInterfaceStyleDark=2;
 @end
 @interface UICellAccessory : NSObject @end
 @implementation UICellAccessory @end
+@interface UICellAccessoryDisclosureIndicator : UICellAccessory @end
+@implementation UICellAccessoryDisclosureIndicator @end
 @interface UICellAccessoryMultiselect : UICellAccessory @end
 @implementation UICellAccessoryMultiselect @end
 @interface UICollectionViewCell : UIView
@@ -59,12 +74,12 @@ static const NSInteger UIUserInterfaceStyleDark=2;
 main=r'''
 int main(void) { @autoreleasepool {
     UICollectionViewListCell *cell=[UICollectionViewListCell new]; cell.contentView=[UIView new];
-    UICellAccessory *arrow=[UICellAccessory new], *progress=[UICellAccessory new];
+    UICellAccessory *arrow=[UICellAccessoryDisclosureIndicator new], *progress=[UICellAccessory new];
     UICellAccessory *circle=[UICellAccessoryMultiselect new];
     NSArray *native=@[circle,arrow,progress]; cell.accessories=native;
     cell.accessibilityTraits=128; cell.bounds=CGRectMake(0,0,190,50);
     FPSelectionVisual(cell,YES);
-    assert(([cell.accessories isEqual:@[arrow,progress]]));
+    assert(([cell.accessories isEqual:@[progress]]));
     UIView *highlight=objc_getAssociatedObject(cell,&FPSelectionViewKey);
     assert(highlight.hidden && !cell.isSelected && !highlight.userInteractionEnabled);
     assert(!highlight.isAccessibilityElement && CGRectEqualToRect(highlight.frame,cell.bounds));
@@ -88,6 +103,15 @@ int main(void) { @autoreleasepool {
     cell.selected=NO; FPSelectionVisual(cell,YES);
     assert(((UIView *)objc_getAssociatedObject(cell,&FPSelectionViewKey)).hidden);
     FPSelectionVisual(cell,NO);
+    cell.accessories=@[arrow,progress]; FPDisclosure(cell,YES); assert(([cell.accessories isEqual:@[progress]]));
+    FPDisclosure(cell,YES); FPDisclosure(cell,NO); assert(([cell.accessories isEqual:@[arrow,progress]]));
+    FPDisclosure(cell,YES); cell.accessories=@[]; FPDisclosure(cell,NO); assert(!cell.accessories.count);
+    assert(FPSidebarScope(YES,YES,NO)); assert(!FPSidebarScope(NO,YES,NO)); assert(!FPSidebarScope(YES,NO,NO)); assert(!FPSidebarScope(YES,YES,YES));
+    assert(FPSidebarLines(200,80,100,17)==1); assert(FPSidebarHeight(17,1)==44); assert(FPSidebarHeight(50,1)==58);
+    UIViewController *owner=[UIViewController new]; owner.navigationItem=[UINavigationItem new]; owner.navigationItem.largeTitleDisplayMode=1;
+    FPSidebarTitle(owner,YES); FPSidebarTitle(owner,YES); assert(owner.navigationItem.largeTitleDisplayMode==2);
+    FPSidebarTitle(owner,NO); assert(owner.navigationItem.largeTitleDisplayMode==1);
+    puts("PASS production sidebar/disclosure: scoped single-line >=44pt Dynamic Type row policy, large title restoration, arrow removal/restoration and native replacement retained");
     puts("PASS production selection visual: exact accessory filter, native selection mapping, light/dark tint, VoiceOver traits, scope exit, reuse and native accessory replacement");
     puts("LIMIT Foundation view doubles exercise production functions, not UIKit rendering or Files device integration");
 } return 0; }

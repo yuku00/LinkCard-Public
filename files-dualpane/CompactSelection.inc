@@ -6,7 +6,7 @@ static UIAccessibilityTraits FPSelectionTraits(UIAccessibilityTraits traits, BOO
 static NSArray<UICellAccessory *> *FPWithoutMultiselect(NSArray<UICellAccessory *> *accessories) {
     NSMutableArray *result=[NSMutableArray new];
     for(UICellAccessory *accessory in accessories)
-        if(![accessory isKindOfClass:UICellAccessoryMultiselect.class]) [result addObject:accessory];
+        if(![accessory isKindOfClass:UICellAccessoryMultiselect.class] && ![accessory isKindOfClass:UICellAccessoryDisclosureIndicator.class]) [result addObject:accessory];
     return result;
 }
 static void FPSelectionVisual(UICollectionViewCell *cell, BOOL compact) {

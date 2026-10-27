@@ -62,6 +62,7 @@ static BOOL InExperiment(id o) { return [o isKindOfClass:UIViewController.class]
 core=(r/'FileCore.inc').read_text()
 abi=s[s.index('static BOOL ABI('):s.index('static void Set(')]
 selection=cross[:cross.index('static NSUserDefaults')]
+selection=selection.replace('#include "HomePolicy.inc"\n#include "HomeNavigation.inc"','')
 policy=style[style.index('static NSInteger FPNameLines'):style.index('static char CellStyleKey')]
 main='''
 int main(void) { @autoreleasepool {
@@ -95,7 +96,7 @@ int main(void) { @autoreleasepool {
     cv.indexPathsForSelectedItems=@[p,p2]; assert(!FPSelectedURLs(pane,&error)); // All-or-none when one selected row is offscreen.
     cv.dataSource=ds; cv.indexPathsForSelectedItems=@[p];
     DOCConcreteLocation *location=[DOCConcreteLocation new]; FPItem *dir=[FPItem new]; dir.fileURL=right; location.node=dir;
-    full.hierarchyController=full; full.lastLocation=location; assert([FPFolder(pane) isEqual:right]);
+    full.hierarchyController=full; full.lastLocation=location; // Current-folder semantics run in home_host, not a stale-history stub.
     assert(!FPTransferOne(a,right,NO)); assert([fm fileExistsAtPath:a.path]);
     assert(FPTransferOne(a,right,YES)); assert([fm fileExistsAtPath:a.path]); // Conflict retains source.
     assert(!FPTransferOne(b,right,YES)); assert(![fm fileExistsAtPath:b.path]);
