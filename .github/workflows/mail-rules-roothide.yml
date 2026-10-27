@@ -18,14 +18,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Verify release scope
-        run: python3 tests/check_safety.py
-      - name: Execute actual Foundation rule core fixtures
+      - name: Verify native release boundaries
+        run: python3 tests/check_native.py
+      - name: Execute production query and native interaction fixtures
         run: |
-          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -I. -framework Foundation RuleCore.m tests/rules-host.m -o "$RUNNER_TEMP/mail-rules-host"
-          "$RUNNER_TEMP/mail-rules-host"
-          clang -fno-objc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -I. -framework Foundation Diagnostics.m tests/diagnostics-host.m -o "$RUNNER_TEMP/mail-rules-diagnostics"
-          "$RUNNER_TEMP/mail-rules-diagnostics"
+          for memory in -fobjc-arc -fno-objc-arc; do
+            clang "$memory" -fblocks -fsanitize=address -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -I. -framework Foundation NativeCore.m tests/native-host.m -o "$RUNNER_TEMP/mail-native-host"
+            ASAN_OPTIONS=detect_leaks=0 "$RUNNER_TEMP/mail-native-host"
+          done
       - name: Prepare RootHide Theos
         run: |
           brew install make ldid dpkg
@@ -46,18 +46,18 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.mailrules.probe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.4.0
+          test "$(dpkg-deb -f "$deb" Version)" = 0.5.0
           dpkg-deb -x "$deb" "$RUNNER_TEMP/mail-rules-package"
           binary=$(python3 -c 'import os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"mail-rules-package"; binaries=list(p.rglob("*.dylib")); assert len(binaries)==1 and binaries[0].name=="MailRules.dylib"; print(binaries[0])')
           lipo "$binary" -verify_arch arm64 arm64e
-          python3 -c 'import pathlib,sys; b=pathlib.Path(sys.argv[1]).read_bytes(); forbidden=[b"applyFilterPredicate:",b"filteredMessageListWithPredicate:",b"MRState",b"dev.mailrules.rules",b"EMCreateMailboxChangeAction",b"EMMessageTransferAction"]; assert not any(x in b for x in forbidden), "Legacy functionality linked"; print("PASS: production dylib excludes legacy rules/replay/mailbox actions")' "$binary"
+          python3 -c 'import pathlib,sys; b=pathlib.Path(sys.argv[1]).read_bytes(); forbidden=[b"applyFilterPredicate:",b"filteredMessageListWithPredicate:",b"MRState",b"dev.mailrules.rules",b"EMCreateMailboxChangeAction",b"EMMessageTransferAction"]; assert not any(x in b for x in forbidden), "Legacy functionality linked"; required=[b"dev.mailrules.native5",b"MR5State",b"_showTransferPickerForNonPredictiveMoveOfMessages:",b"initWithMailbox:account:validAccounts:"]; assert all(x in b for x in required), "Native functionality missing"; print("PASS: native query/organization present; old replay and direct repository actions absent")' "$binary"
           lipo -info "$binary"
           dpkg-deb -I "$deb"
           dpkg-deb -c "$deb"
           shasum -a 256 packages/*.deb > packages/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: mail-rules-0.4.0-${{ github.sha }}
+          name: mail-rules-0.5.0-${{ github.sha }}
           path: |
             mail-rules/packages/*.deb
             mail-rules/packages/SHA256SUMS

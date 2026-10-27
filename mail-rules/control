@@ -1,8 +1,8 @@
 Package: dev.mailrules.probe
 Name: Mail Rules
-Version: 0.4.0
+Version: 0.5.0
 Architecture: iphoneos-arm64e
-Description: Native Mail appearance with legacy filtering completely excluded. Sender hiding and mailbox move/create are unavailable.
+Description: Owner-local sender queries and explicit same-account native mailbox organization; default-off, no global filter replay.
 Maintainer: Mail Rules
 Author: Mail Rules
 Section: Tweaks
