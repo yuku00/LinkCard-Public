@@ -1,4 +1,25 @@
-# Mail Rules 0.3.1
+# Mail 0.4.0 — safety isolation + native appearance
+
+**Sender hiding is unavailable in this release. Same-account mailbox creation and batch movement are also not implemented. This is not a complete rules release.**
+
+Production links **Safety.m + Theme.m only**. Rules.m, RuleCore.m and Diagnostics.m remain historical source, not executable production modules. There are no data-source, mailbox setter, filter apply, section prepare, replay or identity hooks in this build. Existing rule data is neither read nor changed. No attempt is made to reset or reconstruct Mail favorites, account ordering, badges or messages.
+
+The independent Theme module is restricted to com.apple.mobilemail, iOS 16.6 build 20G75, and the statically verified MailboxPickerOutlineController, MessageListViewController and ConversationViewController classes. Home gets native section side spacing (minimum 12 pt, preserving its original section and header); home/list get semantic grouped collection backgrounds; all three surfaces get consistent per-navigation-item standard/compact/scroll-edge appearances and semantic toolbars. Native title fonts follow Dynamic Type and system colors follow light/dark mode. Existing cells, swipe handlers, row counts/heights, flags, titles, account order, toolbar actions and message HTML are not replaced. The list is NOT rebuilt as a new inset-grouped data source.
+
+The list's additional **插件** button describes the isolation status and offers an immediate theme toggle. The only preference write is themeEnabled in dev.mailrules.theme; no defaults are written at install. No Mail user setting is changed. Original appearance snapshots and weak toolbar ownership support restoration on page exit or disabling. Uninstall/upgrade requires closing and reopening Mail: loaded injected code is not hot-unloaded. The uninstall script preserves old rules and does not touch any preferences or mail data.
+
+Verification: tests/check_safety.py checks the actual production manifest, forbidden APIs, visual scope, synthetic original-call sequences, multi-owner restoration and a reduced counterexample for old global replay. Model fixtures are not real-device proof. CI separately runs historical Foundation rule tests (not shipped), compiles both production architectures and verifies the package. No native visual/runtime acceptance is claimed without running on a compatible device.
+
+The supplied decrypted IPA was inspected statically only. Email.framework is an external system dependency, not bundled source. No guarantee is made that a safe native sender-query contract has been established. A replacement implementation would require a per-owner original-query boundary, exact sender semantics, correct thread/search/unified-account ownership, new-message updates and count consistency; until then this release has no fallback to global filter replay. Real mailbox creation/movement remains a separate unimplemented repository-action transaction, not a simulated UI operation.
+
+Source publication is limited to a whitelist of source, tests, metadata and workflow; excludes IPA, screenshots, extracted binaries, private reports and audit handoffs.
+
+---
+
+## Historical 0.3.1 documentation — NOT current functionality
+
+Everything below describes the retired, unlinked implementation and is retained only for audit. Its restoration/safety claims are superseded by the 0.4.0 isolation above.
+
 
 Experimental, default-off sender hiding for native Mail on iOS 16.6 build 20G75, RootHide arm64 + arm64e. Package identity remains `dev.mailrules.probe`, so this replaces 0.1.0 rather than installing alongside it. The production binary contains Rules.m + RuleCore.m + Diagnostics.m only, not the old metadata probe.
 

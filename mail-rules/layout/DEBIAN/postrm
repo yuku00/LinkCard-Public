@@ -2,8 +2,8 @@
 set -eu
 case "${1:-}" in
   remove|purge)
-    # Only this tweak's independent preferences; never Mail preferences.
-    rm -f /var/mobile/Library/Preferences/dev.mailrules.rules.plist
+    # Preserve existing rule data. No preference reset or Mail data recovery.
+    :
     ;;
 esac
 exit 0
