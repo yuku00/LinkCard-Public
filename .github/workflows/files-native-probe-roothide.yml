@@ -1,0 +1,59 @@
+name: Files Native Probe RootHide
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+        working-directory: files-dualpane
+    env:
+      THEOS: ${{ github.workspace }}/.files-probe-theos
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Static safety checks
+        run: python3 tests/check.py
+      - name: Prepare RootHide Theos
+        run: |
+          brew install make ldid dpkg
+          git clone --depth 1 --recursive --shallow-submodules https://github.com/roothide/theos.git "$THEOS"
+          xcodebuild -version
+          git -C "$THEOS" rev-parse HEAD
+          git -C "$THEOS" submodule status --recursive
+      - name: Build observation-only probe
+        run: |
+          set -o pipefail
+          gmake package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide 2>&1 | tee "$RUNNER_TEMP/files-probe-build.log"
+      - name: Verify package
+        run: |
+          shopt -s nullglob
+          packages=(packages/*.deb)
+          test "${#packages[@]}" -eq 1
+          deb="${packages[0]}"
+          test "$(dpkg-deb -f "$deb" Package)" = dev.filesdualpane.nativeprobe
+          test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
+          dpkg-deb -I "$deb"
+          dpkg-deb -c "$deb"
+          shasum -a 256 packages/*.deb > packages/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: files-native-probe-${{ github.sha }}
+          path: |
+            files-dualpane/packages/*.deb
+            files-dualpane/packages/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: files-native-probe-log-${{ github.run_id }}
+          path: ${{ runner.temp }}/files-probe-build.log
+          if-no-files-found: ignore
+          retention-days: 7
