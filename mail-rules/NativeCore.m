@@ -1,4 +1,5 @@
 #import "NativeCore.h"
+#import "Trace.h"
 NSString *MR5Address(NSString *value) {
     if (![value isKindOfClass:NSString.class]) return nil;
     NSString *s=[value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
@@ -40,10 +41,14 @@ NSPredicate *MR5Transform(NSPredicate *base, NSPredicate *(^original)(NSPredicat
 }
 id MR5InvokeFactory(MR5ListFactory factory,id cls,SEL selector,id boxes,id repository,BOOL oldest,BOOL display,id sort,MR5PredicateTransform transform,id ignore,NSPredicate *local) {
     if(!local) return factory(cls,selector,boxes,repository,oldest,display,sort,transform,ignore);
+    NSUInteger traceSession=MRDSession();
     // A captured id only retains a stack block under MRC; use a typed copied block.
     MR5PredicateTransform original=[transform copy];
     MR5PredicateTransform wrapped=[^NSPredicate *(NSPredicate *base) {
-        return MR5Transform(base,original,local);
+        MRDAt(traceSession,@"factory.transform",@"success",@"entered",nil,@{@"hasLocal":@(local!=nil)});
+        NSPredicate *query=MR5Transform(base,original,local);
+        MRDAt(traceSession,@"query.generated",query?@"success":@"failed",query?@"ok":@"model_contract",nil,@{@"resultPresent":@(query!=nil)});
+        return query;
     } copy];
     @try {return factory(cls,selector,boxes,repository,oldest,display,sort,wrapped,ignore);}
     @finally {

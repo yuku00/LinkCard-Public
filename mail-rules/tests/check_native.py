@@ -5,9 +5,9 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 class NativeBoundaryTests(unittest.TestCase):
     def test_shipping_sources(self):
         files=re.search(r'^MailRules_FILES\s*=\s*(.*)$',(ROOT/'Makefile').read_text(),re.M)[1].split()
-        self.assertEqual(files,['Native.m','NativeCore.m','Theme.m'])
+        self.assertEqual(files,['Native.m','NativeCore.m','Theme.m','Trace.m'])
         self.assertEqual(plistlib.loads((ROOT/'MailRules.plist').read_bytes()),{'Filter':{'Bundles':['com.apple.mobilemail']}})
-        self.assertIn('Version: 0.5.0',(ROOT/'control').read_text())
+        self.assertIn('Version: 0.5.1',(ROOT/'control').read_text())
     def test_no_old_replay_or_global_routes(self):
         code=(ROOT/'Native.m').read_text()+(ROOT/'NativeCore.m').read_text()
         for token in ['applyFilterPredicate:', 'filteredMessageListWithPredicate:', 'prepareSection:', 'setDataSource:', 'setMailboxes:', 'setThreaded:', 'setPersistentDomain:', 'standardUserDefaults', 'CFPreferencesSetValue', 'EMMessageTransferAction', 'EMCreateMailboxChangeAction', 'EMMessageTransferAllAction', 'copyMessages:', 'NSURLSession', 'NSLog(', 'beginSearchWith', '@"result"']:

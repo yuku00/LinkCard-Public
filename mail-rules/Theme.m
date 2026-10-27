@@ -1,4 +1,5 @@
 #import "Theme.h"
+#import "Trace.h"
 #import <CoreFoundation/CoreFoundation.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -51,7 +52,8 @@ static void Restore(UIViewController *vc) {
     objc_setAssociatedObject(vc,&SnapshotKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 static void Apply(UIViewController *vc) {
-    if(!Allowed(vc) || !vc.isViewLoaded) return;
+    MRD(@"theme.apply",@"pending",@"entered",vc,@{@"enabled":@(MRThemeEnabled())});
+    if(!Allowed(vc) || !vc.isViewLoaded) {MRD(@"theme.apply",@"skipped",@"guard",vc,nil);return;}
     if(!MRThemeEnabled()) { Restore(vc); return; }
     UINavigationItem *item=vc.navigationItem;
     UIToolbar *bar=vc.navigationController.toolbar;
@@ -86,11 +88,14 @@ static void Apply(UIViewController *vc) {
         bar.tintColor=UIColor.systemBlueColor;
     }
     if(collection) collection.backgroundColor=UIColor.systemGroupedBackgroundColor;
+    MRD(@"theme.apply",@"success",@"ok",vc,nil);
 }
 void MRThemeSetEnabled(BOOL enabled) {
+    MRD(@"theme.toggle",@"pending",@"entered",nil,@{@"enabled":@(enabled)});
     NSCAssert(NSThread.isMainThread,@"Theme changes must run on main thread");
     CFPreferencesSetAppValue(CFSTR("themeEnabled"), enabled ? kCFBooleanTrue : kCFBooleanFalse, CFSTR("dev.mailrules.theme"));
-    CFPreferencesAppSynchronize(CFSTR("dev.mailrules.theme"));
+    BOOL synced=CFPreferencesAppSynchronize(CFSTR("dev.mailrules.theme"));
+    MRD(@"theme.toggle",synced?@"success":@"failed",synced?@"ok":@"sync_failed",nil,@{@"enabled":@(enabled),@"saved":@(synced)});
     for(NSCollectionLayoutSection *section in Sections) {
         NSDirectionalEdgeInsets insets; [[Sections objectForKey:section] getValue:&insets];
         section.contentInsets=insets;
@@ -104,6 +109,7 @@ void MRThemeSetEnabled(BOOL enabled) {
 }
 static BOOL Hook(Class c,NSString *name,const char *encoding,id (^factory)(IMP)) {
     SEL sel=NSSelectorFromString(name); Method m=class_getInstanceMethod(c,sel);
+    MRDDeclare(@"install.theme",name,encoding,m?method_getTypeEncoding(m):NULL,m && !strcmp(method_getTypeEncoding(m),encoding));
     if(!m || strcmp(method_getTypeEncoding(m),encoding)) return NO;
     IMP imp=imp_implementationWithBlock(factory(method_getImplementation(m)));
     if(!class_addMethod(c,sel,imp,encoding)) method_setImplementation(m,imp);
@@ -113,7 +119,7 @@ __attribute__((constructor)) static void InstallTheme(void) {
     @autoreleasepool {
         if(![NSBundle.mainBundle.bundleIdentifier isEqual:@"com.apple.mobilemail"]) return;
         char build[64]={0};size_t size=sizeof(build);
-        if(sysctlbyname("kern.osversion",build,&size,NULL,0) || strcmp(build,"20G75")) return;
+        BOOL supported=!sysctlbyname("kern.osversion",build,&size,NULL,0) && !strcmp(build,"20G75");
         Controllers=[[NSHashTable weakObjectsHashTable] retain];
         ToolbarOwners=[[NSMapTable weakToWeakObjectsMapTable] retain];
         Sections=[[NSMapTable weakToStrongObjectsMapTable] retain];
@@ -122,27 +128,29 @@ __attribute__((constructor)) static void InstallTheme(void) {
             Hook(c,@"viewWillAppear:","v20@0:8B16",^id(IMP original) {
                 return [[^(UIViewController *vc,BOOL animated) {
                     ((void(*)(id,SEL,BOOL))original)(vc,@selector(viewWillAppear:),animated);
-                    if(Allowed(vc)) { [Controllers addObject:vc]; Apply(vc); }
+                    MRDInstallButton(vc);MRD(@"ui.lifecycle",@"success",@"original_returned",vc,nil);
+                    if(supported && Allowed(vc)) { [Controllers addObject:vc]; Apply(vc); }
                 } copy] autorelease];
             });
             Hook(c,@"viewWillDisappear:","v20@0:8B16",^id(IMP original) {
                 return [[^(UIViewController *vc,BOOL animated) {
-                    Restore(vc);
+                    MRD(@"ui.lifecycle",@"success",@"entered",vc,nil);Restore(vc);
                     ((void(*)(id,SEL,BOOL))original)(vc,@selector(viewWillDisappear:),animated);
                 } copy] autorelease];
             });
             Hook(c,@"traitCollectionDidChange:","v24@0:8@16",^id(IMP original) {
                 return [[^(UIViewController *vc,UITraitCollection *previous) {
                     ((void(*)(id,SEL,id))original)(vc,@selector(traitCollectionDidChange:),previous);
-                    if(vc.viewIfLoaded.window) Apply(vc);
+                    if(supported && vc.viewIfLoaded.window) Apply(vc);
                 } copy] autorelease];
             });
         }
         // Actual IPA caller creates a native list section including its existing header mode.
         // Keep that section, all providers, and every item; change visual side spacing only.
-        Hook(NSClassFromString(@"MailboxPickerOutlineController"),@"_configuredSectionForSection:layoutEnvironment:","@32@0:8q16@24",^id(IMP original) {
+        if(supported) Hook(NSClassFromString(@"MailboxPickerOutlineController"),@"_configuredSectionForSection:layoutEnvironment:","@32@0:8q16@24",^id(IMP original) {
             return [[^id(id vc,NSInteger index,id environment) {
                 id result=((id(*)(id,SEL,NSInteger,id))original)(vc,NSSelectorFromString(@"_configuredSectionForSection:layoutEnvironment:"),index,environment);
+                MRD(@"theme.section",@"success",@"original_returned",vc,@{@"section":@(index),@"resultPresent":@(result!=nil),@"enabled":@(MRThemeEnabled())});
                 if(MRThemeEnabled() && Allowed(vc) && [result isKindOfClass:NSCollectionLayoutSection.class]) {
                     NSCollectionLayoutSection *section=result;
                     NSDirectionalEdgeInsets insets=section.contentInsets;
