@@ -23,15 +23,27 @@ assert '@"AllApps": @(!!c.allApps)' in preferences
 assert 'CFPreferencesCopyKeyList(FL_DOMAIN' in preferences  # Clears the entire domain, including new keys.
 assert 'CFPreferencesSetMultiple(NULL, keys, FL_DOMAIN' in preferences
 assert 'config.enabled, config.allApps, badge, [view isFolderIcon]' in (root/'Tweak.mm').read_text()
-assert 'Version: 0.1.1\n' in (root/'control').read_text()
+assert 'Version: 0.1.2\n' in (root/'control').read_text()
 print('PASS: AllApps read/default/write wiring, whole-domain cleanup and version checks')
+assert 'id follow = FLGet(CFSTR("FollowIconColor"));' in preferences
+assert '[follow isKindOfClass:NSNumber.class] && [follow boolValue]' in preferences
+assert '@"FollowIconColor": @(!!c.followIconColor)' in preferences
+colors = (root/'Shared/FLIconColor.h').read_text()
+assert 'state.image != image || state.icon != icon' in colors
+assert 'objc_getAssociatedObject(owner, &colorKey) != state' in colors
+assert 'Signature(view.class, selector, "@", 2)' in colors
+assert 'DISPATCH_QUEUE_SERIAL' in colors
+assert '跟随图标颜色' in (root/'Preferences/FLRootController.m').read_text()
+for forbidden in ('drawViewHierarchyInRect', 'renderInContext', 'UIGraphicsBeginImageContext', 'snapshotViewAfterScreenUpdates'):
+    assert forbidden not in source
+print('PASS: FollowIconColor default/write/UI, identity cache/stale-result guards, no screen capture')
 print('PASS: package/domain/filter/dependency and prohibited API checks')
 with tempfile.TemporaryDirectory(prefix='firefly-test-') as tmp:
     tmp = Path(tmp)
     binary = tmp/'logic'
     subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', str(root/'tests/logic.c'), '-lm', '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-    print('PASS: 25 native C boundary/visibility assertions (both modes, folders, master switch, zero intensity)')
+    print('PASS: 25 visibility/boundary assertions plus 13 color/follow/fallback assertions')
     # Substitute only the helper location; preserve the actual maintainer logic.
     calls = tmp/'calls'
     helper = tmp/'helper'

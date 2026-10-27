@@ -1,5 +1,7 @@
 #include <assert.h>
 #include "../Shared/FLLogic.h"
+#include "../Shared/FLColor.h"
+#include <string.h>
 int main(void) {
     assert(FLUnit(-1, .65) == 0);
     assert(FLUnit(2, .65) == 1);
@@ -16,5 +18,27 @@ int main(void) {
             assert(!FLShouldGlow(1, allApps, badge, 0, 1, 0));
         }
     }
+    FLRGB sampled = {1,0,0}, manual = {.3,.72,1}, out = {0};
+    assert(FLChooseColor(0, 1, sampled, manual).blue == 1);
+    assert(FLChooseColor(1, 0, sampled, manual).blue == 1);
+    assert(FLChooseColor(1, 1, sampled, manual).red == 1);
+    assert(!FLRepresentativeColor(NULL, 1, &out));
+    uint8_t pixels[576*4];
+    memset(pixels, 255, sizeof(pixels));
+    assert(!FLRepresentativeColor(pixels, 576, &out)); // white-only fallback
+    memset(pixels, 0, sizeof(pixels));
+    assert(!FLRepresentativeColor(pixels, 576, &out)); // transparent fallback
+    for (int i = 0; i < 576; ++i) pixels[i*4+3] = 255;
+    assert(!FLRepresentativeColor(pixels, 576, &out)); // black-only fallback
+    assert(!FLRepresentativeColor(pixels, 577, &out)); // sampling bound
+    memset(pixels, 255, sizeof(pixels));
+    pixels[1] = pixels[2] = 0; // one red sample beats 575 neutral white samples
+    assert(FLRepresentativeColor(pixels, 576, &out));
+    assert(out.red == 1 && out.green == 0 && out.blue == 0);
+    uint8_t mixed[] = {0,255,0,255, 0,255,0,255, 255,0,0,255, 0,0,127,127};
+    assert(FLRepresentativeColor(mixed, 4, &out));
+    assert(out.green == 1 && out.red == 0 && out.blue == 0);
+    uint8_t alpha[] = {128,0,0,128};
+    assert(FLRepresentativeColor(alpha, 1, &out) && out.red == 1);
     return 0;
 }

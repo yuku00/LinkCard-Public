@@ -61,14 +61,14 @@ static void PreferencesNotification(CFNotificationCenterRef center, void *observ
 }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 2; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return 2;
+    return section == 0 ? 2 : 3;
 }
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
     return section == 0 ? @"让待处理事项轻轻亮起" : @"光晕外观";
 }
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     return section == 0 ? @"默认仅有角标的应用发光；开启“全部应用图标发光”后，无角标应用也发光。关闭“启用图标发光”后立即移除所有光晕。"
-        : @"无需重新启动即可应用。文件夹不发光；强度为零时不显示。首次使用请先验证当前环境支持 SpringBoard 注入。";
+        : @"跟随图标颜色默认关闭；开启后提取已显示图标主色，纯黑白或取色失败时使用手动颜色。无需重启。文件夹不发光；强度为零时不显示。";
 }
 - (UIColor *)selectedColor {
     FLConfig c = self.config;
@@ -87,6 +87,13 @@ static void PreferencesNotification(CFNotificationCenterRef center, void *observ
         toggle.on = allApps ? self.config.allApps : self.config.enabled;
         toggle.accessibilityLabel = cell.textLabel.text;
         [toggle addTarget:self action:allApps ? @selector(toggleAllApps:) : @selector(toggle:) forControlEvents:UIControlEventValueChanged];
+        cell.accessoryView = toggle;
+    } else if (indexPath.row == 2) {
+        cell.textLabel.text = @"跟随图标颜色";
+        UISwitch *toggle = [UISwitch new];
+        toggle.on = self.config.followIconColor;
+        toggle.accessibilityLabel = cell.textLabel.text;
+        [toggle addTarget:self action:@selector(toggleFollow:) forControlEvents:UIControlEventValueChanged];
         cell.accessoryView = toggle;
     } else if (indexPath.row == 0) {
         cell.textLabel.text = @"光晕颜色";
@@ -133,6 +140,7 @@ static void PreferencesNotification(CFNotificationCenterRef center, void *observ
     [self.table reloadData];
 }
 - (void)toggle:(UISwitch *)sender { FLConfig c = self.config; c.enabled = sender.on; self.config = c; [self save]; }
+- (void)toggleFollow:(UISwitch *)sender { FLConfig c = self.config; c.followIconColor = sender.on; self.config = c; [self save]; }
 - (void)toggleAllApps:(UISwitch *)sender { FLConfig c = self.config; c.allApps = sender.on; self.config = c; [self save]; }
 - (void)intensity:(UISlider *)sender { FLConfig c = self.config; c.intensity = sender.value; self.config = c; [self save]; }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {

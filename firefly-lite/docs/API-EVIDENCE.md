@@ -45,5 +45,20 @@ https://github.com/MTACS/iOS-17-Runtime-Headers/blob/d1d960dfaa4107765dd7fcf891e
 
 无私有 ivar、结构体偏移、定时轮询或通知内容读取。发光依据是应用角标，不是 Notification Center 未读通知数据库。关闭系统角标的通知不会触发。文件夹本身排除，文件夹内部的应用仍按其角标处理。
 
+## 0.1.2 已显示图像接口依据
+通过浏览器 TLS fetch 成功核对固定提交（HTTP 200）：
+https://github.com/MTACS/iOS-17-Runtime-Headers/blob/d1d960dfaa4107765dd7fcf891e4967c0930d5fd/PrivateFrameworks/SpringBoardHome.framework/SBIconImageView.h
+```objc
+@interface SBIconImageView : UIView
+@property (nonatomic, readonly) UIImage *displayedImage;
+- (id)displayedImage;
+- (void)updateImageAnimated:(bool)arg1;
+- (void)didEndAsynchronousImageLoadForIcon:(id)arg1;
+@end
+```
+它不是 UIImageView，不盲发 `image`。仅 UIImageView 实例使用公开 `image`；SBIconImageView 实例用已核对的 `displayedImage`，调用前检查对象返回和零显式参数，再验证返回对象为 UIImage。图像更新 hook 各自检查 void/参数数量及 bool(B) 或 object(@)，不匹配跳过。没有使用 snapshot、屏幕渲染、私有 ivar 或猜测图像 getter。
+
+限制：此证据仍是 iOS17 类头，不是 iOS16.6 实机。目标系统缺少匹配 getter 时确定回退手动色；只有 getter 而无可选回调时，图像变更在下一次 SBIconView 布局/现有事件才复核。UIImage 视为不可变对象，以身份变化检测内容更新，不支持外部原地篡改底层像素的非标准图像。
+
 ## 下载信任记录
 Shell 的 HTTPS CA 链校验失败；公开只读研究文件使用 curl -k 获取，仅作接口线索，没有执行下载文件、没有安装包、没有作为可执行依赖打包。由此不能将取证称为完整 TLS 认证。上述固定提交可在可信网络上重新核对。

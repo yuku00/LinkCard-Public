@@ -4,7 +4,7 @@
 #define FL_DOMAIN CFSTR("dev.fireflylite.badgeglow")
 #define FL_CHANGED CFSTR("dev.fireflylite.badgeglow/changed")
 #define FL_STOP CFSTR("dev.fireflylite.badgeglow/uninstall")
-typedef struct { BOOL enabled, allApps; double red, green, blue, intensity; } FLConfig;
+typedef struct { BOOL enabled, allApps, followIconColor; double red, green, blue, intensity; } FLConfig;
 FOUNDATION_EXPORT FLConfig FLReadConfig(void);
 FOUNDATION_EXPORT BOOL FLWriteConfig(FLConfig config);
 FOUNDATION_EXPORT BOOL FLClearPreferences(void);

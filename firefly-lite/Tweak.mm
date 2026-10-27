@@ -35,7 +35,9 @@ static BOOL Signature(Class cls, SEL sel, const char *ret, unsigned args, const 
     }
     return YES;
 }
+#import "Shared/FLIconColor.h"
 static void Remove(SBIconView *view) {
+    objc_setAssociatedObject(view, &colorKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     CALayer *layer = objc_getAssociatedObject(view, &layerKey);
     [layer removeFromSuperlayer];
     objc_setAssociatedObject(view, &layerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -66,7 +68,8 @@ static void Update(SBIconView *view) {
         objc_setAssociatedObject(view, &layerKey, layer, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [view.layer insertSublayer:layer atIndex:0];
     }
-    UIColor *color = [UIColor colorWithRed:config.red green:config.green blue:config.blue alpha:1];
+    FLRGB rgb = IconColor(view, image, icon, (FLRGB){config.red, config.green, config.blue});
+    UIColor *color = [UIColor colorWithRed:rgb.red green:rgb.green blue:rgb.blue alpha:1];
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     layer.frame = frame;
@@ -87,6 +90,7 @@ static void Schedule(SBIconView *view) {
 static void Layout(SBIconView *self, SEL cmd) { originalLayout(self, cmd); Schedule(self); }
 static void Window(SBIconView *self, SEL cmd) { originalWindow(self, cmd); Schedule(self); }
 static void SetIcon(SBIconView *self, SEL cmd, id icon) {
+    objc_setAssociatedObject(self, &colorKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     originalSetIcon(self, cmd, icon); Schedule(self);
 }
 static void Accessories(SBIconView *self, SEL cmd, id icon) {
@@ -118,6 +122,7 @@ __attribute__((constructor)) static void Initialize(void) {
             || !Signature(cls, NSSelectorFromString(@"setIcon:"), "v", 3, "@")
             || !Signature(cls, NSSelectorFromString(@"iconAccessoriesDidUpdate:"), "v", 3, "@")) return;
         views = [NSHashTable weakObjectsHashTable];
+        InstallImageHooks();
         config = FLReadConfig();
         CFNotificationCenterRef center = CFNotificationCenterGetDarwinNotifyCenter();
         CFNotificationCenterAddObserver(center, &observerKey, Notify, FL_CHANGED, NULL,
