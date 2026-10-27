@@ -12,7 +12,7 @@ static unsigned destroyed, called;
 @implementation FPFixture
 - (id)initSame { called++; return [super init]; }
 - (id)initNil { called++; [self release]; return nil; }
-- (id)initReplacement { called++; [self release]; return [[NSObject alloc] init]; }
+- (id)initReplacement { called++; [self release]; return (id)[[NSObject alloc] init]; }
 - (id)initUnsigned:(unsigned long long)n host:(id)host { assert(n==42 && host==nil); called++; return [super init]; }
 - (id)value { called++; return self; }
 - (void)dealloc { destroyed++; [super dealloc]; }
