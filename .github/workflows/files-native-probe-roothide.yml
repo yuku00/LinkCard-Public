@@ -24,6 +24,12 @@ jobs:
           python3 tests/check_actions.py
           python3 tests/check_060.py
           python3 tests/check_070.py
+          python3 tests/check_071.py
+      - name: Execute production selection visual and restore policy
+        run: |
+          python3 tests/ui_host.py "$RUNNER_TEMP/ui-host.m"
+          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation -framework CoreGraphics "$RUNNER_TEMP/ui-host.m" -o "$RUNNER_TEMP/ui-host"
+          "$RUNNER_TEMP/ui-host"
       - name: Execute production Swift generic bridge host model
         run: |
           python3 tests/swift_host.py "$RUNNER_TEMP/swift-host.swift"
@@ -64,7 +70,7 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.filesdualpane.nativeprobe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.7.0
+          test "$(dpkg-deb -f "$deb" Version)" = 0.7.1
           dpkg-deb -x "$deb" "$RUNNER_TEMP/files-package"
           binary=$(python3 -c 'import os,pathlib; print(next(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("files-package").rglob("FilesNativeProbe.dylib")))')
           test -n "$binary"

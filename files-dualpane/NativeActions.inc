@@ -8,6 +8,7 @@ static void CollectLabels(UIView *v, NSMutableArray<UILabel *> *labels) {
     for(UIView *child in v.subviews) CollectLabels(child,labels);
 }
 #include "CompactImages.inc"
+#include "CompactSelection.inc"
 #include "CompactCells.inc"
 static void InstallNativeActions(void) {
     Class c=NSClassFromString(@"Files.DOCItemCollectionViewController");
@@ -24,12 +25,20 @@ static void InstallNativeActions(void) {
             NSString *key=NSStringFromClass(cls); if([classes containsObject:key]) return; [classes addObject:key];
             SEL layout=@selector(layoutSubviews); Method lm=class_getInstanceMethod(cls,layout); IMP lo=method_getImplementation(lm);
             class_replaceMethod(cls,layout,imp_implementationWithBlock(^(UICollectionViewCell *v){
-                BOOL hadStyle=objc_getAssociatedObject(v,&CellStyleKey)!=nil;
+                BOOL hadStyle=objc_getAssociatedObject(v,&CellStyleKey)!=nil || objc_getAssociatedObject(v,&FPSelectionViewKey)!=nil;
+                // Restore BEFORE native preview layout. Call the original exactly once.
+                if(hadStyle && !IsPaneListCell(v)) StyleCell(v,NO);
                 ((void(*)(id,SEL))lo)(v,layout); ImproveCell(v);
-                // Native preview/reuse may have a different width. Re-layout after restoring
-                // original properties rather than retaining the pane's old frame geometry.
-                if(hadStyle && !IsPaneListCell(v)) ((void(*)(id,SEL))lo)(v,layout);
             }),method_getTypeEncoding(lm));
+            SEL reuse=@selector(prepareForReuse); Method rm=class_getInstanceMethod(cls,reuse); IMP ro=method_getImplementation(rm);
+            class_replaceMethod(cls,reuse,imp_implementationWithBlock(^(UICollectionViewCell *v){
+                StyleCell(v,NO); ((void(*)(id,SEL))ro)(v,reuse);
+            }),method_getTypeEncoding(rm));
+            SEL selected=@selector(setSelected:); Method sm=class_getInstanceMethod(cls,selected); IMP so=method_getImplementation(sm);
+            class_replaceMethod(cls,selected,imp_implementationWithBlock(^(UICollectionViewCell *v,BOOL value){
+                ((void(*)(id,SEL,BOOL))so)(v,selected,value);
+                FPSelectionVisual(v,IsPaneListCell(v));
+            }),method_getTypeEncoding(sm));
             SEL fit=@selector(preferredLayoutAttributesFittingAttributes:); Method fm=class_getInstanceMethod(cls,fit); IMP fo=method_getImplementation(fm);
             class_replaceMethod(cls,fit,imp_implementationWithBlock(^id(UICollectionViewCell *v,UICollectionViewLayoutAttributes *attributes){
                 UICollectionViewLayoutAttributes *result=((id(*)(id,SEL,id))fo)(v,fit,attributes);

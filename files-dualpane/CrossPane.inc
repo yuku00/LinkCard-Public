@@ -56,8 +56,11 @@ static NSArray<NSURL *> *FPSelectedURLs(FPBrowserPane *pane, NSError **error) {
 static NSUserDefaults *FPHomeDefaults(void) { return [[NSUserDefaults alloc] initWithSuiteName:@"dev.filesdualpane.home"]; }
 static NSString *FPHomeKey(FPBrowserPane *pane) { return pane.homeIndex==0 ? @"left" : @"right"; }
 static void FPNotice(FPDualContainer *container, NSString *message) {
-    // Persistent local status, no paths/names in logs and no alert dismissal race.
+    // One line only when needed; text remains complete for the tap-to-view alert.
     container.status.text=message; container.status.accessibilityLabel=message;
+    container.status.accessibilityHint=@"轻点查看完整操作结果";
+    container.status.hidden=!message.length;
+    container.statusHeight.constant=message.length ? MAX(24,ceil(container.status.font.lineHeight+4)) : 0;
 }
 static void FPRestoreHome(FPBrowserPane *pane) {
     id data=[FPHomeDefaults() objectForKey:FPHomeKey(pane)]; if(!data) return;

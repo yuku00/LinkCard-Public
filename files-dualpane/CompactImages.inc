@@ -1,44 +1,72 @@
-// 0.5 only resized UIListContentConfiguration; legacy DOCFittingImageView was untouched.
-static char FPImageConstraintsKey, FPImageBoundsKey, FPImageCenterKey;
-static void FPCompactImages(UIView *view, BOOL compact) {
-    Class fitting=NSClassFromString(@"DOCFittingImageView");
-    if((fitting && [view isKindOfClass:fitting]) || ([view isKindOfClass:UIImageView.class] && (objc_getAssociatedObject(view,&FPImageCenterKey) || (view.bounds.size.width>25 && view.bounds.size.height>25)))) {
-        NSMutableArray *saved=objc_getAssociatedObject(view,&FPImageConstraintsKey);
-        if(!compact) {
-            NSValue *center=objc_getAssociatedObject(view,&FPImageCenterKey); if(center) view.center=center.CGPointValue;
-            objc_setAssociatedObject(view,&FPImageCenterKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            NSValue *bounds=objc_getAssociatedObject(view,&FPImageBoundsKey);
-            if(bounds) view.bounds=bounds.CGRectValue;
-            objc_setAssociatedObject(view,&FPImageBoundsKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            for(NSArray *pair in saved) ((NSLayoutConstraint *)pair[0]).constant=[pair[1] doubleValue];
-            objc_setAssociatedObject(view,&FPImageConstraintsKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        } else {
-            UIView *cell=view; while(cell && ![cell isKindOfClass:UICollectionViewCell.class]) cell=cell.superview;
-            if(cell) {
-                if(!objc_getAssociatedObject(view,&FPImageCenterKey)) objc_setAssociatedObject(view,&FPImageCenterKey,[NSValue valueWithCGPoint:view.center],OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                CGPoint center=[view.superview convertPoint:view.center toView:cell]; center.x=16;
-                view.center=[cell convertPoint:center toView:view.superview];
-            }
-            if(!saved) { saved=[NSMutableArray new]; objc_setAssociatedObject(view,&FPImageConstraintsKey,saved,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
-            // Adjust the native image's own explicit dimensions, not the row/UI scale.
-            for(UIView *owner=view;owner;owner=owner.superview) {
-                for(NSLayoutConstraint *c in owner.constraints) {
-                    if(c.firstItem!=view || c.secondItem || c.relation!=NSLayoutRelationEqual ||
-                       (c.firstAttribute!=NSLayoutAttributeWidth && c.firstAttribute!=NSLayoutAttributeHeight) || c.constant<=20) continue;
-                    BOOL known=NO; for(NSArray *pair in saved) if(pair[0]==c) known=YES;
-                    if(!known) [saved addObject:@[c,@(c.constant)]];
-                    c.constant=20;
-                }
-                if([owner isKindOfClass:UICollectionViewCell.class]) break;
-            }
-            // shortcut: frame-based native thumbnail layout has no dimension constraints.
-            // Keep its center/row geometry; change only the icon bounds (no UI transform).
-            if(!saved.count && (view.bounds.size.width>20 || view.bounds.size.height>20)) {
-                if(!objc_getAssociatedObject(view,&FPImageBoundsKey)) objc_setAssociatedObject(view,&FPImageBoundsKey,[NSValue valueWithCGRect:view.bounds],OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                CGRect bounds=view.bounds; CGFloat ratio=MIN(20/bounds.size.width,20/bounds.size.height);
-                bounds.size=CGSizeMake(bounds.size.width*ratio,bounds.size.height*ratio); view.bounds=bounds;
-            }
+// Only the known Files thumbnail and its public horizontal arranged-subview slot.
+// Never shrink arbitrary UIImageViews (disclosure, status and progress accessories).
+static char FPImageStateKey;
+static void FPFindThumbnails(UIView *view, NSMutableArray *result) {
+    Class cls=NSClassFromString(@"DOCThumbnailFittingImageView");
+    if(cls && [view isKindOfClass:cls]) { [result addObject:view]; return; }
+    for(UIView *child in view.subviews) FPFindThumbnails(child,result);
+}
+static UIView *FPThumbnailSlot(UIView *image, UIView *root) {
+    for(UIView *v=image;v && v!=root;v=v.superview) {
+        if([v.superview isKindOfClass:UIStackView.class]) {
+            UIStackView *stack=(id)v.superview;
+            if(stack.axis==UILayoutConstraintAxisHorizontal && [stack.arrangedSubviews containsObject:v]) return v;
         }
     }
-    for(UIView *child in view.subviews) FPCompactImages(child,compact);
+    return image;
+}
+static BOOL FPCompactImages(UIView *root, BOOL compact) {
+    NSMutableDictionary *state=objc_getAssociatedObject(root,&FPImageStateKey);
+    if(!compact) {
+        for(NSLayoutConstraint *c in state[@"added"]) c.active=NO;
+        for(NSArray *pair in state[@"constraints"]) ((NSLayoutConstraint *)pair[0]).active=[pair[1] boolValue];
+        for(NSArray *pair in state[@"spacing"]) [(UIStackView *)pair[0] setCustomSpacing:[pair[2] doubleValue] afterView:pair[1]];
+        for(NSArray *pair in state[@"geometry"]) { UIView *v=pair[0]; v.bounds=[pair[1] CGRectValue]; v.center=[pair[2] CGPointValue]; }
+        objc_setAssociatedObject(root,&FPImageStateKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        return NO;
+    }
+    if(!state) {
+        NSMutableArray *images=[NSMutableArray new]; FPFindThumbnails(root,images);
+        if(!images.count) return NO;
+        state=[@{@"images":images,@"constraints":[NSMutableArray new],@"added":[NSMutableArray new],@"spacing":[NSMutableArray new],@"geometry":[NSMutableArray new]} mutableCopy];
+        NSMutableSet *slots=[NSMutableSet new];
+        for(UIView *image in images) {
+            UIView *slot=FPThumbnailSlot(image,root); [slots addObject:slot];
+            for(UIView *v in (slot==image ? @[image] : @[image,slot])) {
+                [state[@"geometry"] addObject:@[v,[NSValue valueWithCGRect:v.bounds],[NSValue valueWithCGPoint:v.center]]];
+                // Replace explicit/proportional WIDTH sizing of this exact thumbnail slot.
+                // Leave positional/height constraints and all other native controls alone.
+                for(UIView *owner=v;owner;owner=owner.superview) {
+                    for(NSLayoutConstraint *c in owner.constraints) {
+                        if(c.active && c.firstItem==v && c.firstAttribute==NSLayoutAttributeWidth && c.relation==NSLayoutRelationEqual) {
+                            [state[@"constraints"] addObject:@[c,@YES]]; c.active=NO;
+                        }
+                    }
+                    if(owner==root) break;
+                }
+                if(!v.translatesAutoresizingMaskIntoConstraints) {
+                    NSLayoutConstraint *width=[v.widthAnchor constraintEqualToConstant:20];
+                    width.priority=999; width.active=YES; [state[@"added"] addObject:width];
+                }
+            }
+            if([slot.superview isKindOfClass:UIStackView.class]) {
+                UIStackView *stack=(id)slot.superview;
+                [state[@"spacing"] addObject:@[stack,slot,@([stack customSpacingAfterView:slot])]];
+                [stack setCustomSpacing:6 afterView:slot];
+            }
+        }
+        state[@"slots"]=slots.allObjects;
+        objc_setAssociatedObject(root,&FPImageStateKey,state,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    // Frame fallback after native layout; never force a synchronous layout pass.
+    for(UIView *slot in state[@"slots"]) {
+        CGRect b=slot.bounds; b.size.width=20; slot.bounds=b;
+    }
+    for(UIView *image in state[@"images"]) {
+        CGRect b=image.bounds; CGFloat scale=MIN(1,MIN(20/MAX(1,b.size.width),20/MAX(1,b.size.height)));
+        b.size=CGSizeMake(b.size.width*scale,b.size.height*scale); image.bounds=b;
+        UIView *slot=FPThumbnailSlot(image,root);
+        if(slot!=image) image.center=[slot convertPoint:CGPointMake(CGRectGetMidX(slot.bounds),CGRectGetMidY(slot.bounds)) toView:image.superview];
+    }
+    return [state[@"spacing"] count]>0;
 }

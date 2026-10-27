@@ -86,9 +86,8 @@ static BOOL InstallStateIsolation(void) {
 @interface FPDualContainer : UIViewController
 @property(nonatomic,copy) NSArray<FPBrowserPane *> *panes;
 @property(nonatomic,strong) UIStackView *stack;
-@property(nonatomic,strong) UISegmentedControl *mode;
+@property(nonatomic,strong) NSLayoutConstraint *statusHeight;
 @property(nonatomic) BOOL closing;
-@property(nonatomic) BOOL userSelectedMode;
 @property(nonatomic) BOOL transferBusy;
 @property(nonatomic,strong) UILabel *status;
 - (void)close;
@@ -218,45 +217,41 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
 
 @implementation FPDualContainer
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"双窗格 · 0.7.0"; self.view.backgroundColor=UIColor.systemBackgroundColor;
-    self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStyleDone target:self action:@selector(close)];
+    [super viewDidLoad]; self.title=@"双窗格 · 0.7.1"; self.view.backgroundColor=UIColor.systemBackgroundColor;
     self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;
-    self.mode=[[UISegmentedControl alloc] initWithItems:@[@"并排",@"左栏",@"右栏"]];
-    self.mode.selectedSegmentIndex=0; // Both panes, including narrow phones.
-    [self.mode addTarget:self action:@selector(changeMode) forControlEvents:UIControlEventValueChanged];
-    self.navigationItem.titleView=self.mode;
+    UIBarButtonItem *left=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"ellipsis"] menu:FPPaneMenu(self,0)];
+    UIBarButtonItem *right=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"ellipsis"] menu:FPPaneMenu(self,1)];
+    left.accessibilityLabel=@"左侧窗格操作"; right.accessibilityLabel=@"右侧窗格操作";
+    self.navigationItem.leftBarButtonItem=left; self.navigationItem.rightBarButtonItem=right;
+    UIButton *close=[UIButton buttonWithType:UIButtonTypeSystem];
+    [close setTitle:@"关闭" forState:UIControlStateNormal];
+    close.titleLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    close.frame=CGRectMake(0,0,64,44);
+    [close addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
+    self.navigationItem.titleView=close;
     self.stack=[[UIStackView alloc] init]; self.stack.axis=UILayoutConstraintAxisHorizontal; self.stack.distribution=UIStackViewDistributionFillEqually;
     self.stack.spacing=1; self.stack.backgroundColor=UIColor.separatorColor; self.stack.translatesAutoresizingMaskIntoConstraints=NO;
     [self.view addSubview:self.stack];
     self.status=[UILabel new]; self.status.translatesAutoresizingMaskIntoConstraints=NO;
     self.status.font=[UIFont preferredFontForTextStyle:UIFontTextStyleCaption2]; self.status.adjustsFontForContentSizeCategory=YES;
-    self.status.numberOfLines=2; self.status.text=@"下方跨栏/首页 · 点状态查看完整结果";
+    self.status.numberOfLines=1; self.status.lineBreakMode=NSLineBreakByTruncatingTail; self.status.hidden=YES;
     self.status.userInteractionEnabled=YES; self.status.accessibilityTraits|=UIAccessibilityTraitButton;
     [self.status addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(showStatus)]];
     [self.view addSubview:self.status];
-    [NSLayoutConstraint activateConstraints:@[[self.status.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:8],[self.status.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-8],[self.status.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor]]];
-    UIBarButtonItem *left=[[UIBarButtonItem alloc] initWithTitle:@"左栏 ⇄ / 首页" menu:FPPaneMenu(self,0)];
-    UIBarButtonItem *right=[[UIBarButtonItem alloc] initWithTitle:@"右栏 ⇄ / 首页" menu:FPPaneMenu(self,1)];
-    self.toolbarItems=@[left,[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil],right];
-    [self.navigationController setToolbarHidden:NO animated:NO];
-    [NSLayoutConstraint activateConstraints:@[[self.stack.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],[self.stack.bottomAnchor constraintEqualToAnchor:self.status.topAnchor],[self.stack.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor],[self.stack.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor]]];
+    self.statusHeight=[self.status.heightAnchor constraintEqualToConstant:0];
+    [NSLayoutConstraint activateConstraints:@[self.statusHeight,[self.status.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:8],[self.status.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-8],[self.status.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor]]];
+    [self.navigationController setToolbarHidden:YES animated:NO];
+    [NSLayoutConstraint activateConstraints:@[[self.stack.topAnchor constraintEqualToAnchor:self.status.bottomAnchor],[self.stack.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor],[self.stack.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor],[self.stack.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor]]];
     for(FPBrowserPane *pane in self.panes) {
         [self addChildViewController:pane];
         [self.stack addArrangedSubview:pane.view]; [pane didMoveToParentViewController:self];
     }
-    [self applyMode];
 }
 - (void)showStatus {
     if(self.presentedViewController) return;
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"操作结果" message:self.status.text preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"返回" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
-}
-- (void)changeMode { self.userSelectedMode=YES; [self applyMode]; }
-- (void)applyMode {
-    NSInteger mode=self.mode.selectedSegmentIndex;
-    for(NSUInteger i=0;i<self.panes.count;i++) self.stack.arrangedSubviews[i].hidden=(mode!=0 && mode!=(NSInteger)i+1);
-    [self.view setNeedsLayout];
 }
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];

@@ -18,10 +18,10 @@ static BOOL IsPaneListCell(UICollectionViewCell *cell) {
 static UIFont *FPCellFont(UIView *view, CGFloat size) {
     return [[UIFontMetrics metricsForTextStyle:UIFontTextStyleBody] scaledFontForFont:[UIFont systemFontOfSize:size] compatibleWithTraitCollection:view.traitCollection];
 }
-static void ImproveCell(UICollectionViewCell *cell) {
+static void StyleCell(UICollectionViewCell *cell, BOOL compact) {
     NSDictionary *saved=objc_getAssociatedObject(cell,&CellStyleKey);
-    BOOL compact=IsPaneListCell(cell);
-    FPCompactImages(cell.contentView,compact);
+    FPSelectionVisual(cell,compact);
+    BOOL arranged=FPCompactImages(cell.contentView,compact);
     if(!compact) {
         if(saved[@"config"] && [cell.contentConfiguration isKindOfClass:UIListContentConfiguration.class]) {
             UIListContentConfiguration *config=[(UIListContentConfiguration *)cell.contentConfiguration copy], *original=saved[@"config"];
@@ -30,6 +30,7 @@ static void ImproveCell(UICollectionViewCell *cell) {
             config.secondaryTextProperties.font=original.secondaryTextProperties.font;
             config.secondaryTextProperties.numberOfLines=original.secondaryTextProperties.numberOfLines;
             config.imageProperties.maximumSize=original.imageProperties.maximumSize;
+            config.imageProperties.reservedLayoutSize=original.imageProperties.reservedLayoutSize;
             config.directionalLayoutMargins=original.directionalLayoutMargins; config.imageToTextPadding=original.imageToTextPadding;
             cell.contentConfiguration=config;
         }
@@ -45,10 +46,10 @@ static void ImproveCell(UICollectionViewCell *cell) {
         UIListContentConfiguration *config=[(UIListContentConfiguration *)cell.contentConfiguration copy];
         if(!saved) { saved=@{@"config":[config copy],@"clips":@(cell.contentView.clipsToBounds)}; objc_setAssociatedObject(cell,&CellStyleKey,saved,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
         NSInteger lines=FPNameLines(MAX(0,cell.bounds.size.height-detail.lineHeight-8),font.lineHeight);
-        if(config.textProperties.numberOfLines!=lines || ![config.textProperties.font isEqual:font] || config.imageProperties.maximumSize.width!=20) {
+        if(config.textProperties.numberOfLines!=lines || ![config.textProperties.font isEqual:font] || config.imageProperties.maximumSize.width!=20 || config.imageProperties.reservedLayoutSize.width!=20 || config.imageToTextPadding!=6) {
             config.textProperties.font=font; config.textProperties.numberOfLines=lines; config.textProperties.lineBreakMode=NSLineBreakByTruncatingTail;
             config.secondaryTextProperties.font=detail; config.secondaryTextProperties.numberOfLines=1;
-            config.imageProperties.maximumSize=CGSizeMake(20,20); config.imageToTextPadding=6;
+            config.imageProperties.maximumSize=CGSizeMake(20,20); config.imageProperties.reservedLayoutSize=CGSizeMake(20,20); config.imageToTextPadding=6;
             config.directionalLayoutMargins=NSDirectionalEdgeInsetsMake(4,6,4,6); cell.contentConfiguration=config;
         }
         cell.contentView.clipsToBounds=YES; return;
@@ -66,6 +67,17 @@ static void ImproveCell(UICollectionViewCell *cell) {
         saved=@{@"labels":entries,@"clips":@(cell.contentView.clipsToBounds)}; objc_setAssociatedObject(cell,&CellStyleKey,saved,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     cell.contentView.clipsToBounds=YES;
+    if(arranged) {
+        // Native stack owns label frames; shrinking its thumbnail slot reclaims leading space.
+        // Do not fight its constraints by overwriting individual label frames after layout.
+        CGFloat available=MAX(0,cell.bounds.size.height-8-(labels.count>1 ? detail.lineHeight : 0));
+        for(UILabel *label in labels) {
+            label.font=label==name ? font : detail;
+            label.numberOfLines=label==name ? FPNameLines(available,font.lineHeight) : 1;
+            label.lineBreakMode=NSLineBreakByTruncatingTail; label.clipsToBounds=YES;
+        }
+        return;
+    }
     // Native fixed-height layouts may reject self-sizing. Never add lines beyond actual bounds.
     CGRect frame=[name convertRect:name.bounds toView:cell.contentView];
     CGFloat left=MIN(frame.origin.x,34), width=MAX(0,cell.contentView.bounds.size.width-left-6);
@@ -83,3 +95,4 @@ static void ImproveCell(UICollectionViewCell *cell) {
         label.frame=[cell.contentView convertRect:CGRectMake(x,y,w,MAX(0,MIN(detail.lineHeight,cell.contentView.bounds.size.height-y-3))) toView:label.superview];
     }
 }
+static void ImproveCell(UICollectionViewCell *cell) { StyleCell(cell,IsPaneListCell(cell)); }
