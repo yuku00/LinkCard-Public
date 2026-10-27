@@ -10,7 +10,7 @@
 static NSString *const Domain=@"dev.mailrules.native5";
 static char StateKey, CreateKey, MoveKey, StartedKey, DiagnosticGuardKey;
 static BOOL Supported;
-static char OSBuild[64];
+
 static __thread id ReloadOwner;
 static __thread NSDictionary *ReloadFrame;
 static BOOL Ready, MoveReady, CreateReady;
@@ -67,11 +67,12 @@ static NSMutableDictionary *Load(void) {
     NSMutableDictionary *d=[raw && [(id)raw isKindOfClass:NSDictionary.class]?(id)raw:@{@"enabled":@NO,@"rules":@[]} mutableCopy];
     if(raw) CFRelease(raw); return [d autorelease];
 }
-static void Save(NSDictionary *d) {
+static BOOL Save(NSDictionary *d) {
     CFPreferencesSetAppValue(CFSTR("configuration"),(CFPropertyListRef)d,(CFStringRef)Domain);
     BOOL synced=CFPreferencesAppSynchronize((CFStringRef)Domain);
     BOOL equal=[Load() isEqual:d];
     MRD(@"rule.save",synced&&equal?@"success":@"failed",!synced?@"sync_failed":(!equal?@"readback_mismatch":@"ok"),nil,@{@"saved":@(synced),@"enabled":@([d[@"enabled"] boolValue]),@"count":@([d[@"rules"] count])});
+    return synced && equal;
 }
 static id Address(NSString *s) { return One(NSClassFromString(@"ECEmailAddress"),@"emailAddressWithString:",s); }
 static NSString *ReadAddress(id x) {
@@ -105,8 +106,11 @@ static NSPredicate *InBoxes(NSArray *boxes) {
     return [p isKindOfClass:NSPredicate.class]?p:nil;
 }
 static UIAlertAction *MRDAction(NSString *title,UIAlertActionStyle style,void (^handler)(UIAlertAction *)) {
+    // Never record the title: rule/account picker titles contain private values.
+    NSDictionary *codes=@{@"诊断会话（手动开始 / 停止）":@"diagnostics",@"开始诊断（新一轮，清空旧记录）":@"start",@"停止并查看 / 分享":@"stop",@"查看上轮报告 / 分享":@"report",@"清空诊断内存":@"clear",@"从选中邮件的发件人添加":@"selected_sender",@"输入发件人添加规则":@"input_sender",@"管理规则 / 同发件人整理":@"manage",@"关闭隐藏，恢复原始列表":@"hide_off",@"开启发件人隐藏":@"hide_on",@"预览已加载邮件并选择移动…":@"move_loaded",@"在此账号新建邮箱…":@"create",@"结束整理，返回规则列表":@"preview_end",@"修改地址与范围":@"edit",@"打开同发件人整理预览":@"preview",@"删除规则":@"delete",@"停用规则":@"rule_off",@"启用规则":@"rule_on",@"保存：此邮箱":@"save_mailbox",@"保存：此账号各邮箱":@"save_account",@"选择同账号目标…":@"move_picker",@"关闭简洁外观":@"theme_off",@"开启简洁外观":@"theme_on",@"恢复安全模式（禁止提交）":@"safe_mode",@"仅测试邮件：申请允许原生提交…":@"request_submit",@"我确认，仅测试邮件允许执行":@"allow_submit"};
+    NSString *code=style==UIAlertActionStyleCancel?@"cancel":(codes[title]?:@"choice");
     return [UIAlertAction actionWithTitle:title style:style handler:^(UIAlertAction *action){
-        MRD(@"ui.click",style==UIAlertActionStyleCancel?@"cancelled":@"success",style==UIAlertActionStyleCancel?@"user_cancel":@"entered",nil,@{@"path":style==UIAlertActionStyleCancel?@"cancel":@"view"});
+        MRD(@"ui.click",style==UIAlertActionStyleCancel?@"cancelled":@"success",style==UIAlertActionStyleCancel?@"user_cancel":@"entered",nil,@{@"action":code,@"path":style==UIAlertActionStyleCancel?@"cancel":@"view"});
         if(handler)handler(action);
     }];
 }
@@ -272,7 +276,7 @@ static void ChooseBox(MR5State *s,void (^chosen)(id)) {
 }
 @implementation MR5State
 - (void)diagnostics {
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Mail 0.5.1 · mail051-trace-r1" message:@"默认不采集。开始后仅在内存保留有限脱敏事件；退出/被系统杀死即丢失。默认阻止本插件最终新建/移动提交；只用 1–3 封专门测试邮件，原生界面推荐取消。停止后可查看/分享文本；不会上传、写日志或复制剪贴板。" preferredStyle:UIAlertControllerStyleActionSheet];
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Mail 0.5.1 · mail051-trace-r2" message:@"默认不采集。开始后仅在内存保留有限脱敏事件；退出/被系统杀死即丢失。默认阻止本插件最终新建/移动提交；只用 1–3 封专门测试邮件，原生界面推荐取消。停止后可查看/分享文本；不会上传、写日志或复制剪贴板。" preferredStyle:UIAlertControllerStyleActionSheet];
     if(!MRDActive())[a addAction:MRDAction(@"开始诊断（新一轮，清空旧记录）",UIAlertActionStyleDefault,^(__unused UIAlertAction *x){
         MRDStart();
         MRD(@"install.bundle",@"success",@"ok",nil,@{@"filterMatches":@([NSBundle.mainBundle.bundleIdentifier isEqual:@"com.apple.mobilemail"]),@"schema":@1});
@@ -300,6 +304,7 @@ static void ChooseBox(MR5State *s,void (^chosen)(id)) {
 }
 - (void)report {
     MRDControl(@"pending",@"entered",@"view");
+    UIViewController *presenter=owner; // Retained by copied dispatch blocks under MRC.
     NSDictionary *snapshot=[MRDSnapshot() retain];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0),^{
         NSString *text=MRDText(snapshot);
@@ -307,7 +312,7 @@ static void ChooseBox(MR5State *s,void (^chosen)(id)) {
             NSDictionary *now=MRDSnapshot();
             if(![now[@"generation"] isEqual:snapshot[@"generation"]] || ![now[@"start"] isEqual:snapshot[@"start"]])return;
             MRDReportController *report=[[[MRDReportController alloc] init] autorelease];report.reportText=text;
-            UINavigationController *nav=[[[UINavigationController alloc] initWithRootViewController:report] autorelease];MRDPresent(owner,nav);
+            UINavigationController *nav=[[[UINavigationController alloc] initWithRootViewController:report] autorelease];MRDPresent(presenter,nav);
         });
         [snapshot release];
     });
@@ -341,7 +346,7 @@ static void ChooseBox(MR5State *s,void (^chosen)(id)) {
         [a addAction:MRDAction(@"输入发件人添加规则",UIAlertActionStyleDefault,^(__unused UIAlertAction *action){MRD(@"ui.click",@"success",@"entered",owner,@{@"path":@"input"});ChooseBox(self,^(id box){[self edit:nil box:box sender:nil];});})];
         [a addAction:MRDAction(@"管理规则 / 同发件人整理",UIAlertActionStyleDefault,^(__unused UIAlertAction *action){[self manage];})];
         [a addAction:MRDAction([Load()[@"enabled"] boolValue]?@"关闭隐藏，恢复原始列表":@"开启发件人隐藏",UIAlertActionStyleDefault,^(__unused UIAlertAction *action){
-            NSMutableDictionary *d=Load();d[@"enabled"]=@(![d[@"enabled"] boolValue]);MRD(@"rule.toggle",@"pending",@"entered",owner,@{@"enabled":d[@"enabled"]});Save(d);
+            NSMutableDictionary *d=Load();d[@"enabled"]=@(![d[@"enabled"] boolValue]);MRD(@"rule.toggle",@"pending",@"entered",owner,@{@"enabled":d[@"enabled"]});BOOL saved=Save(d);MRD(@"rule.toggle",saved?@"success":@"failed",saved?@"ok":@"sync_failed",owner,@{@"enabled":d[@"enabled"]});
             [preview release];preview=nil;[previewContext release];previewContext=nil;[self reload];
         })];
         if(preview) {
@@ -361,6 +366,7 @@ static void ChooseBox(MR5State *s,void (^chosen)(id)) {
     for(NSString *scope in @[@"mailbox",@"account"]) [a addAction:MRDAction([scope isEqual:@"mailbox"]?@"保存：此邮箱":@"保存：此账号各邮箱",UIAlertActionStyleDefault,^(__unused UIAlertAction *action){
         NSString *value=MR5Address(a.textFields.firstObject.text);
         MRD(@"ui.click",@"success",@"entered",owner,@{@"path":@"save"});
+        MRD(@"rule.save",@"pending",@"entered",owner,@{@"path":scope,@"accountID":MRDAccount(account)});
         if(!value || !Sender(value)) {MRD(@"rule.save",@"failed",@"model_contract",owner,nil);dispatch_async(dispatch_get_main_queue(),^{Notice(owner,@"地址格式或原生精确匹配验证失败，未保存。支持 ASCII 邮箱地址；国际化域名请使用 punycode。");});return;}
         NSMutableDictionary *d=Load();NSMutableArray *rules=[[Array(d[@"rules"]) mutableCopy] autorelease];
         NSDictionary *entry=@{@"id":rule[@"id"]?:NSUUID.UUID.UUIDString,@"account":account,@"mailbox":mailbox,@"sender":value,@"scope":scope,@"enabled":rule[@"enabled"]?:@YES,@"label":BoxTitle(box)};
@@ -388,7 +394,7 @@ static void ChooseBox(MR5State *s,void (^chosen)(id)) {
                     if(![r[@"id"] isEqual:rule[@"id"]]) {[out addObject:r];continue;}
                     if([op isEqual:@"toggle"]) {NSMutableDictionary *copy=[[r mutableCopy] autorelease];copy[@"enabled"]=@(![r[@"enabled"] boolValue]);[out addObject:copy];}
                 }
-                MRD([op isEqual:@"toggle"]?@"rule.toggle":@"rule.delete",@"pending",@"entered",owner,nil);d[@"rules"]=out;Save(d);[self reload];
+                MRD([op isEqual:@"toggle"]?@"rule.toggle":@"rule.delete",@"pending",@"entered",owner,nil);d[@"rules"]=out;BOOL saved=Save(d);MRD([op isEqual:@"toggle"]?@"rule.toggle":@"rule.delete",saved?@"success":@"failed",saved?@"ok":@"sync_failed",owner,nil);[self reload];
             })];
             [b addAction:MRDAction(@"取消",UIAlertActionStyleCancel,nil)];PresentSheet(self,b);
         })];
@@ -408,6 +414,7 @@ static void ChooseBox(MR5State *s,void (^chosen)(id)) {
 }
 - (void)moveLoaded {
     MRD(@"selection.map",@"pending",@"entered",owner,nil);
+    if(!MoveReady) {MRD(@"move.open",@"skipped",@"abi_mismatch",owner,nil);Notice(owner,@"原生移动保护接口未安装，不能安全打开移动面板；未提交移动。请导出诊断报告。");return;}
     if(busy || !preview || !local || ![BoxKeys(owner) isEqual:previewContext]) {MRD(@"selection.map",@"failed",@"scope_changed",owner,nil);return;}
     id ds=Get(owner,@"dataSource");
     id snapshot=Get(Get(ds,@"dataSource"),@"snapshot");
@@ -427,6 +434,7 @@ static void ChooseBox(MR5State *s,void (^chosen)(id)) {
     NSArray *capturedContext=[[previewContext copy] autorelease];
     NSDictionary *capturedRule=[[preview copy] autorelease];
     NSString *text=[NSString stringWithFormat:@"发件人：%@\n来源：%@（仅当前列表范围）\n已核对 %lu 封；尚未加载的邮件不包含。\n下一步由 Mail 原生面板选择同账号目标，选择目标会执行移动并可能同步其他设备。不会移动整个混合会话。",preview[@"sender"],preview[@"label"],(unsigned long)items.count];
+    if(MRDActive() && !MRDCanSubmit()) text=[NSString stringWithFormat:@"无写入演练：已核对 %lu 封手动选中的测试邮件。下一步只查看 Mail 原生目标面板，然后点取消；安全模式拦截最终移动提交，不会替你选择全部邮件。规则保存与外观开关仍会保存插件自身设置。",(unsigned long)items.count];
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"核对批量移动" message:text preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:MRDAction(@"选择同账号目标…",UIAlertActionStyleDefault,^(__unused UIAlertAction *action){
         if(![preview isEqual:capturedRule] || ![BoxKeys(owner) isEqual:capturedContext] || !ValidItems(self,items,ids)) {Notice(owner,@"来源或邮件集合已变化，未移动。请重新预览。");return;}
@@ -471,6 +479,17 @@ static void ChooseBox(MR5State *s,void (^chosen)(id)) {
 static void (*Reload)(id,SEL);
 static BOOL (*Threaded)(id,SEL);
 static MR5ListFactory Simple;
+static void MRDObserveList(id owner) {
+    NSUInteger session=MRDSession();if(!session)return;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.25*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+        if(MRDSession()!=session)return;
+        id view=Get(owner,@"collectionView");
+        if(![view isKindOfClass:UICollectionView.class]){MRDAt(session,@"list.refresh",@"skipped",@"not_available",owner,nil);return;}
+        UICollectionView *collection=view;NSInteger sections=collection.numberOfSections,total=0;
+        for(NSInteger i=0;i<MIN(sections,8);i++)total+=[collection numberOfItemsInSection:i];
+        MRDAt(session,@"list.refresh",@"success",@"observed_snapshot",owner,@{@"section":@(sections),@"actualCount":@(total),@"count":@(collection.visibleCells.count),@"resultPresent":@(collection.window!=nil)});
+    });
+}
 static void ReloadHook(id vc,SEL cmd) {
     MRD(@"reload.enter",@"pending",@"entered",vc,@{@"hasTLS":@(ReloadFrame!=nil)});
     id previous=ReloadOwner;ReloadOwner=vc;
@@ -491,7 +510,7 @@ static void ReloadHook(id vc,SEL cmd) {
         if(next) MRD(@"reload.local",@"success",@"ok",vc,@{@"hasLocal":@YES});
         if(next) ReloadFrame=[@{@"owner":vc,@"boxes":Boxes(vc),@"keys":s->context,@"local":next} copy];
         Reload(vc,cmd);
-        MRD(@"list.refresh",@"pending",@"original_returned",vc,@{@"hasLocal":@(next!=nil)});
+        MRD(@"list.refresh",@"pending",@"original_returned",vc,@{@"hasLocal":@(next!=nil)});MRDObserveList(vc);
     } @finally {
         MRD(@"reload.exit",@"success",@"original_returned",vc,@{@"hasTLS":@(ReloadFrame!=nil)});
         [ReloadFrame release];ReloadFrame=previousFrame;
@@ -535,7 +554,9 @@ static void MoveHook(id interaction,SEL cmd,id completion) {
     MRD(@"move.perform",@"pending",@"entered",interaction,nil);
     id vc=Get(interaction,@"delegate");MR5State *s=State(vc,NO);
     NSDictionary *stamp=objc_getAssociatedObject(interaction,&MoveKey);
-    if(!stamp && (!s || !s->preview)) {MRD(@"move.perform",@"skipped",@"guard",interaction,nil);Move(interaction,cmd,completion);return;}
+    if(!stamp && (!s || !s->preview)) {
+        if(!MRDRequireSubmit(@"move.perform",interaction,NO)){if(completion)((void(^)(id,BOOL))completion)(interaction,NO);return;}
+        MRD(@"move.perform",@"skipped",@"guard",interaction,nil);Move(interaction,cmd,completion);return;}
     if(s)s->movePanelPending=NO;
     if(!NSThread.isMainThread || !s || !s->preview || !stamp || [stamp[@"owner"] nonretainedObjectValue]!=vc || ![s->preview isEqual:stamp[@"rule"]] || ![BoxKeys(vc) isEqual:stamp[@"context"]]) {
         MRD(@"move.perform",@"failed",@"scope_changed",interaction,nil);
@@ -557,7 +578,7 @@ static void MoveHook(id interaction,SEL cmd,id completion) {
         valid=explicitSelection && object_getClass(explicitSelection)==object_getClass(selection) && [AccountID(target) isEqual:s->preview[@"account"]] && ![PreviewBoxes(s) containsObject:BoxID(target)] && ValidItems(s,items,ids);
     } @catch(__unused NSException *e) {valid=NO;MRD(@"move.validate",@"failed",@"exception",interaction,nil);}
     MRD(@"move.validate",valid?@"success":@"failed",valid?@"ok":@"invalid_items",interaction,nil);
-    if(!MRDCanSubmit() || [stamp[@"dryRun"] boolValue]) {MRD(@"move.perform",@"cancelled",@"diagnostic_dry_run",interaction,nil);if(done)done(interaction,NO);Notice(vc,@"诊断安全模式已阻止最终移动提交。未移动邮件；推荐在原生面板取消。仅专门测试邮件可以另外明确授权。");return;}
+    if(!MRDRequireSubmit(@"move.perform",interaction,[stamp[@"dryRun"] boolValue])) {if(done)done(interaction,NO);Notice(vc,@"诊断安全模式已阻止最终移动提交。未移动邮件；推荐在原生面板取消。仅专门测试邮件可以另外明确授权。");return;}
     if(valid) {
         @synchronized(interaction) {
             if(objc_getAssociatedObject(interaction,&StartedKey)) {if(done) done(interaction,NO);return;}
@@ -581,7 +602,7 @@ static void CreateHook(id editor,SEL cmd) {
     MRD(@"create.commit",@"pending",@"entered",editor,nil);
     id account=objc_getAssociatedObject(editor,&CreateKey);
     if(account && Get(editor,@"account")!=account) {MRD(@"create.commit",@"failed",@"scope_changed",editor,nil);Notice(editor,@"创建账号发生变化，未提交。请在原账号重新打开新建界面。");return;}
-    if(account && (!MRDCanSubmit() || [objc_getAssociatedObject(editor,&DiagnosticGuardKey) boolValue])) {MRD(@"create.commit",@"cancelled",@"diagnostic_dry_run",editor,nil);Notice(editor,@"诊断安全模式已阻止最终新建提交。请点原生取消；没有创建邮箱。");return;}
+    if(!MRDRequireSubmit(@"create.commit",editor,account && [objc_getAssociatedObject(editor,&DiagnosticGuardKey) boolValue])) {Notice(editor,@"诊断安全模式已阻止最终新建提交。请点原生取消；没有创建邮箱。");return;}
     if(account){objc_setAssociatedObject(editor,&StartedKey,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);MRD(@"create.commit",@"userSubmitted",@"user_submit",editor,nil);}
     Create(editor,cmd);
 }
@@ -590,7 +611,6 @@ __attribute__((constructor)) static void InstallNativeRules(void) {
         if(![NSBundle.mainBundle.bundleIdentifier isEqual:@"com.apple.mobilemail"]) return;
         char build[64]={0};size_t len=sizeof(build);
         Supported=!sysctlbyname("kern.osversion",build,&len,NULL,0) && !strcmp(build,"20G75");
-        strlcpy(OSBuild,build,sizeof(OSBuild));
         MRDDeclare(@"install.build",@"kern.osversion","20G75",build,Supported);
         Class c=NSClassFromString(@"MessageListViewController"),list=object_getClass(NSClassFromString(@"EMMessageList"));
         NSString *factory=@"simpleMessageListForMailboxes:withRepository:shouldTrackOldestItems:shouldUpdateDisplayDate:sortDescriptor:transformPredicate:ignoreMessageAdditionsPredicate:";
@@ -610,6 +630,7 @@ __attribute__((constructor)) static void InstallNativeRules(void) {
             Hook(moveClass,@"setDelegate:","v24@0:8@16",(IMP)MoveDelegateHook,(IMP *)&MoveDelegate);
             MoveReady=Hook(moveClass,@"performInteractionWithCompletion:","v24@0:8@?16",(IMP)MoveHook,(IMP *)&Move);
         }
+        MRDDeclare(@"install.move",@"setDelegate:","v24@0:8@16",md?method_getTypeEncoding(md):NULL,MoveReady);
         MRDDeclare(@"install.move",@"performInteractionWithCompletion:","v24@0:8@?16",mp?method_getTypeEncoding(mp):NULL,MoveReady);
         CreateReady=Supported && Hook(NSClassFromString(@"MailboxEditingController"),@"_applyChangesAndDismissView","v16@0:8",(IMP)CreateHook,(IMP *)&Create);
         Method createMethod=class_getInstanceMethod(NSClassFromString(@"MailboxEditingController"),NSSelectorFromString(@"_applyChangesAndDismissView"));

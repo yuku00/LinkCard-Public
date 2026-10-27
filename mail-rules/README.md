@@ -1,6 +1,23 @@
-# Mail 0.5.0 — native sender rules and explicit organization
+# Mail 0.5.1 — opt-in operation trace; native rules unchanged
 
 Experimental RootHide tweak for **iOS 16.6 build 20G75**, arm64 + arm64e. Package ID remains `dev.mailrules.probe`. **This is an implemented client adapter, not a claim of device acceptance.** Host tests/CI are separate from real Mail/daemon/server testing.
+
+## 0.5.1 diagnostic session (build `mail051-trace-r2`)
+
+This is an operation-tracing release, not another metadata dump or a declaration that 0.5.0 features work on-device. The **Mail 0.5.1** button is installed on the native mailbox home/list where its UI ABI is available, including when the query adapter is unavailable. Appearance remains the existing independently switchable theme.
+
+1. Fully close/reopen Mail after installing the package. Open a physical mailbox → **Mail 0.5.1 → 诊断会话（手动开始 / 停止） → 开始诊断（新一轮，清空旧记录）**. The visible diagnostic title must show **0.5.1 / mail051-trace-r2**.
+2. Use dedicated test mail. Press each relevant existing operation once: **输入发件人添加规则** (or **从选中邮件的发件人添加**) → choose the account/mailbox → **保存：此邮箱**; **开启发件人隐藏 / 关闭隐藏，恢复原始列表**; **管理规则 / 同发件人整理** → the test rule → **修改地址与范围**, **停用规则 / 启用规则**, **打开同发件人整理预览**. If an operation fails, do not repeatedly retry; its boundary/skip reason is recorded.
+3. In the preview, **在此账号新建邮箱…** opens the real native editor: inspect then press its native **取消**. Select only **1–3 dedicated test messages** in the list before **预览已加载邮件并选择移动… → 选择同账号目标…**; inspect the native chooser and cancel without selecting a destination. No automatic all-message selection is done during diagnosis. If the preview cannot open, export that failure rather than improvising another route.
+4. Finish with **结束整理，返回规则列表**, optionally **删除规则** for the test rule and toggle **开启简洁外观 / 关闭简洁外观** once. Then **Mail 0.5.1 → 诊断会话（手动开始 / 停止） → 停止并查看 / 分享 → 分享文本**. Export once after the whole pass. **关闭报告** only closes the report; alert transitions never dismiss the entire Mail container. **清空** removes the in-memory report.
+
+**无写入演练 means no final mailbox-create/message-move submission, not no preference changes.** Rule save/toggle/delete and appearance still update this plugin's original preferences so their actual save/readback path can be diagnosed. Recording itself never writes a log/report to disk, starts networking, copies to the clipboard or uploads automatically. Manual system sharing is an explicit user export. Keep the default safety mode; do not use **仅测试邮件：申请允许原生提交…** for this pass. That optional destructive confirmation is not needed to diagnose entry points. Panels opened in safety mode remain blocked even after stopping recording or later granting permission. If the native move hook cannot be installed, plugin organization/move is refused rather than opening an unguarded operation.
+
+Trace is opt-in and memory-bounded: 600 rolling events, 256 critical events, finite stage summaries, up to 512 weak object IDs and 128 per-session account aliases. Constructor facts (max 32 nonpersonal ABI declarations) are copied into the report only after Start. Account identities are converted using a random per-session HMAC key; raw identities and digests are not exported. Event field names, reasons, action codes, types, interface names and AST key paths are allowlisted. Sender/recipient/account addresses, names, subjects, bodies, attachment URLs, tokens, paths, predicate constants and original `NSError.localizedDescription` never enter the report. Error domains are allowlisted and only numeric codes are retained. Only targeted scalar/object/block ABI encodings are exported; unsupported encoding text is redacted.
+
+The report includes version/build/session, constructor **installed/skipped**, expected/actual targeted ABI, real button codes, account scope, sender factory/AST/self-test, save/readback, reload/TLS/thread/factory/transform, list snapshot counts, selection mapping, native move/create entry and completion, appearance and presentation lifecycle. Every stage is listed even with **not reached / hits=0**. **blocked_by_diagnostic** is a deliberate no-submit result; **cancelled** is cancellation; neither proves an original feature failed. **failed** marks an observed guard/contract/error failure. Native didPerform/editor completion still does not prove server synchronization. Cancelling an editor/chooser intentionally leaves commit/perform stages at zero; do not force a write merely to fill them.
+
+Verification uses 9 source-boundary checks plus ASan execution of production `Trace.m`/`NativeCore.m` on macOS (MRC trace; ARC and MRC core). Tests execute the real final-submit policy and factory transform, privacy/error mapping, lifecycle, stale callbacks, concurrency and caps. Synthetic event fixtures verify recorder coverage; static hook/button checks are wiring evidence, **not execution of UIKit, system Mail or Email.framework**. Actual on-device capture remains required.
 
 ## User flow
 
@@ -14,7 +31,7 @@ Experimental RootHide tweak for **iOS 16.6 build 20G75**, arm64 + arm64e. Packag
 
 ## Production architecture
 
-Only `Native.m`, `NativeCore.m`, `Theme.m` are linked. `Rules.m`, `RuleCore.m`, `Safety.m`, probe/diagnostic modules are historical, not loaded.
+Only `Native.m`, `NativeCore.m`, `Theme.m`, `Trace.m` are linked. `Rules.m`, `RuleCore.m`, `Safety.m`, old metadata/probe modules are historical, not loaded.
 
 The synchronous `_reloadDataSource` call establishes a thread-local owner context with an immutable per-call frame; nested/unsupported owners mask that frame and `@finally` restores it. Only that owner's `EMMessageList.simpleMessageListForMailboxes:...transformPredicate:...` factory call gets a wrapped predicate transform. It explicitly copies the typed original transform and wrapper under MRC, preserves all factory arguments, and ANDs the original mailbox scope with per-mailbox sender conditions. Outside that call context the factory is unchanged. Native system filters are applied by Mail afterward; their filter/ignore arguments are not intercepted or replayed.
 

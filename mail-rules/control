@@ -2,7 +2,7 @@ Package: dev.mailrules.probe
 Name: Mail Rules
 Version: 0.5.1
 Architecture: iphoneos-arm64e
-Description: Owner-local sender queries and explicit same-account native mailbox organization; default-off, no global filter replay.
+Description: Opt-in bounded operation diagnostics with default no-submit rehearsal for native Mail sender rules and organization.
 Maintainer: Mail Rules
 Author: Mail Rules
 Section: Tweaks
