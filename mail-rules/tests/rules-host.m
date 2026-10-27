@@ -2,8 +2,12 @@
 #import "RuleCore.h"
 @interface FixtureAddress : NSObject
 @property(copy) NSString *stringValue;
+@property(readonly) FixtureAddress *emailAddressValue;
+@property(readonly) NSString *simpleAddress;
 @end
 @implementation FixtureAddress
+- (FixtureAddress *)emailAddressValue { return self; }
+- (NSString *)simpleAddress { return self.stringValue; }
 - (BOOL)isEqual:(id)o {return [o isKindOfClass:FixtureAddress.class] && [self.stringValue isEqual:[o stringValue]];}
 - (NSUInteger)hash {return self.stringValue.hash;}
 @end
@@ -37,6 +41,13 @@ int main(void) { @autoreleasepool {
     NSPredicate *any=[NSPredicate predicateWithFormat:@"ANY senderList == %@",Address(address)];
     assert(MRValidateSenderPredicate(any,address,^id(NSString *s){return Address(s);}));
     for(NSPredicate *bad in @[[NSPredicate predicateWithFormat:@"senderAddress.stringValue CONTAINS %@",address], [NSPredicate predicateWithFormat:@"senderAddress.stringValue ==[c] %@",address], [NSPredicate predicateWithFormat:@"subject == %@",address], [NSPredicate predicateWithFormat:@"senderAddress.stringValue BEGINSWITH %@",address], [NSPredicate predicateWithValue:YES]]) assert(!MRValidateSenderPredicate(bad,address,^id(NSString *s){return Address(s);}));
+    assert(NSAnyPredicateModifier==2 && NSEqualToPredicateOperatorType==4 && NSCaseInsensitivePredicateOption==1);
+    NSPredicate *nativeShape=[NSPredicate predicateWithFormat:@"ANY senderList.emailAddressValue.simpleAddress ==[c] %@",address];
+    assert(MRValidateSenderPredicate(nativeShape,address,^id(NSString *s){return Address(s);}));
+    for (NSString *badKey in @[@"toList.emailAddressValue.simpleAddress", @"senderList.displayName", @"senderList.@count", @"accountIdentifier", @"subject"]) {
+        NSPredicate *bad=[NSComparisonPredicate predicateWithLeftExpression:[NSExpression expressionForKeyPath:badKey] rightExpression:[NSExpression expressionForConstantValue:address] modifier:NSAnyPredicateModifier type:NSEqualToPredicateOperatorType options:NSCaseInsensitivePredicateOption];
+        assert(!MRValidateSenderPredicate(bad,address,^id(NSString *s){return Address(s);}));
+    }
     NSPredicate *base=[NSPredicate predicateWithFormat:@"unread == YES"], *ignore=[NSPredicate predicateWithFormat:@"ignored == YES"];
     NSPredicate *exclude=[NSCompoundPredicate notPredicateWithSubpredicate:include];
     NSPredicate *combined=MRCombine(base,exclude);
