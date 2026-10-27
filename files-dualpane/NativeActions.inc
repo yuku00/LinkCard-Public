@@ -27,6 +27,10 @@ static void FPHookCell(Class cls) {
     class_replaceMethod(cls,layout,imp_implementationWithBlock(^(UICollectionViewCell *cell){
         ((void(*)(id,SEL))lo)(cell,layout); FPStyleVisibleCell(cell);
     }),method_getTypeEncoding(lm));
+    SEL update=@selector(updateConfigurationUsingState:); Method um=class_getInstanceMethod(cls,update); IMP uo=method_getImplementation(um);
+    class_replaceMethod(cls,update,imp_implementationWithBlock(^(UICollectionViewCell *cell,UICellConfigurationState *state){
+        ((void(*)(id,SEL,id))uo)(cell,update,state); FPStyleVisibleCell(cell);
+    }),method_getTypeEncoding(um));
     SEL reuse=@selector(prepareForReuse); Method rm=class_getInstanceMethod(cls,reuse); IMP ro=method_getImplementation(rm);
     class_replaceMethod(cls,reuse,imp_implementationWithBlock(^(UICollectionViewCell *cell){
         objc_setAssociatedObject(cell,&FPCellResettingKey,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);

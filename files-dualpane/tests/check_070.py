@@ -1,7 +1,7 @@
 from pathlib import Path
 r=Path(__file__).resolve().parents[1]
 s=(r/'DualPane.m').read_text(); a=(r/'NativeActions.inc').read_text(); c=(r/'CompactCells.inc').read_text(); x=(r/'CrossPane.inc').read_text(); f=(r/'FileCore.inc').read_text()
-assert 'Version: 0.7.4' in (r/'control').read_text()
+assert 'Version: 0.7.5' in (r/'control').read_text()
 assert '左栏 · 操作' not in s and '右栏 · 操作' not in s
 assert 'BridgeSnapshot.inc' not in s and 'captureBridge' not in s
 assert 'UISegmentedControl' not in s and 'UILayoutConstraintAxisHorizontal' in s
