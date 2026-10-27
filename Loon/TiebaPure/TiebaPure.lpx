@@ -1,0 +1,8 @@
+#!name=贴吧跳转 TiebaPure
+#!desc=接管贴吧吧页与帖子下载导流，打开 TiebaPure。停用旧规则；需 tieba.baidu.com HTTPS 解密。
+
+[Script]
+http-request ^https://tieba\.baidu\.com/mo/q/activityDiversion/download\? script-path=https://raw.githubusercontent.com/yuku00/LinkCard-Public/main/Loon/TiebaPure/tiebapure-loon.js, timeout=10, tag=TiebaPure-v3
+
+[Mitm]
+hostname = tieba.baidu.com
