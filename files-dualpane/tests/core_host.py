@@ -90,8 +90,8 @@ int main(void) { @autoreleasepool {
     assert(FPTransferOne([left URLByAppendingPathComponent:@"missing"],right,YES));
     NSData *lh=FPHomeBookmark(left,&error), *rh=FPHomeBookmark(right,&error); assert(lh && rh);
     NSMutableDictionary *homes=[@{@"left":lh,@"right":rh} mutableCopy];
-    assert([FPResolveHome(homes[@"left"],&error).path isEqual:left.path]);
-    assert([FPResolveHome(homes[@"right"],&error).path isEqual:right.path]);
+    assert([FPResolveHome(homes[@"left"],&error).URLByResolvingSymlinksInPath.path isEqual:left.URLByResolvingSymlinksInPath.path]);
+    assert([FPResolveHome(homes[@"right"],&error).URLByResolvingSymlinksInPath.path isEqual:right.URLByResolvingSymlinksInPath.path]);
     [homes removeObjectForKey:@"left"]; assert(homes[@"right"] && !homes[@"left"]);
     assert(!FPResolveHome(@"corrupt",&error)); assert(!FPResolveHome([NSData data],&error));
     assert([fm removeItemAtURL:left error:nil]);

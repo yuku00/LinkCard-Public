@@ -78,7 +78,8 @@ static void ImproveCell(UICollectionViewCell *cell) {
         CGRect old=[label convertRect:label.bounds toView:cell.contentView];
         label.font=detail; label.numberOfLines=1; label.lineBreakMode=NSLineBreakByTruncatingTail; label.clipsToBounds=YES;
         // Keep native secondary columns separate; clamp to the row instead of overlapping the name.
-        CGFloat x=MAX(left,old.origin.x), w=MIN(old.size.width,MAX(0,cell.contentView.bounds.size.width-x-6));
+        CGFloat x=labels.count==2 ? left : MAX(left,old.origin.x);
+        CGFloat w=labels.count==2 ? width : MIN(old.size.width,MAX(0,cell.contentView.bounds.size.width-x-6));
         label.frame=[cell.contentView convertRect:CGRectMake(x,y,w,MAX(0,MIN(detail.lineHeight,cell.contentView.bounds.size.height-y-3))) toView:label.superview];
     }
 }

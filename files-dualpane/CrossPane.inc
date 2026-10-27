@@ -58,7 +58,7 @@ static void FPRestoreHome(FPBrowserPane *pane) {
                 dispatch_async(dispatch_get_main_queue(),^{
                     if(scope) [url stopAccessingSecurityScopedResource];
                     if(failure || !revealed) FPNotice(container,failure.localizedDescription ?: @"首页未恢复，保留原生位置。");
-                    else if(![FPFolder(pane).URLByStandardizingPath isEqual:url.URLByStandardizingPath]) FPNotice(container,@"已定位首页项目；原生浏览器未进入目录，请点开。未确认恢复成功。");
+                    else if(![FPFolder(pane).URLByResolvingSymlinksInPath.path isEqual:url.URLByResolvingSymlinksInPath.path]) FPNotice(container,@"已定位首页项目；原生浏览器未进入目录，请点开。未确认恢复成功。");
                     else FPNotice(container,pane.homeIndex==0 ? @"左栏首页已恢复" : @"右栏首页已恢复");
                 });
             }];
