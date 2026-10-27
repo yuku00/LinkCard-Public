@@ -50,8 +50,8 @@ NSPredicate *MRCombine(NSPredicate *original, NSPredicate *exclude) {
 NSPredicate *MRCombineSection(NSPredicate *original, NSPredicate *exclude, NSString *section) {
     return MRCombine(original, [section isEqual:@"MessageListSectionRecent"] ? exclude : nil);
 }
-BOOL MRContextMatches(id owner, id source, id currentSource, NSString *account, NSString *currentAccount, id mailbox, id currentMailbox) {
-    return owner && source && source == currentSource && account.length && [account isEqual:currentAccount] && mailbox && mailbox == currentMailbox;
+BOOL MRContextMatches(id owner, id sourceOwner, id source, id currentSource, NSString *account, NSString *currentAccount, id mailbox, id currentMailbox) {
+    return owner && owner == sourceOwner && source && source == currentSource && account.length && [account isEqual:currentAccount] && mailbox && mailbox == currentMailbox;
 }
 static BOOL SafeShape(NSPredicate *p, BOOL nativeModel) {
     if (![p isKindOfClass:NSComparisonPredicate.class]) return NO;

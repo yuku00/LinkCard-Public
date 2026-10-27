@@ -19,7 +19,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Verify release scope
-        run: python3 tests/check_rules.py
+        run: python3 tests/check_privacy.py
       - name: Execute actual Foundation rule core fixtures
         run: |
           clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -I. -framework Foundation RuleCore.m tests/rules-host.m -o "$RUNNER_TEMP/mail-rules-host"

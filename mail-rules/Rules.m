@@ -7,7 +7,7 @@
 #import "Diagnostics.h"
 
 static NSString *const Domain = @"dev.mailrules.rules";
-static char StateKey, SourceKey;
+static char StateKey, SourceKey, SourceOwnerKey;
 static BOOL HooksReady;
 static BOOL ABI(id object, NSString *name, const char *encoding) {
     Method m = class_getInstanceMethod(object_getClass(object), NSSelectorFromString(name));
@@ -175,6 +175,7 @@ static BOOL CanEdit(MRState *s, NSString *account) {
 @end
 static void (*Apply)(id,SEL,id,id);
 static void (*ApplySection)(id,SEL,id,id,id);
+static void (*PrepareSection)(id,SEL,id,id);
 static MRState *State(id vc, BOOL create) {
     MRState *s=objc_getAssociatedObject(vc,&StateKey);
     if (!s && create) {
@@ -194,7 +195,7 @@ static void Remember(MRState *s, id p, id i, id section, BOOL sectional) {
 }
 static BOOL ContextMatches(MRState *s) {
     return s && s->owner && ABI(s->owner,@"dataSource","@16@0:8") &&
-        MRContextMatches(s->owner,s->source,Get(s->owner,@"dataSource"),s->activeAccount,EditingAccount(s->owner),s->boundMailbox,Boxes(s->owner).firstObject);
+        MRContextMatches(s->owner,objc_getAssociatedObject(s->source,&SourceOwnerKey),s->source,Get(s->owner,@"dataSource"),s->activeAccount,EditingAccount(s->owner),s->boundMailbox,Boxes(s->owner).firstObject);
 }
 static NSPredicate *Filter(MRState *s, id p, NSString *section) {
     if (!s || s->depth || !s->exclude) return p;
@@ -228,6 +229,13 @@ static void SectionHook(id ds,SEL cmd,id p,id ignored,id section) {
     s->depth++; @try {ApplySection(ds,cmd,combined,ignored,section);} @finally {s->depth--;}
 }
 
+static void PrepareSectionHook(id ds,SEL cmd,id section,id messageList) {
+    MRState *s=objc_getAssociatedObject(ds,&SourceKey);
+    // Restore while the old section still exists; never replay its baseline into the replacement.
+    if (s && !s->depth && [section isEqual:@"MessageListSectionRecent"]) [s restore];
+    PrepareSection(ds,cmd,section,messageList);
+}
+
 @implementation MRState
 - (instancetype)init { if ((self=[super init])) calls=[NSMutableArray new]; return self; }
 - (void)restore {
@@ -257,6 +265,7 @@ static void SectionHook(id ds,SEL cmd,id p,id ignored,id section) {
     if (!ABI(owner,@"dataSource","@16@0:8")) { [self restore]; [status release]; status=[@"数据源接口签名不匹配：隐藏已暂停。" copy]; return; }
     id ds=Get(owner,@"dataSource");
     if (![ds isKindOfClass:NSClassFromString(@"MessageListDataSource")]) { [self restore]; [status release]; status=[@"当前数据源类型未确认：隐藏已暂停。" copy]; return; }
+    if (objc_getAssociatedObject(ds,&SourceOwnerKey)!=owner) { [self restore]; [status release]; status=[@"数据源归属不是当前控制器：隐藏已暂停，不采用其他列表上下文。" copy]; return; }
     MRState *other=objc_getAssociatedObject(ds,&SourceKey);
     if (other && other!=self) { [self restore]; [status release]; status=[@"数据源仍属于另一列表：本账号隐藏已暂停，未复用其他账号上下文。" copy]; return; }
     NSDictionary *config=Load()[account];
@@ -436,7 +445,12 @@ static void AttachButton(MRState *s) {
     if (![items containsObject:s->button]) s->owner.navigationItem.rightBarButtonItems=[items arrayByAddingObject:s->button];
 }
 static void DidAppearHook(id vc,SEL cmd,BOOL animated) {
-    DidAppear(vc,cmd,animated); MRState *s=State(vc,YES); s->visible=YES; AttachButton(s); [s refresh];
+    DidAppear(vc,cmd,animated); MRState *s=State(vc,YES); s->visible=YES;
+    if (ABI(vc,@"dataSource","@16@0:8")) {
+        id ds=Get(vc,@"dataSource");
+        if (ds && !objc_getAssociatedObject(ds,&SourceOwnerKey)) objc_setAssociatedObject(ds,&SourceOwnerKey,vc,OBJC_ASSOCIATION_ASSIGN);
+    }
+    AttachButton(s); [s refresh];
 }
 static void DisappearHook(id vc,SEL cmd,BOOL animated) {
     MRState *s=State(vc,NO); if(s) { s->visible=NO; [s restore]; }
@@ -450,6 +464,10 @@ static void DeallocHook(id vc,SEL cmd) {
     MRState *s=State(vc,NO);
     // Do not send filter changes to a controller being torn down.
     if(s) {s->owner=nil; [s->calls removeAllObjects]; [s restore];}
+    if (ABI(vc,@"dataSource","@16@0:8")) {
+        id ds=Get(vc,@"dataSource");
+        if (objc_getAssociatedObject(ds,&SourceOwnerKey)==vc) objc_setAssociatedObject(ds,&SourceOwnerKey,nil,OBJC_ASSOCIATION_ASSIGN);
+    }
     objc_setAssociatedObject(vc,&StateKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     Dealloc(vc,cmd);
 }
@@ -457,8 +475,14 @@ static void BeginTransition(MRState *s) {if(s) { [s restore]; s->depth++; }}
 static void EndTransition(MRState *s) {if(s) { s->depth--; [s refresh]; }}
 static void SourceHook(id vc,SEL cmd,id ds) {
     MRState *s=State(vc,NO), *previous=objc_getAssociatedObject(ds,&SourceKey);
-    if(previous && previous!=s) [previous restore];
-    BeginTransition(s); @try {SetSource(vc,cmd,ds);} @finally {EndTransition(s);}
+    if(previous && previous!=s) { [previous restore]; previous->visible=NO; }
+    BeginTransition(s);
+    if (ABI(vc,@"dataSource","@16@0:8")) {
+        id old=Get(vc,@"dataSource");
+        if (old!=ds && objc_getAssociatedObject(old,&SourceOwnerKey)==vc) objc_setAssociatedObject(old,&SourceOwnerKey,nil,OBJC_ASSOCIATION_ASSIGN);
+    }
+    if (ds) objc_setAssociatedObject(ds,&SourceOwnerKey,vc,OBJC_ASSOCIATION_ASSIGN);
+    @try {SetSource(vc,cmd,ds);} @finally {EndTransition(s);}
 }
 static void ThreadHook(id vc,SEL cmd,BOOL value) {MRState *s=State(vc,NO); BeginTransition(s); @try {SetThreaded(vc,cmd,value);} @finally {EndTransition(s);}}
 static void SearchHook(id vc,SEL cmd,id value) {MRState *s=State(vc,NO); BeginTransition(s); @try {SearchPresent(vc,cmd,value);} @finally {if(s) s->depth--;}}
@@ -493,7 +517,9 @@ __attribute__((constructor)) static void Install(void) {
             @[@"_reloadDataSource",@"v16@0:8"],@[@"_updateFilters",@"v16@0:8"]];
         for(NSArray *c in checks) if(!Check(vc,c[0],[c[1] UTF8String])) return;
         if (!Check(ds,@"applyFilterPredicate:ignoreMessagesPredicate:","v32@0:8@16@24") || !Check(ds,@"applyFilterPredicate:ignoreMessagesPredicate:section:","v40@0:8@16@24@32") || !Check(NSClassFromString(@"EMMessageList"),@"filteredMessageListWithPredicate:ignoredMessagesPredicate:","@32@0:8@16@24")) return;
+        if (!Check(ds,@"prepareSection:messageList:","v32@0:8@16@24")) return;
 #define H(C,N,F,O) Hook(C,@N,(IMP)F,(IMP *)&O)
+        H(ds,"prepareSection:messageList:",PrepareSectionHook,PrepareSection);
         H(ds,"applyFilterPredicate:ignoreMessagesPredicate:",ApplyHook,Apply);
         H(ds,"applyFilterPredicate:ignoreMessagesPredicate:section:",SectionHook,ApplySection);
         H(vc,"viewDidAppear:",DidAppearHook,DidAppear);

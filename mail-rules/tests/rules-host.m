@@ -45,12 +45,14 @@ int main(void) { @autoreleasepool {
     NSMutableDictionary *ambiguous=[reloaded mutableCopy]; ambiguous[@"object:duplicate"]=serialized;
     assert(!MRIdentityKey(serialized,ambiguous));
     NSObject *owner=[NSObject new], *source=[NSObject new], *boxA=[NSObject new], *boxB=[NSObject new];
-    assert(MRContextMatches(owner,source,source,@"A",@"A",boxA,boxA));
-    assert(!MRContextMatches(owner,source,source,@"A",@"B",boxA,boxB));
-    assert(!MRContextMatches(owner,source,source,@"A",@"A",boxA,boxB));
-    assert(!MRContextMatches(owner,source,[NSObject new],@"A",@"A",boxA,boxA));
-    assert(!MRContextMatches(nil,source,source,@"A",@"A",boxA,boxA));
-    assert(!MRContextMatches(owner,source,source,@"A",nil,boxA,boxA));
+    assert(MRContextMatches(owner,owner,source,source,@"A",@"A",boxA,boxA));
+    assert(!MRContextMatches(owner,owner,source,source,@"A",@"B",boxA,boxB));
+    assert(!MRContextMatches(owner,owner,source,source,@"A",@"A",boxA,boxB));
+    assert(!MRContextMatches(owner,owner,source,[NSObject new],@"A",@"A",boxA,boxA));
+    assert(!MRContextMatches(nil,owner,source,source,@"A",@"A",boxA,boxA));
+    assert(!MRContextMatches(owner,[NSObject new],source,source,@"A",@"A",boxA,boxA));
+    assert(!MRContextMatches(owner,nil,source,source,@"A",@"A",boxA,boxA));
+    assert(!MRContextMatches(owner,owner,source,source,@"A",nil,boxA,boxA));
     ForwardedAddress *forwarded=[ForwardedAddress alloc]; forwarded.target=Address(@"A.B+tag@EXAMPLE.COM");
     assert([MRReadAddress(forwarded) isEqual:@"A.B+tag@example.com"]);
     assert(!MRReadAddress(nil) && !MRReadAddress(@42));
@@ -92,9 +94,9 @@ int main(void) { @autoreleasepool {
     assert([MRCombineSection(base,exclude,@"MessageListSectionRecent") isEqual:combined]);
     // The same guard used by production restore must not replay A's baseline into B.
     NSPredicate *bBase=[NSPredicate predicateWithFormat:@"unread == NO"];
-    NSPredicate *restored=MRContextMatches(owner,source,source,@"A",@"B",boxA,boxB) ? base : bBase;
+    NSPredicate *restored=MRContextMatches(owner,owner,source,source,@"A",@"B",boxA,boxB) ? base : bBase;
     assert(restored==bBase);
-    restored=MRContextMatches(owner,source,source,@"A",@"A",boxA,boxA) ? base : bBase;
+    restored=MRContextMatches(owner,owner,source,source,@"A",@"A",boxA,boxA) ? base : bBase;
     assert(restored==base);
     NSDictionary *hidden=@{@"senderAddress":Address(address),@"unread":@YES,@"ignored":@NO};
     NSDictionary *visible=@{@"senderAddress":Address(@"other@fixture.invalid"),@"unread":@YES,@"ignored":@NO};

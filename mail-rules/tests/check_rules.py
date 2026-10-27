@@ -18,6 +18,9 @@ assert 'predicateOperatorType != NSEqualToPredicateOperatorType' in core
 assert 'c.options != 0' in core
 assert 'remove|purge)' in (p/'layout/DEBIAN/postrm').read_text()
 assert 'MRCombineSection(p,s->exclude,section)' in code
+assert 'objc_getAssociatedObject(ds,&SourceOwnerKey)!=owner' in code
+assert 'PrepareSectionHook' in code and 'PrepareSection(ds,cmd,section,messageList)' in code
+assert code.index('[s restore];\n    PrepareSection') > code.index('static void PrepareSectionHook')
 assert '==self && ContextMatches(self)' in code
 assert 'boundMailbox=[Boxes(owner).firstObject retain]' in code
 assert 'UITableViewStyleInsetGrouped' in code and '_account=[account copy]' in code
