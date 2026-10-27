@@ -1,4 +1,4 @@
-name: Mail Probe RootHide
+name: Mail Rules RootHide
 on:
   workflow_dispatch:
 permissions:
@@ -12,30 +12,31 @@ jobs:
         shell: bash
         working-directory: mail-rules
     env:
-      THEOS: ${{ github.workspace }}/.mail-probe-theos
+      THEOS: ${{ github.workspace }}/.mail-rules-theos
       HOMEBREW_NO_AUTO_UPDATE: '1'
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Static privacy and scope
-        run: python3 tests/check_privacy.py
-      - name: Execute actual metadata engine on host
+      - name: Verify release scope
+        run: python3 tests/check_rules.py
+      - name: Execute actual Foundation rule core fixtures
         run: |
-          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I. -framework Foundation Metadata.m tests/metadata-host.m -o "$RUNNER_TEMP/mail-metadata-host"
-          "$RUNNER_TEMP/mail-metadata-host"
+          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -I. -framework Foundation RuleCore.m tests/rules-host.m -o "$RUNNER_TEMP/mail-rules-host"
+          "$RUNNER_TEMP/mail-rules-host"
       - name: Prepare RootHide Theos
         run: |
           brew install make ldid dpkg
           git clone --depth 1 --recursive --shallow-submodules https://github.com/roothide/theos.git "$THEOS"
           xcodebuild -version
           git -C "$THEOS" rev-parse HEAD
-          git -C "$THEOS" submodule status --recursive
-      - name: Build Mail Probe arm64 and arm64e
+      - name: Build Mail Rules arm64 and arm64e
         run: |
           set -o pipefail
-          gmake package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide 2>&1 | tee "$RUNNER_TEMP/mail-probe-build.log"
-      - name: Verify real package and slices
+          rm -f packages/*.deb
+          chmod 755 layout/DEBIAN/postrm
+          gmake package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide 2>&1 | tee "$RUNNER_TEMP/mail-rules-build.log"
+      - name: Verify package identity and production-only slices
         run: |
           shopt -s nullglob
           packages=(packages/*.deb)
@@ -43,17 +44,17 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.mailrules.probe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.1.0
-          dpkg-deb -x "$deb" "$RUNNER_TEMP/mail-package"
-          binary=$(python3 -c 'import os,pathlib; print(next(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("mail-package").rglob("MailProbe.dylib")))')
-          lipo -info "$binary"
+          test "$(dpkg-deb -f "$deb" Version)" = 0.2.0
+          dpkg-deb -x "$deb" "$RUNNER_TEMP/mail-rules-package"
+          binary=$(python3 -c 'import os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"mail-rules-package"; binaries=list(p.rglob("*.dylib")); assert len(binaries)==1 and binaries[0].name=="MailRules.dylib"; print(binaries[0])')
           lipo "$binary" -verify_arch arm64 arm64e
+          lipo -info "$binary"
           dpkg-deb -I "$deb"
           dpkg-deb -c "$deb"
           shasum -a 256 packages/*.deb > packages/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: mail-probe-${{ github.sha }}
+          name: mail-rules-0.2.0-${{ github.sha }}
           path: |
             mail-rules/packages/*.deb
             mail-rules/packages/SHA256SUMS
@@ -62,7 +63,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mail-probe-log-${{ github.run_id }}
-          path: ${{ runner.temp }}/mail-probe-build.log
+          name: mail-rules-log-${{ github.run_id }}
+          path: ${{ runner.temp }}/mail-rules-build.log
           if-no-files-found: ignore
           retention-days: 7

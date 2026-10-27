@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in
+  remove|purge)
+    # Only this tweak's independent preferences; never Mail preferences.
+    rm -f /var/mobile/Library/Preferences/dev.mailrules.rules.plist
+    ;;
+esac
+exit 0
