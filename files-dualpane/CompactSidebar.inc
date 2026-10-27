@@ -17,6 +17,7 @@ static BOOL FPSidebarCellScope(UICollectionViewCell *cell) {
 }
 static void FPSidebarStyle(UICollectionViewCell *cell, BOOL compact) {
     FPDisclosure(cell,compact);
+    FPContentMargins(cell,compact);
     UIListContentConfiguration *saved=objc_getAssociatedObject(cell,&FPSidebarStyleKey);
     if(!compact && !saved) return;
     if(![cell.contentConfiguration isKindOfClass:UIListContentConfiguration.class]) {
@@ -30,6 +31,7 @@ static void FPSidebarStyle(UICollectionViewCell *cell, BOOL compact) {
         config.textProperties.lineBreakMode=saved.textProperties.lineBreakMode;
         config.imageProperties.maximumSize=saved.imageProperties.maximumSize;
         config.imageProperties.reservedLayoutSize=saved.imageProperties.reservedLayoutSize;
+        config.axesPreservingSuperviewLayoutMargins=saved.axesPreservingSuperviewLayoutMargins;
         config.directionalLayoutMargins=saved.directionalLayoutMargins;
         config.imageToTextPadding=saved.imageToTextPadding;
         objc_setAssociatedObject(cell,&FPSidebarStyleKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -42,11 +44,12 @@ static void FPSidebarStyle(UICollectionViewCell *cell, BOOL compact) {
     CGFloat available=MAX(0,cell.contentView.bounds.size.width-12-(config.image ? 26 : 0));
     NSInteger lines=FPSidebarLines(textWidth,available,cell.bounds.size.height,font.lineHeight);
     NSDirectionalEdgeInsets margins=NSDirectionalEdgeInsetsMake(4,6,4,6);
-    if([config.textProperties.font isEqual:font] && config.textProperties.numberOfLines==lines && config.textProperties.lineBreakMode==NSLineBreakByTruncatingTail && CGSizeEqualToSize(config.imageProperties.maximumSize,CGSizeMake(20,20)) && CGSizeEqualToSize(config.imageProperties.reservedLayoutSize,CGSizeMake(20,20)) && NSDirectionalEdgeInsetsEqualToDirectionalEdgeInsets(config.directionalLayoutMargins,margins) && config.imageToTextPadding==6) return;
+    if([config.textProperties.font isEqual:font] && config.textProperties.numberOfLines==lines && config.textProperties.lineBreakMode==NSLineBreakByTruncatingTail && CGSizeEqualToSize(config.imageProperties.maximumSize,CGSizeMake(20,20)) && CGSizeEqualToSize(config.imageProperties.reservedLayoutSize,CGSizeMake(20,20)) && NSDirectionalEdgeInsetsEqualToDirectionalEdgeInsets(config.directionalLayoutMargins,margins) && config.imageToTextPadding==6 && config.axesPreservingSuperviewLayoutMargins==0) return;
     if(!saved) objc_setAssociatedObject(cell,&FPSidebarStyleKey,[config copy],OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     config.textProperties.font=font; config.textProperties.numberOfLines=lines;
     config.textProperties.lineBreakMode=NSLineBreakByTruncatingTail;
     config.imageProperties.maximumSize=CGSizeMake(20,20); config.imageProperties.reservedLayoutSize=CGSizeMake(20,20);
+    config.axesPreservingSuperviewLayoutMargins=0;
     config.directionalLayoutMargins=margins; config.imageToTextPadding=6;
     cell.contentConfiguration=config;
 }

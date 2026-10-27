@@ -7,6 +7,7 @@ static void CollectLabels(UIView *v, NSMutableArray<UILabel *> *labels) {
     if([v isKindOfClass:UILabel.class]) [labels addObject:(id)v];
     for(UIView *child in v.subviews) CollectLabels(child,labels);
 }
+#include "CompactMargins.inc"
 #include "CompactImages.inc"
 #include "CompactSelection.inc"
 #include "CompactDisclosure.inc"

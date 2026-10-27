@@ -5,8 +5,7 @@ static NSURL *FPNodeURL(id node) {
     id url=Get(node,@"fileURL"); if(![url isKindOfClass:NSURL.class]) url=Get(node,@"nodeURL");
     return [url isKindOfClass:NSURL.class] && [url isFileURL] ? url : nil;
 }
-#include "HomePolicy.inc"
-#include "HomeNavigation.inc"
+#include "NativeLocation.inc"
 static void FPFindCollections(UIView *view, NSMutableArray *result) {
     if([view isKindOfClass:UICollectionView.class]) [result addObject:view];
     for(UIView *child in view.subviews) FPFindCollections(child,result);
@@ -50,8 +49,6 @@ static NSArray<NSURL *> *FPSelectedURLs(FPBrowserPane *pane, NSError **error) {
     if(!urls.count) { *error=FPFileError(@"请先用该栏的原生“选择”菜单选中文件。"); return nil; }
     return urls;
 }
-static NSUserDefaults *FPHomeDefaults(void) { return [[NSUserDefaults alloc] initWithSuiteName:@"dev.filesdualpane.home"]; }
-static NSString *FPHomeKey(FPBrowserPane *pane) { return pane.homeIndex==0 ? @"left" : @"right"; }
 static void FPNotice(FPDualContainer *container, NSString *message) {
     // One line only when needed; text remains complete for the tap-to-view alert.
     container.status.text=message; container.status.accessibilityLabel=message;
@@ -59,8 +56,7 @@ static void FPNotice(FPDualContainer *container, NSString *message) {
     container.status.hidden=!message.length;
     container.statusHeight.constant=message.length ? MAX(24,ceil(container.status.font.lineHeight+4)) : 0;
 }
-#include "HomeRestore.inc"
-#include "HomeSave.inc"
+#include "ProviderLocation.inc"
 static void FPTransfer(FPDualContainer *container, NSUInteger index, BOOL move) {
     if(container.transferBusy || container.panes.count!=2) return;
     FPBrowserPane *source=container.panes[index], *destination=container.panes[1-index];
@@ -82,7 +78,5 @@ static UIMenu *FPPaneMenu(FPDualContainer *container, NSUInteger index) {
     __weak FPDualContainer *weak=container;
     UIAction *copy=[UIAction actionWithTitle:@"复制所选 → 另一栏当前目录" image:[UIImage systemImageNamed:@"doc.on.doc"] identifier:nil handler:^(UIAction *a){ FPTransfer(weak,index,NO); }];
     UIAction *move=[UIAction actionWithTitle:@"移动所选 → 另一栏当前目录" image:[UIImage systemImageNamed:@"folder"] identifier:nil handler:^(UIAction *a){ FPTransfer(weak,index,YES); }];
-    UIAction *save=[UIAction actionWithTitle:@"设当前位置为首页" image:[UIImage systemImageNamed:@"house"] identifier:nil handler:^(UIAction *a){ if(weak.panes.count==2) FPSaveHome(weak.panes[index]); }];
-    UIAction *clear=[UIAction actionWithTitle:@"清除首页" image:nil identifier:nil handler:^(UIAction *a){ if(weak.panes.count==2) { FPClearHome(weak.panes[index]); } }];
-    return [UIMenu menuWithTitle:index==0 ? @"左栏" : @"右栏" children:@[copy,move,save,clear]];
+    return [UIMenu menuWithTitle:index==0 ? @"左栏" : @"右栏" children:@[copy,move]];
 }

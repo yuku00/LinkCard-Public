@@ -1,4 +1,4 @@
-// Public Foundation transfer/bookmark core; also compiled unchanged by host fixtures.
+// Public Foundation transfer core; also compiled unchanged by host fixtures.
 static NSError *FPFileError(NSString *message) {
     return [NSError errorWithDomain:@"FilesDualPane" code:1 userInfo:@{NSLocalizedDescriptionKey:message}];
 }
@@ -41,18 +41,4 @@ static NSError *FPTransferOne(NSURL *source, NSURL *folder, BOOL move) {
     if(sourceScope) [source stopAccessingSecurityScopedResource];
     if(targetScope) [folder stopAccessingSecurityScopedResource];
     return coordinationError ?: failure ?: (completed ? nil : FPFileError(@"文件协调未完成；未确认成功。"));
-}
-static NSData *FPHomeBookmark(NSURL *url, NSError **error) {
-    BOOL scope=[url startAccessingSecurityScopedResource];
-    NSData *data=nil;
-    if(FPDirectory(url,error) && FPReadyURL(url,error)) data=[url bookmarkDataWithOptions:NSURLBookmarkCreationMinimalBookmark includingResourceValuesForKeys:nil relativeToURL:nil error:error];
-    if(scope) [url stopAccessingSecurityScopedResource];
-    return data;
-}
-static NSURL *FPResolveHome(id data, NSError **error) {
-    if(![data isKindOfClass:NSData.class]) { if(error) *error=FPFileError(@"首页书签无效。"); return nil; }
-    BOOL stale=NO;
-    NSURL *url=[NSURL URLByResolvingBookmarkData:data options:NSURLBookmarkResolutionWithoutUI relativeToURL:nil bookmarkDataIsStale:&stale error:error];
-    if(stale || !url.isFileURL) { if(error) *error=FPFileError(@"首页书签已失效，请重新设置。"); return nil; }
-    return url;
 }

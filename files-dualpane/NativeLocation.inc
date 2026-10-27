@@ -33,23 +33,15 @@ static id FPCurrentLocation(FPBrowserPane *pane) {
 static BOOL FPBrowseVisible(FPBrowserPane *pane) {
     UIViewController *visible=FPVisibleController(pane);
     id browse=FPClassGet(@"DOCConcreteLocation",@"browseStartingPointsLocation");
-    return FPHomeIsBrowse(FPBool(pane.nativeSplit,@"isShowingCollapsedSidebarViewController") || (visible && FindSplit(visible,NSClassFromString(@"Files.DOCSidebarViewController"))!=nil),
-                          browse && [FPCurrentLocation(pane) isEqual:browse]);
+    return (FPBool(pane.nativeSplit,@"isShowingCollapsedSidebarViewController") || (visible && FindSplit(visible,NSClassFromString(@"Files.DOCSidebarViewController"))!=nil) ||
+                          (browse && [FPCurrentLocation(pane) isEqual:browse]));
 }
 static NSURL *FPFolder(FPBrowserPane *pane) {
     if(FPBrowseVisible(pane)) return nil;
     id location=FPCurrentLocation(pane);
     return FPNodeURL(Get(location,@"node"));
 }
-static BOOL FPShowLocation(FPBrowserPane *pane, id location) {
-    id full=FPFull(pane); NSString *name=@"showLocation:fromRootAnimated:withCompletionBlock:";
-    if(!location || !InExperiment(full) || !ABI([full class],name,"v@:@B@?")) return NO;
-    SEL s=NSSelectorFromString(name);
-    // No unverified block ABI: nil completion; bounded visible-location verification below.
-    ((void(*)(id,SEL,id,BOOL,id))[full methodForSelector:s])(full,s,location,NO,nil);
-    return YES;
-}
-static void InstallHomeLocationTracking(void) {
+static void InstallLocationTracking(void) {
     Class cls=NSClassFromString(@"DOCFullDocumentManagerViewController");
     SEL s=NSSelectorFromString(@"provideContainerControllerAt:from:isUserInteraction:isBrowsingTrash:");
     if(!ABI(cls,NSStringFromSelector(s),"@@:@@BB")) return;

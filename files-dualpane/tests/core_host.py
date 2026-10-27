@@ -61,8 +61,8 @@ static BOOL InExperiment(id o) { return [o isKindOfClass:UIViewController.class]
 '''
 core=(r/'FileCore.inc').read_text()
 abi=s[s.index('static BOOL ABI('):s.index('static void Set(')]
-selection=cross[:cross.index('static NSUserDefaults')]
-selection=selection.replace('#include "HomePolicy.inc"\n#include "HomeNavigation.inc"','')
+selection=cross[:cross.index('static void FPNotice')]
+selection=selection.replace('#include "NativeLocation.inc"','')
 policy=style[style.index('static NSInteger FPNameLines'):style.index('static char CellStyleKey')]
 main='''
 int main(void) { @autoreleasepool {
@@ -96,7 +96,7 @@ int main(void) { @autoreleasepool {
     cv.indexPathsForSelectedItems=@[p,p2]; assert(!FPSelectedURLs(pane,&error)); // All-or-none when one selected row is offscreen.
     cv.dataSource=ds; cv.indexPathsForSelectedItems=@[p];
     DOCConcreteLocation *location=[DOCConcreteLocation new]; FPItem *dir=[FPItem new]; dir.fileURL=right; location.node=dir;
-    full.hierarchyController=full; full.lastLocation=location; // Current-folder semantics run in home_host, not a stale-history stub.
+    full.hierarchyController=full; full.lastLocation=location; // Current-folder semantics run in location_host, not a stale-history stub.
     assert(!FPTransferOne(a,right,NO)); assert([fm fileExistsAtPath:a.path]);
     assert(FPTransferOne(a,right,YES)); assert([fm fileExistsAtPath:a.path]); // Conflict retains source.
     assert(!FPTransferOne(b,right,YES)); assert(![fm fileExistsAtPath:b.path]);
@@ -104,17 +104,9 @@ int main(void) { @autoreleasepool {
     assert(FPTransferOne(a,left,YES)); assert([fm fileExistsAtPath:a.path]);
     assert(FPTransferOne(left,left,NO));
     assert(FPTransferOne([left URLByAppendingPathComponent:@"missing"],right,YES));
-    NSData *lh=FPHomeBookmark(left,&error), *rh=FPHomeBookmark(right,&error); assert(lh && rh);
-    NSMutableDictionary *homes=[@{@"left":lh,@"right":rh} mutableCopy];
-    assert([FPResolveHome(homes[@"left"],&error).URLByResolvingSymlinksInPath.path isEqual:left.URLByResolvingSymlinksInPath.path]);
-    assert([FPResolveHome(homes[@"right"],&error).URLByResolvingSymlinksInPath.path isEqual:right.URLByResolvingSymlinksInPath.path]);
-    [homes removeObjectForKey:@"left"]; assert(homes[@"right"] && !homes[@"left"]);
-    assert(!FPResolveHome(@"corrupt",&error)); assert(!FPResolveHome([NSData data],&error));
-    assert([fm removeItemAtURL:left error:nil]);
-    NSURL *invalid=FPResolveHome(lh,&error); assert(!invalid || !FPDirectory(invalid,&error));
     assert([fm removeItemAtURL:root error:nil]);
     full.fullDocumentManagerViewController=nil; full.hierarchyController=nil; cv.delegate=nil;
-    puts("PASS production core: bounded row policy, offscreen selection/source/target mapping, missing URL rejects whole selection, copy/move, conflict retains source, self/descendant rejection, independent bookmarks, corrupt/deleted home");
+    puts("PASS production core: bounded row policy, offscreen selection/source/target mapping, missing URL rejects whole selection, copy/move, conflict retains source, self/descendant rejection");
 } return 0; }
 '''
 Path(sys.argv[1]).write_text(prefix+abi+core+selection+policy+main)

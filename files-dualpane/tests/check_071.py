@@ -3,7 +3,7 @@ r=Path(__file__).resolve().parents[1]
 s=(r/'DualPane.m').read_text(); a=(r/'NativeActions.inc').read_text()
 i=(r/'CompactImages.inc').read_text(); c=(r/'CompactCells.inc').read_text()
 v=(r/'CompactSelection.inc').read_text(); x=(r/'CrossPane.inc').read_text()
-assert 'Version: 0.7.2' in (r/'control').read_text()
+assert 'Version: 0.7.3' in (r/'control').read_text()
 for forbidden in ('UISegmentedControl','selectedSegmentIndex','changeMode','applyMode','self.toolbarItems=','左栏 ⇄ / 首页','右栏 ⇄ / 首页'):
     assert forbidden not in s,forbidden
 assert 'self.navigationItem.leftBarButtonItem=left; self.navigationItem.rightBarButtonItem=right' in s
@@ -30,5 +30,5 @@ assert 'if(hadStyle && !IsPaneListCell(v)) StyleCell(v,NO)' in a
 for forbidden in ('allowsMultipleSelection=NO','selectItemAtIndexPath:','deselectItemAtIndexPath:','valueForKey:','ivar_getOffset','object_getIvar','layoutIfNeeded','setNeedsLayout]; ['):
     assert forbidden not in i+c+v+a,forbidden
 assert 'InExperiment(collection.delegate)' in c and 'PaneForResponder(cell)' in c
-print('PASS 0.7.2: header pane bindings/center close, no segmented/bottom toolbar, collapsed single-line status/full result, thumbnail slot and reserved image width, exact multiselect filter, native selected mapping and restoration')
+print('PASS 0.7.3: header pane bindings/center close, no segmented/bottom toolbar, collapsed single-line status/full result, thumbnail slot and reserved image width, exact multiselect filter, native selected mapping and restoration')
 print('LIMIT static structure checks are not UIKit rendering. CI host fixture executes production visual functions with public-view doubles.')

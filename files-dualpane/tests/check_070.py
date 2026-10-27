@@ -1,7 +1,7 @@
 from pathlib import Path
 r=Path(__file__).resolve().parents[1]
 s=(r/'DualPane.m').read_text(); a=(r/'NativeActions.inc').read_text(); c=(r/'CompactCells.inc').read_text(); x=(r/'CrossPane.inc').read_text(); f=(r/'FileCore.inc').read_text()
-assert 'Version: 0.7.2' in (r/'control').read_text()
+assert 'Version: 0.7.3' in (r/'control').read_text()
 assert '左栏 · 操作' not in s and '右栏 · 操作' not in s
 assert 'BridgeSnapshot.inc' not in s and 'captureBridge' not in s
 assert 'UISegmentedControl' not in s and 'UILayoutConstraintAxisHorizontal' in s
@@ -21,13 +21,10 @@ assert 'indexPathsForSelectedItems' in x and 'itemIdentifierForIndexPath:' in x
 assert 'cellForItemAtIndexPath:path' in x and 'DOCThumbnailFittingImageView' in x
 assert 'dequeueReusableCell' not in x and 'visible.count==1' in x
 assert 'isKindOfClass:UICollectionViewDiffableDataSource.class' in x
-n=(r/'HomeNavigation.inc').read_text()
+n=(r/'NativeLocation.inc').read_text()
 assert 'FPNodeURL(Get(location,@"node"))' in n and 'FPLocationInTree(visible)' in n
 assert '@"lastLocation"' not in n
 assert 'container.panes[index]' in x and 'container.panes[1-index]' in x
-assert 'NSURLBookmarkCreationMinimalBookmark' in f and 'NSURLBookmarkResolutionWithoutUI' in f
-assert 'stale || !url.isFileURL' in f and 'dev.filesdualpane.home' in x
-assert 'HomeRestore.inc' in x and 'showLocation:fromRootAnimated:withCompletionBlock:' in n
 assert 'moveItemAtURL:from toURL:to error:&failure' in f
 assert 'NSFileCoordinatorWritingForMoving' in f
 assert 'fileExistsAtPath:to.path' in f and 'done++' in x

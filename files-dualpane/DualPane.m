@@ -45,6 +45,27 @@ static NSString *OwnState(id config) {
     id key=Get(config,@"stateIdentifier");
     return [key isKindOfClass:NSString.class] && [key hasPrefix:@"dev.filesdualpane.session."] ? key : nil;
 }
+// Seed independent pane states from Files' own current/last persisted state, not a URL.
+// Native restoration decides whether that location/provider can still be displayed.
+static id FPNativeInitialState(id configuration) {
+    Class cls=NSClassFromString(@"DOCUserInterfaceStateStore");
+    SEL shared=NSSelectorFromString(@"sharedStore"), read=NSSelectorFromString(@"interfaceStateForConfiguration:");
+    id seed=[[NSClassFromString(@"DOCUserInterfaceState") alloc] init];
+    if(!ABI(object_getClass(cls),NSStringFromSelector(shared),"@@:")) return seed;
+    id store=((id(*)(id,SEL))[(id)cls methodForSelector:shared])(cls,shared);
+    if(!ABI([store class],NSStringFromSelector(read),"@@:@")) return seed;
+    id original=((id(*)(id,SEL,id))[store methodForSelector:read])(store,read,configuration);
+    for(NSArray *field in @[@[@"mostRecentlyVisitedLocation",@"setMostRecentlyVisitedLocation:"],
+                            @[@"mostRecentEffectiveRootLocation",@"setMostRecentEffectiveRootLocation:"],
+                            @[@"selectedTab",@"setSelectedTab:"]]) {
+        id value=Get(original,field[0]);
+        if(value && ABI([seed class],field[1],"v@:@")) {
+            SEL setter=NSSelectorFromString(field[1]);
+            ((void(*)(id,SEL,id))[seed methodForSelector:setter])(seed,setter,[value copy]);
+        }
+    }
+    return seed;
+}
 static BOOL InstallStateIsolation(void) {
     static BOOL installed; if(installed) return YES;
     Class store=NSClassFromString(@"DOCUserInterfaceStateStore"), state=NSClassFromString(@"DOCUserInterfaceState");
@@ -74,20 +95,11 @@ static BOOL InstallStateIsolation(void) {
 @interface FPBrowserPane : UIViewController <UIDocumentBrowserViewControllerDelegate>
 @property(nonatomic,strong) UIViewController *nativeSplit;
 @property(nonatomic,strong) id configuration;
+@property(nonatomic,copy) NSString *paneSide;
 @property(nonatomic,strong) id sourceObserver;
 @property(nonatomic) BOOL initialListStarted;
 @property(nonatomic) NSUInteger listAttempts;
-@property(nonatomic) NSUInteger homeIndex;
-@property(nonatomic) BOOL homeAttempted;
-@property(nonatomic) BOOL homeTouched;
-@property(nonatomic) NSUInteger homeGeneration;
-@property(nonatomic) NSUInteger homeRevision;
-@property(nonatomic,strong) id downloadSettings;
-@property(nonatomic,strong) id homeInitialLocation;
-@property(nonatomic) BOOL homeNavigationIssued;
 @property(nonatomic,strong) NSNumber *savedLargeTitles;
-- (void)homeTouch;
-- (void)restoreWhenReady:(NSUInteger)attempt token:(NSUInteger)token;
 - (void)applyInitialList;
 - (void)previewURLs:(NSArray<NSURL *> *)urls;
 - (void)unsupported;
@@ -114,15 +126,6 @@ static BOOL InExperiment(id v) {
 #include "ScopedPreview.inc"
 #include "FileCore.inc"
 #include "CrossPane.inc"
-// Observe touches without claiming them or delaying native row/back/menu gestures.
-@interface FPHomeTouchObserver : UIGestureRecognizer
-@property(nonatomic,weak) FPBrowserPane *pane;
-@end
-@implementation FPHomeTouchObserver
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    [self.pane homeTouch]; self.state=UIGestureRecognizerStateFailed;
-}
-@end
 @implementation FPBrowserPane
 - (void)dealloc {
     NSString *key=OwnState(_configuration);
@@ -137,21 +140,11 @@ static BOOL InExperiment(id v) {
     if([navigation isKindOfClass:UINavigationController.class]) {
         self.savedLargeTitles=@(navigation.navigationBar.prefersLargeTitles); navigation.navigationBar.prefersLargeTitles=NO;
     }
-    FPHomeTouchObserver *touch=[FPHomeTouchObserver new]; touch.pane=self;
-    touch.cancelsTouchesInView=NO; touch.delaysTouchesBegan=NO; touch.delaysTouchesEnded=NO;
-    [self.view addGestureRecognizer:touch];
+
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     if(!self.initialListStarted) { self.initialListStarted=YES; [self applyInitialList]; }
-    if(!self.homeAttempted) { self.homeAttempted=YES; [self restoreWhenReady:0 token:self.homeGeneration]; }
-}
-- (void)homeTouch { self.homeTouched=YES; ++self.homeGeneration; }
-- (void)restoreWhenReady:(NSUInteger)attempt token:(NSUInteger)token {
-    if(!FPHomeMayContinue(token,self.homeGeneration,self.parentViewController!=nil,self.homeTouched,attempt)) return;
-    if(FPVisibleController(self) || FPBool(self.nativeSplit,@"isShowingCollapsedSidebarViewController")) { FPRestoreHome(self); return; }
-    if(attempt==19) { FPHomeFallback(self,@"首页浏览器尚未就绪，保留浏览；不会再抢占导航。"); return; }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/4),dispatch_get_main_queue(),^{ [self restoreWhenReady:attempt+1 token:token]; });
 }
 - (void)applyInitialList {
     if(!self.parentViewController || !self.nativeSplit) return;
@@ -235,9 +228,9 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
     id copy=[config copy]; if(!copy || copy==config || [copy class]!=[config class]) return @"configuration did not return independent same-class copy";
     id scene=Get(config,@"sceneIdentifier"), copiedScene=Get(copy,@"sceneIdentifier");
     if(!scene || ![scene isEqual:copiedScene]) return @"real scene identifier unavailable or changed by copy";
-    NSString *state=[@"dev.filesdualpane.session." stringByAppendingString:NSUUID.UUID.UUIDString];
+    NSString *state=[NSString stringWithFormat:@"dev.filesdualpane.session.%@.%@",scene,adapter.paneSide];
     Set(copy,@"setStateIdentifier:",state);
-    for(NSString *name in @[@"setCollectionSupportsDragAndDrop:",@"setSaveLastVisitedLocation:",@"setRestoreLastVisitedLocation:"]) {
+    for(NSString *name in @[@"setCollectionSupportsDragAndDrop:"]) {
         if(!ABI([copy class],name,"v@:B")) return @"temporary configuration flag ABI unavailable";
         SEL flag=NSSelectorFromString(name);
         ((void(*)(id,SEL,BOOL))[copy methodForSelector:flag])(copy,flag,NO);
@@ -248,7 +241,7 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
 
 @implementation FPDualContainer
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"双窗格 · 0.7.2"; self.view.backgroundColor=UIColor.systemBackgroundColor;
+    [super viewDidLoad]; self.title=@"双窗格 · 0.7.3"; self.view.backgroundColor=UIColor.systemBackgroundColor;
     self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;
     UIBarButtonItem *left=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"ellipsis"] menu:FPPaneMenu(self,0)];
     UIBarButtonItem *right=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"ellipsis"] menu:FPPaneMenu(self,1)];
@@ -298,7 +291,7 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
     self.closing=YES;
     [self dismissViewControllerAnimated:YES completion:^{
         for(FPBrowserPane *pane in self.panes) {
-            ++pane.homeGeneration; ++pane.homeRevision; FPRestorePaneStyles(pane);
+            FPRestorePaneStyles(pane);
             UINavigationController *navigation=Get(FPFull(pane),@"internalNavigationController");
             if(pane.savedLargeTitles && [navigation isKindOfClass:UINavigationController.class]) navigation.navigationBar.prefersLargeTitles=pane.savedLargeTitles.boolValue;
             UIViewController *split=pane.nativeSplit;
@@ -320,15 +313,17 @@ static void ShowFailure(UIViewController *host, NSString *reason) {
 }
 void FPDualPanePresent(UIViewController *host) {
     if(!NSThread.isMainThread || host.presentedViewController || host.isBeingDismissed) return;
-    static dispatch_once_t homeOnce; dispatch_once(&homeOnce,^{ InstallHomeLocationTracking(); });
+    static dispatch_once_t locationOnce; dispatch_once(&locationOnce,^{ InstallLocationTracking();
+        [[[NSUserDefaults alloc] initWithSuiteName:@"dev.filesdualpane.home"] removePersistentDomainForName:@"dev.filesdualpane.home"];
+    });
     NSMutableArray<FPBrowserPane *> *panes=[NSMutableArray new];
     NSMutableSet *identities=[NSMutableSet new]; NSString *failure=nil;
     for(NSUInteger index=0;index<2;index++) {
-        FPBrowserPane *pane=[FPBrowserPane new]; pane.homeIndex=index; id config=nil,observer=nil; UIViewController *original=nil;
+        FPBrowserPane *pane=[FPBrowserPane new]; pane.paneSide=index==0 ? @"left" : @"right"; id config=nil,observer=nil; UIViewController *original=nil;
         failure=Preflight(host,pane,&config,&observer,&original); if(failure) break;
         if(!InstallStateIsolation()) { failure=@"此系统的临时界面状态接口不兼容；未创建浏览器。"; break; }
         pane.configuration=config; pane.sourceObserver=observer; [panes addObject:pane];
-        @synchronized(paneStates) { paneStates[OwnState(config)]=[[NSClassFromString(@"DOCUserInterfaceState") alloc] init]; }
+        @synchronized(paneStates) { paneStates[OwnState(config)]=FPNativeInitialState(Get(original,@"configuration")); }
         UIViewController *split=(UIViewController *)[(id<FPNativeFactory>)[NSClassFromString(@"DOCSplitBrowserViewController") alloc] initWithConfiguration:config sourceObserver:observer];
         pane.nativeSplit=split;
         id full=Get(split,@"fullDocumentManagerViewController"), oldFull=Get(original,@"fullDocumentManagerViewController");

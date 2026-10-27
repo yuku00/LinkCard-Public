@@ -21,6 +21,7 @@ static UIFont *FPCellFont(UIView *view, CGFloat size) {
 static void StyleCell(UICollectionViewCell *cell, BOOL compact) {
     NSDictionary *saved=objc_getAssociatedObject(cell,&CellStyleKey);
     FPSelectionVisual(cell,compact);
+    FPContentMargins(cell,compact);
     BOOL arranged=FPCompactImages(cell.contentView,compact);
     if(!compact) {
         if(saved[@"config"] && [cell.contentConfiguration isKindOfClass:UIListContentConfiguration.class]) {
@@ -31,6 +32,7 @@ static void StyleCell(UICollectionViewCell *cell, BOOL compact) {
             config.secondaryTextProperties.numberOfLines=original.secondaryTextProperties.numberOfLines;
             config.imageProperties.maximumSize=original.imageProperties.maximumSize;
             config.imageProperties.reservedLayoutSize=original.imageProperties.reservedLayoutSize;
+            config.axesPreservingSuperviewLayoutMargins=original.axesPreservingSuperviewLayoutMargins;
             config.directionalLayoutMargins=original.directionalLayoutMargins; config.imageToTextPadding=original.imageToTextPadding;
             cell.contentConfiguration=config;
         }
@@ -46,10 +48,11 @@ static void StyleCell(UICollectionViewCell *cell, BOOL compact) {
         UIListContentConfiguration *config=[(UIListContentConfiguration *)cell.contentConfiguration copy];
         if(!saved) { saved=@{@"config":[config copy],@"clips":@(cell.contentView.clipsToBounds)}; objc_setAssociatedObject(cell,&CellStyleKey,saved,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
         NSInteger lines=FPNameLines(MAX(0,cell.bounds.size.height-detail.lineHeight-8),font.lineHeight);
-        if(config.textProperties.numberOfLines!=lines || ![config.textProperties.font isEqual:font] || config.imageProperties.maximumSize.width!=20 || config.imageProperties.reservedLayoutSize.width!=20 || config.imageToTextPadding!=6) {
+        if(config.textProperties.numberOfLines!=lines || ![config.textProperties.font isEqual:font] || config.imageProperties.maximumSize.width!=20 || config.imageProperties.reservedLayoutSize.width!=20 || config.imageToTextPadding!=6 || config.axesPreservingSuperviewLayoutMargins!=0 || !NSDirectionalEdgeInsetsEqualToDirectionalEdgeInsets(config.directionalLayoutMargins,NSDirectionalEdgeInsetsMake(4,6,4,6))) {
             config.textProperties.font=font; config.textProperties.numberOfLines=lines; config.textProperties.lineBreakMode=NSLineBreakByTruncatingTail;
             config.secondaryTextProperties.font=detail; config.secondaryTextProperties.numberOfLines=1;
             config.imageProperties.maximumSize=CGSizeMake(20,20); config.imageProperties.reservedLayoutSize=CGSizeMake(20,20); config.imageToTextPadding=6;
+            config.axesPreservingSuperviewLayoutMargins=0;
             config.directionalLayoutMargins=NSDirectionalEdgeInsetsMake(4,6,4,6); cell.contentConfiguration=config;
         }
         cell.contentView.clipsToBounds=YES; return;

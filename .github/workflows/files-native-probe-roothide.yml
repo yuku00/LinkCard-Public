@@ -25,12 +25,12 @@ jobs:
           python3 tests/check_060.py
           python3 tests/check_070.py
           python3 tests/check_071.py
-          python3 tests/check_072.py
-      - name: Execute production home schema and navigation policy
+          python3 tests/check_073.py
+      - name: Execute native current location fixture
         run: |
-          python3 tests/home_host.py "$RUNNER_TEMP/home-host.m"
-          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation "$RUNNER_TEMP/home-host.m" -o "$RUNNER_TEMP/home-host"
-          "$RUNNER_TEMP/home-host"
+          python3 tests/location_host.py "$RUNNER_TEMP/location-host.m"
+          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation "$RUNNER_TEMP/location-host.m" -o "$RUNNER_TEMP/location-host"
+          "$RUNNER_TEMP/location-host"
       - name: Execute production selection visual and restore policy
         run: |
           python3 tests/ui_host.py "$RUNNER_TEMP/ui-host.m"
@@ -76,7 +76,7 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.filesdualpane.nativeprobe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.7.2
+          test "$(dpkg-deb -f "$deb" Version)" = 0.7.3
           dpkg-deb -x "$deb" "$RUNNER_TEMP/files-package"
           binary=$(python3 -c 'import os,pathlib; print(next(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("files-package").rglob("FilesNativeProbe.dylib")))')
           test -n "$binary"
