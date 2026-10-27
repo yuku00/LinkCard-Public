@@ -120,6 +120,8 @@ void FPLifecycleStart(void) {
     hook("Files.DOCDocumentManager","setDocumentBrowser:","v@:@");
     hook("Files.DOCDocumentManager","setUiBrowserDelegate:","v@:@");
     hook("Files.DOCHierarchyController","setDelegate:","v@:@");
+    hook("Files.DOCBrowserNavigationDataSource","setItemProvider:","v@:@");
+    hook("Files.DOCBrowserNavigationDataSource","setUpdateObserver:","v@:@");
     hook("DOCFullDocumentManagerViewController","setDelegate:","v@:@");
     hook("DOCFullDocumentManagerViewController","setHierarchyController:","v@:@");
     hook("DOCFullDocumentManagerViewController","setActionManager:","v@:@");
