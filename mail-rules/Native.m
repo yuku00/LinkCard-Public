@@ -272,6 +272,7 @@ static void ChooseBox(MR5State *s,void (^chosen)(id)) {
 - (void)beginPreview:(NSDictionary *)rule {
     if(!MoveReady) {Notice(owner,@"原生移动交互边界不可用，未开启整理。隐藏规则仍可使用。");return;}
     if(busy) return;
+    if(!BoxKeys(owner).count || Flag(owner,@"isSearchViewController") || Flag(owner,@"isSearching")) {Notice(owner,@"当前搜索或邮箱身份范围无法核验，未开启整理。请返回实体邮箱列表。");return;}
     Void(Get(owner,@"messageListSelectionModel"),@"clearAll");
     Void(Get(owner,@"messageListSelectionModel"),@"disableSelectAll");
     [preview release];preview=[rule copy];[previewContext release];previewContext=[BoxKeys(owner) copy];[self reload];
@@ -309,7 +310,7 @@ static void ChooseBox(MR5State *s,void (^chosen)(id)) {
 }
 - (void)createMailbox {
     if(!CreateReady) {Notice(owner,@"原生新建边界不可用；可以继续使用规则和已有目录移动。");return;}
-    if(!preview || ![BoxKeys(owner) isEqual:previewContext]) return;
+    if(!preview || !local || Flag(owner,@"isSearchViewController") || Flag(owner,@"isSearching") || !MR5Context(owner,owner,BoxKeys(owner),previewContext)) {Notice(owner,@"当前来源范围无效或已变化，未打开新建界面。");return;}
     id box=nil;for(id b in Boxes(owner)) if([AccountID(b) isEqual:preview[@"account"]]) {box=b;break;}
     id account=One(Get(owner,@"accountsProvider"),@"legacyMailAccountForObjectID:",Get(box,@"accountIdentifier"));
     Class cls=NSClassFromString(@"MailboxEditingController");

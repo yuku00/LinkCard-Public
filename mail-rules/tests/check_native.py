@@ -32,6 +32,10 @@ class NativeBoundaryTests(unittest.TestCase):
             self.assertIn(token,code)
         self.assertNotIn('setWillTransferMessages',code)
         self.assertNotIn('performMailboxChangeAction',code)
+        self.assertIn('!BoxKeys(owner).count || Flag(owner,@"isSearchViewController")',code)
+        create=code.split('- (void)createMailbox {',1)[1].split('- (void)mailboxEditingControllerDidFinish:',1)[0]
+        self.assertIn('!MR5Context(owner,owner,BoxKeys(owner),previewContext)',create)
+        self.assertIn('!preview || !local',create)
     def test_theme_stays_visual(self):
         code=(ROOT/'Theme.m').read_text()
         for token in ['MailboxPickerOutlineController','MessageListViewController','ConversationViewController','Restore(vc)','weakToWeakObjectsMapTable']:

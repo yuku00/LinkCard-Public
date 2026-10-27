@@ -109,6 +109,8 @@ int main(void) {@autoreleasepool {
     NSPredicate *(^widen)(NSPredicate *)=^NSPredicate *(NSPredicate *p){return [NSCompoundPredicate orPredicateWithSubpredicates:@[p,[NSPredicate predicateWithValue:YES]]];};
     assert(![MR5Transform(scope,widen,exclude) evaluateWithObject:otherBox]);
     NSObject *ownerA=[NSObject new],*ownerB=[NSObject new];
+    assert(!MR5Context(ownerA,ownerA,@[],@[]));
+    assert(!MR5Context(nil,nil,@[@"A-inbox"],@[@"A-inbox"]));
     assert(MR5Context(ownerA,ownerA,@[@"A-inbox"],@[@"A-inbox"]));
     assert(!MR5Context(ownerB,ownerA,@[@"B-inbox"],@[@"A-inbox"]));
     assert(!MR5Context(ownerA,ownerA,@[@"A-archive"],@[@"A-inbox"]));
