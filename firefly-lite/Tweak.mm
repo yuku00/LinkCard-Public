@@ -37,8 +37,21 @@ static BOOL Signature(Class cls, SEL sel, const char *ret, unsigned args, const 
     return YES;
 }
 #import "Shared/FLIconColor.h"
-static void Remove(SBIconView *view) {
+@interface FLHaloLayer : CALayer
+@property(nonatomic) FLRGB rgb;
+@property(nonatomic) double intensity;
+@property(nonatomic) BOOL styled;
+@end
+@implementation FLHaloLayer
+@end
+static void ClearColor(SBIconView *view) {
+    FLIconColorState *state = objc_getAssociatedObject(view, &colorKey);
+    if (state.imageView && objc_getAssociatedObject(state.imageView, &imageOwnerKey) == state)
+        objc_setAssociatedObject(state.imageView, &imageOwnerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(view, &colorKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static void Remove(SBIconView *view) {
+    ClearColor(view);
     CALayer *layer = objc_getAssociatedObject(view, &layerKey);
     [layer removeFromSuperlayer];
     objc_setAssociatedObject(view, &layerKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -46,7 +59,13 @@ static void Remove(SBIconView *view) {
 static void Update(SBIconView *view) {
     NSCAssert(NSThread.isMainThread, @"UI must be updated on main thread");
     if (stopped) { Remove(view); return; }
-    if (!view.window) { Remove(view); [views removeObject:view]; return; }
+    if (!config.enabled) { Remove(view); return; }
+    if (!config.followIconColor) ClearColor(view);
+    if (!view.window) {
+        CALayer *halo = objc_getAssociatedObject(view, &layerKey);
+        halo.hidden = YES; // Keep same-icon cache and the single halo while offscreen.
+        return;
+    }
     [views addObject:view];
     id icon = [view icon];
     BOOL badge = icon && Signature([icon class], @selector(badgeNumberOrString), "@", 2)
@@ -62,26 +81,36 @@ static void Update(SBIconView *view) {
     if (CGRectIsEmpty(frame) || CGRectIsInfinite(frame) || CGRectIsNull(frame)
         || !isfinite(frame.origin.x) || !isfinite(frame.origin.y)
         || !isfinite(frame.size.width) || !isfinite(frame.size.height)) { Remove(view); return; }
-    CALayer *layer = objc_getAssociatedObject(view, &layerKey);
+    FLHaloLayer *layer = objc_getAssociatedObject(view, &layerKey);
     if (!layer) {
-        layer = [CALayer layer];
+        layer = [FLHaloLayer layer];
         layer.name = @"dev.fireflylite.badgeglow.halo";
         objc_setAssociatedObject(view, &layerKey, layer, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [view.layer insertSublayer:layer atIndex:0];
     }
     FLRGB rgb = IconColor(view, image, icon, (FLRGB){config.red, config.green, config.blue});
-    UIColor *color = [UIColor colorWithRed:rgb.red green:rgb.green blue:rgb.blue alpha:1];
+    BOOL pathChanged = FLNeedsHaloPath(layer.shadowPath != NULL, CGSizeEqualToSize(layer.bounds.size, frame.size));
+    BOOL styleChanged = !layer.styled || layer.intensity != config.intensity
+        || layer.rgb.red != rgb.red || layer.rgb.green != rgb.green || layer.rgb.blue != rgb.blue;
+    if (!pathChanged && !styleChanged && CGRectEqualToRect(layer.frame, frame) && !layer.hidden) return;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    layer.frame = frame;
-    layer.cornerRadius = MIN(frame.size.width, frame.size.height) * 0.22;
-    layer.backgroundColor = [color colorWithAlphaComponent:0.03].CGColor;
-    layer.shadowColor = color.CGColor;
-    layer.shadowOpacity = (float)config.intensity;
-    layer.shadowRadius = 2 + 14 * config.intensity;
-    layer.shadowOffset = CGSizeZero;
-    layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:layer.bounds
-        cornerRadius:layer.cornerRadius].CGPath;
+    if (layer.hidden) layer.hidden = NO;
+    if (!CGRectEqualToRect(layer.frame, frame)) layer.frame = frame;
+    if (pathChanged) {
+        layer.cornerRadius = MIN(frame.size.width, frame.size.height) * 0.22;
+        layer.shadowPath = [UIBezierPath bezierPathWithRoundedRect:layer.bounds
+            cornerRadius:layer.cornerRadius].CGPath;
+    }
+    if (styleChanged) {
+        UIColor *color = [UIColor colorWithRed:rgb.red green:rgb.green blue:rgb.blue alpha:1];
+        layer.backgroundColor = [color colorWithAlphaComponent:0.03].CGColor;
+        layer.shadowColor = color.CGColor;
+        layer.shadowOpacity = (float)config.intensity;
+        layer.shadowRadius = 2 + 14 * config.intensity;
+        layer.shadowOffset = CGSizeZero;
+        layer.rgb = rgb; layer.intensity = config.intensity; layer.styled = YES;
+    }
     [CATransaction commit];
 }
 static void Schedule(SBIconView *view) {
@@ -89,9 +118,13 @@ static void Schedule(SBIconView *view) {
     else dispatch_async(dispatch_get_main_queue(), ^{ Update(view); });
 }
 static void Layout(SBIconView *self, SEL cmd) { originalLayout(self, cmd); Schedule(self); }
-static void Window(SBIconView *self, SEL cmd) { originalWindow(self, cmd); Schedule(self); }
+static void Window(SBIconView *self, SEL cmd) {
+    originalWindow(self, cmd);
+    if (NSThread.isMainThread) { Update(self); if (self.window) RefreshOwner(self); }
+    else dispatch_async(dispatch_get_main_queue(), ^{ Update(self); if (self.window) RefreshOwner(self); });
+}
 static void SetIcon(SBIconView *self, SEL cmd, id icon) {
-    objc_setAssociatedObject(self, &colorKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if ([self icon] != icon) ClearColor(self);
     originalSetIcon(self, cmd, icon); Schedule(self);
 }
 static void Accessories(SBIconView *self, SEL cmd, id icon) {
@@ -99,7 +132,8 @@ static void Accessories(SBIconView *self, SEL cmd, id icon) {
 }
 static void IconImageChanged(SBIconView *self, SEL cmd, id icon) {
     originalIconImageChanged(self, cmd, icon);
-    dispatch_async(dispatch_get_main_queue(), ^{ RefreshImage([self _iconImageView]); });
+    if (NSThread.isMainThread) RefreshOwner(self);
+    else dispatch_async(dispatch_get_main_queue(), ^{ RefreshOwner(self); });
 }
 static void Notify(CFNotificationCenterRef center, void *observer, CFStringRef name,
                    const void *object, CFDictionaryRef info) {

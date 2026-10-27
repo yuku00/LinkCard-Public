@@ -4,8 +4,8 @@
 static inline int FLNeedsIconSample(int exists, int sameSource, int dirty) {
     return !exists || !sameSource || dirty;
 }
-static inline int FLRefreshIconSample(int valid, int localCapture) {
-    return !valid || localCapture;
+static inline int FLNeedsHaloPath(int exists, int sameSize) {
+    return !exists || !sameSize;
 }
 static inline int FLAcceptIconSample(int currentState, int sameIcon, int enabled) {
     return currentState && sameIcon && enabled;

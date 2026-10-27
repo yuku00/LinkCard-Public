@@ -23,36 +23,41 @@ assert '@"AllApps": @(!!c.allApps)' in preferences
 assert 'CFPreferencesCopyKeyList(FL_DOMAIN' in preferences  # Clears the entire domain, including new keys.
 assert 'CFPreferencesSetMultiple(NULL, keys, FL_DOMAIN' in preferences
 assert 'config.enabled, config.allApps, badge, [view isFolderIcon]' in (root/'Tweak.mm').read_text()
-assert 'Version: 0.1.3\n' in (root/'control').read_text()
+assert 'Version: 0.1.4\n' in (root/'control').read_text()
 print('PASS: AllApps read/default/write wiring, whole-domain cleanup and version checks')
 assert 'id follow = FLGet(CFSTR("FollowIconColor"));' in preferences
 assert '[follow isKindOfClass:NSNumber.class] && [follow boolValue]' in preferences
 assert '@"FollowIconColor": @(!!c.followIconColor)' in preferences
 colors = (root/'Shared/FLIconColor.h').read_text()
-assert 'FLNeedsIconSample(state != nil, same, state.dirty)' in colors
-assert 'objc_getAssociatedObject(owner, &colorKey) == state' in colors
-assert '[owner icon] == state.icon' in colors
+assert 'FLNeedsIconSample(state.sampled, same, NO)' in colors
+assert 'objc_getAssociatedObject(target, &colorKey) == state' in colors
+assert '[target icon] == state.icon' in colors
 assert 'Signature(view.class, selector, "@", 2)' in colors
 assert 'DISPATCH_QUEUE_SERIAL' in colors
 assert '跟随图标颜色' in (root/'Preferences/FLRootController.m').read_text()
-assert '[imageView.layer renderInContext:ctx]' in colors
+assert '@[@"contentsImage", @"displayedImage"]' in colors
 assert 'CFGetTypeID((__bridge CFTypeRef)contents) == CGImageGetTypeID()' in colors
-assert 'state.refreshPending' in colors and 'state.retries == 0' in colors
-assert 'state.imageView == imageView' in colors and 'state.contents == contents' in colors
-assert 'UIImage *thumbnail = IconThumbnail(imageView, image, &localCapture)' in colors
-for forbidden in ('drawViewHierarchyInRect', 'snapshotViewAfterScreenUpdates', '[view.layer renderInContext:', '[owner.layer renderInContext:'):
-    assert forbidden not in source
-print('PASS: icon-local fallback, bounded retry/coalescing, source identity and stale-result wiring')
+assert 'state.refreshPending' in colors and 'state.owner = view' in colors
+assert 'state.imageView != imageView' in colors and 'state.contents == source' in colors
+assert 'for (SBIconView' not in colors
+for forbidden in ('renderInContext', 'UIGraphicsBeginImageContext', 'drawInRect:', 'drawViewHierarchyInRect', 'snapshotViewAfterScreenUpdates', 'localCapture'):
+    assert forbidden not in source, forbidden
+worker = colors.index('dispatch_async(colorQueue')
+assert colors.index('CGContextDrawImage') > worker
+cached = colors[colors.index('static FLRGB IconColor'):colors.index('// Optional image hooks')]
+assert 'DisplayedImage(' not in cached and 'CGContext' not in cached
+assert 'FLNeedsHaloPath(layer.shadowPath != NULL' in (root/'Tweak.mm').read_text()
+print('PASS: contentsImage first, no screenshots/main-thread pixel scans, weak owner routing, cached layout and guarded paths')
 print('PASS: package/domain/filter/dependency and prohibited API checks')
 with tempfile.TemporaryDirectory(prefix='firefly-test-') as tmp:
     tmp = Path(tmp)
     binary = tmp/'logic'
     subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', str(root/'tests/sample-policy.c'), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-    print('PASS: cache/retry/reuse/switch policy, including 1000 unchanged layouts')
+    print('PASS: production cache/path predicates: 40 same-source events + 1000 layouts, no additional sample/path work (host model)')
     subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', str(root/'tests/logic.c'), '-lm', '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
-    print('PASS: 25 visibility/boundary assertions plus 13 color/follow/fallback assertions')
+    print('PASS: visibility boundaries, chromatic/white/black/gray/transparent colors and manual fallback (production C functions)')
     # Substitute only the helper location; preserve the actual maintainer logic.
     calls = tmp/'calls'
     helper = tmp/'helper'

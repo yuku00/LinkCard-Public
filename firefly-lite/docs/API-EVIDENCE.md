@@ -63,7 +63,17 @@ https://github.com/MTACS/iOS-17-Runtime-Headers/blob/d1d960dfaa4107765dd7fcf891e
 ## 下载信任记录
 Shell 的 HTTPS CA 链校验失败；公开只读研究文件使用 curl -k 获取，仅作接口线索，没有执行下载文件、没有安装包、没有作为可执行依赖打包。由此不能将取证称为完整 TLS 认证。上述固定提交可在可信网络上重新核对。
 
-## 0.1.3 重新核对（以下取代0.1.2取色限制描述）
+## 0.1.4 真实调用链与实现（取代0.1.2/0.1.3行为描述）
+
+本地原 Metamorphosis arm64 反汇编已确认 `_iconImageView` → `contentsImage` → 平均色 → `shadowColor`，原平均色不排斥灰阶。本工程只采用该接口证据，不复制旧二进制、授权或 ivar 偏移。`contentsImage` 和兼容 getter 均校验对象返回/参数数量，并验证 UIImage 及其 CGImage；公开 layer.contents 仅接受 CGImage 类型。
+
+0.1.3 的 localCapture 在 layer.contents 回退前赋值，静态 CGImage 被误判为动态截图，分散事件重复失效；此外主线程 renderInContext、无条件 shadowPath/颜色重建、离屏销毁和图像事件全表扫描增加滑动开销。0.1.4 删除截图路径及 localCapture/dirty 重试机制，只在后台对保留的不可变 CGImage 做 24×24 栅格化；相同图源不重采。布局不扫描像素；弱 owner 关联、异步合并、同尺寸路径复用和同样式早退减少重复工作。同图标离屏保留缓存，关闭/换图标/卸载清除。
+
+灰阶使用有效像素的 alpha 加权均值回退，不再当作失败；彩色仍沿用本工程主色投票，不声称完全复制原插件 1×1 平均的视觉结果。完全透明或无可用 CGImage 时使用手动色。私有事件缺失时不能保证捕获每次图标动画变化；不支持原地修改不可变 CGImage 存储的非标准行为。
+
+测试边界：旧0.1.3生产 FLColor.h 对新白色有效性断言实际失败，新版生产函数通过；缓存/路径测试共享生产判定函数并模拟40次事件和1000次布局，不是 UIKit 性能测量。无任何 renderInContext/截图代码的静态扫描通过。真机颜色、SpringBoard 回调覆盖、FPS及功耗未验证。
+
+## 0.1.3 历史重新核对（以下实现已由0.1.4取代）
 
 通过浏览器 TLS fetch（HTTP 200）核对 iOS16.4 20E247 固定提交：
 https://github.com/lechium/iPhone_OS_16.4_20E247/blob/6e936b9f702d6d5746430d3d918709479dffafb5/System/Library/PrivateFrameworks/SpringBoardHome/SBIconObserver-Protocol.h

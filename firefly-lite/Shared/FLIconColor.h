@@ -5,88 +5,53 @@
 @property(nonatomic, strong) UIImage *image;
 @property(nonatomic, strong) id contents;
 @property(nonatomic, weak) UIView *imageView;
+@property(nonatomic, weak) SBIconView *owner;
 @property(nonatomic, weak) id icon;
-@property(nonatomic) CGRect bounds;
 @property(nonatomic) FLRGB rgb;
-@property(nonatomic) BOOL valid, localCapture, dirty, refreshPending;
-@property(nonatomic) NSUInteger retries;
+@property(nonatomic) BOOL valid, refreshPending, sampled;
 @end
 @implementation FLIconColorState
 @end
-static char colorKey;
+static char colorKey, imageOwnerKey;
 static dispatch_queue_t colorQueue;
 static void Update(SBIconView *view);
+static void ClearColor(SBIconView *view);
 
 static UIImage *DisplayedImage(UIView *view) {
     NSCAssert(NSThread.isMainThread, @"Read UIKit images only on main");
-    if ([view isKindOfClass:UIImageView.class]) return ((UIImageView *)view).image;
-    Class cls = NSClassFromString(@"SBIconImageView");
-    SEL selector = NSSelectorFromString(@"displayedImage");
-    if (!cls || ![view isKindOfClass:cls] || !Signature(view.class, selector, "@", 2)) return nil;
-    id image = ((id (*)(id, SEL))[view methodForSelector:selector])(view, selector);
-    return [image isKindOfClass:UIImage.class] ? image : nil;
-}
-// UIKit/CA access stays on main; the worker receives only a 24x24 immutable bitmap.
-static UIImage *IconThumbnail(UIView *imageView, UIImage *image, BOOL *localCapture) {
-    NSCAssert(NSThread.isMainThread, @"Capture icon on main");
-    CGRect bounds = imageView.bounds;
-    if (CGRectIsEmpty(bounds) || !isfinite(bounds.size.width) || !isfinite(bounds.size.height)
-        || !isfinite(bounds.origin.x) || !isfinite(bounds.origin.y)) return nil;
-    CGImageRef cg = image.CGImage;
-    *localCapture = !cg;
-    id contents = imageView.layer.contents;
-    if (!cg && contents && CFGetTypeID((__bridge CFTypeRef)contents) == CGImageGetTypeID())
-        cg = (__bridge CGImageRef)contents;
-    UIGraphicsBeginImageContextWithOptions(CGSizeMake(24, 24), NO, 1);
-    CGContextRef ctx = UIGraphicsGetCurrentContext();
-    if (ctx) {
-        if (cg) {
-            [[UIImage imageWithCGImage:cg] drawInRect:CGRectMake(0, 0, 24, 24)];
-        } else {
-            CGContextScaleCTM(ctx, 24 / bounds.size.width, 24 / bounds.size.height);
-            CGContextTranslateCTM(ctx, -bounds.origin.x, -bounds.origin.y);
-            // Only _iconImageView's subtree: the sibling halo is never captured.
-            [imageView.layer renderInContext:ctx];
-        }
+    // contentsImage is the original tweak's accessor; verify the runtime ABI first.
+    for (NSString *name in @[@"contentsImage", @"displayedImage"]) {
+        SEL selector = NSSelectorFromString(name);
+        if (!Signature(view.class, selector, "@", 2)) continue;
+        id image = ((id (*)(id, SEL))[view methodForSelector:selector])(view, selector);
+        if ([image isKindOfClass:UIImage.class] && ((UIImage *)image).CGImage) return image;
     }
-    UIImage *thumbnail = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    return thumbnail;
+    UIImage *image = [view isKindOfClass:UIImageView.class] ? ((UIImageView *)view).image : nil;
+    return [image isKindOfClass:UIImage.class] && image.CGImage ? image : nil;
 }
 static void QueueColorRefresh(SBIconView *view, FLIconColorState *state) {
-    if (state.refreshPending) return;
+    if (state.refreshPending || stopped || !config.enabled || !config.followIconColor) return;
     state.refreshPending = YES;
     __weak SBIconView *weakView = view;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        SBIconView *owner = weakView;
-        if (!owner || stopped || !config.followIconColor || objc_getAssociatedObject(owner, &colorKey) != state) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
         state.refreshPending = NO;
-        state.dirty = YES;
-        Update(owner);
-    });
-}
-static FLRGB IconColor(SBIconView *view, UIView *imageView, id icon, FLRGB manual) {
-    if (!config.followIconColor) {
-        objc_setAssociatedObject(view, &colorKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        return manual;
-    }
-    UIImage *image = DisplayedImage(imageView);
-    id contents = imageView.layer.contents;
-    FLIconColorState *state = objc_getAssociatedObject(view, &colorKey);
-    BOOL same = state && state.image == image && state.icon == icon && state.imageView == imageView
-        && state.contents == contents && CGRectEqualToRect(state.bounds, imageView.bounds);
-    if (FLNeedsIconSample(state != nil, same, state.dirty)) {
-        NSUInteger retries = same ? state.retries : 0;
-        state = [FLIconColorState new];
-        state.image = image; state.icon = icon; state.imageView = imageView;
-        state.contents = contents; state.bounds = imageView.bounds; state.retries = retries;
-        objc_setAssociatedObject(view, &colorKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        BOOL localCapture = NO;
-        UIImage *thumbnail = IconThumbnail(imageView, image, &localCapture);
-        state.localCapture = localCapture;
-        CGImageRef cg = thumbnail.CGImage;
-        if (cg) CGImageRetain(cg);
-        __weak SBIconView *weakView = view;
+        SBIconView *owner = weakView;
+        if (!owner || !owner.window || stopped || !config.enabled || !config.followIconColor
+            || objc_getAssociatedObject(owner, &colorKey) != state || [owner icon] != state.icon) return;
+        UIView *imageView = state.imageView;
+        if (!imageView) return;
+        UIImage *image = DisplayedImage(imageView);
+        CGImageRef cg = image.CGImage;
+        id contents = imageView.layer.contents;
+        if (!cg && contents && CFGetTypeID((__bridge CFTypeRef)contents) == CGImageGetTypeID())
+            cg = (__bridge CGImageRef)contents;
+        // Compare the selected immutable CGImage, not changing UIImage wrappers/bounds.
+        id source = (__bridge id)cg;
+        BOOL same = state.contents == source;
+        if (!FLNeedsIconSample(state.sampled, same, NO)) return;
+        state.image = image; state.contents = source; state.sampled = YES; state.valid = NO;
+        if (!cg || !CGImageGetWidth(cg) || !CGImageGetHeight(cg)) { Update(owner); return; }
+        CGImageRetain(cg);
         dispatch_async(colorQueue, ^{
             uint8_t pixels[24 * 24 * 4] = {};
             CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
@@ -96,41 +61,52 @@ static FLRGB IconColor(SBIconView *view, UIView *imageView, id icon, FLRGB manua
             FLRGB rgb = {};
             BOOL valid = NO;
             if (context) {
-                if (cg) {
-                    CGContextDrawImage(context, CGRectMake(0, 0, 24, 24), cg);
-                    valid = FLRepresentativeColor(pixels, 576, &rgb);
-                }
+                CGContextDrawImage(context, CGRectMake(0, 0, 24, 24), cg);
+                valid = FLRepresentativeColor(pixels, 576, &rgb);
                 CGContextRelease(context);
             }
-            if (cg) CGImageRelease(cg);
+            CGImageRelease(cg);
             dispatch_async(dispatch_get_main_queue(), ^{
-                SBIconView *owner = weakView;
-                if (!owner || !FLAcceptIconSample(objc_getAssociatedObject(owner, &colorKey) == state,
-                    [owner icon] == state.icon, !stopped && config.followIconColor)) return;
+                SBIconView *target = weakView;
+                if (!target || state.contents != source || !FLAcceptIconSample(
+                    objc_getAssociatedObject(target, &colorKey) == state,
+                    [target icon] == state.icon, !stopped && config.enabled && config.followIconColor)) return;
                 state.rgb = rgb; state.valid = valid;
-                if (!valid && state.retries == 0) {
-                    state.retries = 1;
-                    QueueColorRefresh(owner, state);
-                }
-                Update(owner);
+                Update(target);
             });
         });
+    });
+}
+static FLRGB IconColor(SBIconView *view, UIView *imageView, id icon, FLRGB manual) {
+    if (!config.followIconColor) return manual;
+    FLIconColorState *state = objc_getAssociatedObject(view, &colorKey);
+    if (!state || state.icon != icon || state.imageView != imageView) {
+        ClearColor(view);
+        state = [FLIconColorState new];
+        state.owner = view; state.icon = icon; state.imageView = imageView;
+        objc_setAssociatedObject(view, &colorKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(imageView, &imageOwnerKey, state, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        QueueColorRefresh(view, state);
     }
     return FLChooseColor(config.followIconColor, state.valid, state.rgb, manual);
 }
 // Optional image hooks remain signature-gated; public layer fallback needs no private getter.
 static void (*originalImageUpdate)(id, SEL, bool);
 static void (*originalImageLoaded)(id, SEL, id);
+static void RefreshOwner(SBIconView *view) {
+    if (stopped || !config.enabled || !config.followIconColor) return;
+    Update(view);
+    FLIconColorState *state = objc_getAssociatedObject(view, &colorKey);
+    if (state) QueueColorRefresh(view, state);
+}
 static void RefreshImage(id imageView) {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (stopped || !config.followIconColor) return;
-        for (SBIconView *view in views.allObjects) {
-            if ([view _iconImageView] != imageView) continue;
-            FLIconColorState *state = objc_getAssociatedObject(view, &colorKey);
-            if (state && FLRefreshIconSample(state.valid, state.localCapture)) QueueColorRefresh(view, state);
-            Update(view);
-        }
-    });
+    void (^refresh)(void) = ^{
+        FLIconColorState *state = objc_getAssociatedObject(imageView, &imageOwnerKey);
+        SBIconView *owner = state.owner;
+        if (owner && objc_getAssociatedObject(owner, &colorKey) == state) RefreshOwner(owner);
+    };
+    if (NSThread.isMainThread) refresh();
+    else dispatch_async(dispatch_get_main_queue(), refresh);
 }
 static void ImageUpdate(id self, SEL cmd, bool animated) {
     originalImageUpdate(self, cmd, animated); RefreshImage(self);
