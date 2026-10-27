@@ -5,5 +5,5 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = FilesNativeProbe
 FilesNativeProbe_FILES = Entry.m DualPane.m
 FilesNativeProbe_CFLAGS = -fobjc-arc
-FilesNativeProbe_FRAMEWORKS = UIKit Foundation QuartzCore
+FilesNativeProbe_FRAMEWORKS = UIKit Foundation QuartzCore QuickLook
 include $(THEOS_MAKE_PATH)/tweak.mk

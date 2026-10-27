@@ -21,6 +21,12 @@ jobs:
       - name: Static safety checks
         run: |
           python3 tests/check_dualpane.py
+          python3 tests/check_actions.py
+      - name: Execute coordinated preview fixture and scope lifecycle
+        run: |
+          python3 tests/preview_host.py "$RUNNER_TEMP/preview-host.m"
+          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation "$RUNNER_TEMP/preview-host.m" -o "$RUNNER_TEMP/preview-host"
+          "$RUNNER_TEMP/preview-host"
       - name: Execute production transient state wrappers on host
         run: |
           python3 tests/state_host.py "$RUNNER_TEMP/state-host.m"
@@ -45,7 +51,7 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.filesdualpane.nativeprobe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.4.0
+          test "$(dpkg-deb -f "$deb" Version)" = 0.5.0
           dpkg-deb -x "$deb" "$RUNNER_TEMP/files-package"
           binary=$(python3 -c 'import os,pathlib; print(next(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("files-package").rglob("FilesNativeProbe.dylib")))')
           test -n "$binary"

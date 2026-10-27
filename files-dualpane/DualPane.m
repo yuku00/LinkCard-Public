@@ -1,4 +1,5 @@
 #import "DualPane.h"
+#import <QuickLook/QuickLook.h>
 #import <objc/runtime.h>
 #import <sys/sysctl.h>
 #include <string.h>
@@ -73,6 +74,8 @@ static BOOL InstallStateIsolation(void) {
 @property(nonatomic,strong) UIViewController *nativeSplit;
 @property(nonatomic,strong) id configuration;
 @property(nonatomic,strong) id sourceObserver;
+- (void)showActions;
+- (void)previewURLs:(NSArray<NSURL *> *)urls;
 - (void)unsupported;
 - (void)close;
 @end
@@ -93,6 +96,7 @@ static BOOL InExperiment(id v) {
     for(;v;v=[v parentViewController]) if([v isKindOfClass:FPBrowserPane.class]) return YES;
     return NO;
 }
+#include "ScopedPreview.inc"
 @implementation FPBrowserPane
 - (void)dealloc {
     NSString *key=OwnState(_configuration);
@@ -104,43 +108,63 @@ static BOOL InExperiment(id v) {
     child.view.frame=self.view.bounds; child.view.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
     [self.view addSubview:child.view]; [child didMoveToParentViewController:self];
 }
+- (void)showActions {
+    id full=Get(self.nativeSplit,@"fullDocumentManagerViewController");
+    UIViewController *target=Get(full,@"currentItemCollectionViewController");
+    if(!InExperiment(target) || ![target isKindOfClass:NSClassFromString(@"Files.DOCItemCollectionViewController")]) return;
+    UIAlertController *menu=[UIAlertController alertControllerWithTitle:@"本栏操作" message:@"操作原生当前目录与真实选择。文件权限、下载及错误由 Files / 提供商处理。" preferredStyle:UIAlertControllerStyleActionSheet];
+    NSArray *actions=@[@[@"选择 / 完成",@"userToggledSelectionMode"],@[@"全选",@"selectAllItems"],@[@"取消选择",@"deselectAllItems"],@[@"重命名",@"performRename:"],@[@"新建文件夹",@"performCreateFolder:"],@[@"属性 / 完整名称",@"performGetInfo:"],@[@"预览",@"performPreview:"],@[@"删除…",@"performDelete:"]];
+    for(NSArray *pair in actions) {
+        NSString *name=pair[1]; BOOL argument=[name hasSuffix:@":"]; SEL sel=NSSelectorFromString(name);
+        if(!ABI(target.class,name,argument ? "v@:@" : "v@:")) continue;
+        UIAlertAction *action=[UIAlertAction actionWithTitle:pair[0] style:[name isEqual:@"performDelete:"] ? UIAlertActionStyleDestructive : UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+            if(!InExperiment(target) || Get(full,@"currentItemCollectionViewController")!=target) return;
+            if(argument) ((void(*)(id,SEL,id))[target methodForSelector:sel])(target,sel,nil);
+            else ((void(*)(id,SEL))[target methodForSelector:sel])(target,sel);
+        }];
+        action.enabled=!argument || [target canPerformAction:sel withSender:nil]; [menu addAction:action];
+    }
+    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    menu.popoverPresentationController.sourceView=self.view; menu.popoverPresentationController.sourceRect=CGRectMake(self.view.bounds.size.width/2,0,1,1);
+    [self presentViewController:menu animated:YES completion:nil];
+}
+- (void)previewURLs:(NSArray<NSURL *> *)urls {
+    if(self.presentedViewController || ![urls isKindOfClass:NSArray.class] || !urls.count) return;
+    NSMutableArray *valid=[NSMutableArray new], *scopes=[NSMutableArray new];
+    for(id value in urls) {
+        if(![value isKindOfClass:NSURL.class] || ![value isFileURL]) continue;
+        if([value startAccessingSecurityScopedResource]) [scopes addObject:value];
+        [valid addObject:value];
+    }
+    if(!valid.count) return;
+    FPScopedPreview *preview=[FPScopedPreview new]; preview.urls=valid; preview.scopes=scopes; preview.dataSource=preview;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
+        NSError *failure=CheckPreviewURLs(valid);
+        dispatch_async(dispatch_get_main_queue(),^{
+            if(!self.parentViewController || self.presentedViewController) return;
+            if(failure) {
+                UIAlertController *a=[UIAlertController alertControllerWithTitle:@"无法预览" message:failure.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
+                [a addAction:[UIAlertAction actionWithTitle:@"返回" style:UIAlertActionStyleCancel handler:nil]];
+                [self presentViewController:a animated:YES completion:nil];
+            } else [self presentViewController:preview animated:YES completion:nil];
+        });
+    });
+}
 - (void)unsupported {
     if(self.presentedViewController || self.isBeingDismissed) return;
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"0.4.0 · 原生双窗格浏览" message:@"支持目录浏览、选择与返回。本版暂不桥接文件打开、预览或跨栏复制/移动；请关闭双窗格后在原 Files 中操作。原生其他入口不是只读沙箱。" preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"继续浏览" style:UIAlertActionStyleCancel handler:nil]];
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"不支持新建文档" message:@"本版可新建文件夹，不提供文本编辑或文档模板。" preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"返回" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:a animated:YES completion:nil];
 }
-- (void)documentBrowser:(UIDocumentBrowserViewController *)b didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls { [self unsupported]; }
-- (void)documentBrowser:(UIDocumentBrowserViewController *)b didPickDocumentURLs:(NSArray<NSURL *> *)urls { [self unsupported]; }
-- (void)documentBrowser:(id)b didPickImportedURLs:(id)urls { [self unsupported]; }
-- (void)documentBrowser:(id)b commitPreviewOfDocumentAtURL:(id)url { [self unsupported]; }
+- (void)documentBrowser:(UIDocumentBrowserViewController *)b didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls { [self previewURLs:urls]; }
+- (void)documentBrowser:(UIDocumentBrowserViewController *)b didPickDocumentURLs:(NSArray<NSURL *> *)urls { [self previewURLs:urls]; }
+- (void)documentBrowser:(id)b didPickImportedURLs:(id)urls { [self previewURLs:urls]; }
+- (void)documentBrowser:(id)b commitPreviewOfDocumentAtURL:(id)url { if([url isKindOfClass:NSURL.class]) [self previewURLs:@[url]]; }
 - (void)documentBrowser:(UIDocumentBrowserViewController *)b didRequestDocumentCreationWithHandler:(void (^)(NSURL *,UIDocumentBrowserImportMode))handler { handler(nil,UIDocumentBrowserImportModeNone); [self unsupported]; }
 - (void)documentManagerWasCancelled:(id)manager { [self close]; }
 - (void)close { for(UIViewController *p=self.parentViewController;p;p=p.parentViewController) if([p isKindOfClass:FPDualContainer.class]) { [(FPDualContainer *)p close]; return; } }
 @end
-static void BlockPreview(id object) {
-    for(UIViewController *v=object; v; v=v.parentViewController)
-        if([v isKindOfClass:FPBrowserPane.class]) { [(FPBrowserPane *)v unsupported]; return; }
-}
-static BOOL PreviewABI(void) {
-    Class c=NSClassFromString(@"Files.DOCItemCollectionViewController");
-    return ABI(c,@"performPreview:","v@:@") &&
-        ABI(c,@"contextMenuInteraction:configurationForMenuAtLocation:","@@:@{CGPoint=dd}") &&
-        ABI(c,@"collectionView:contextMenuConfigurationForItemsAtIndexPaths:point:","@@:@@{CGPoint=dd}") &&
-        ABI(c,@"collectionView:contextMenuConfigurationForItemAtIndexPath:point:","@@:@@{CGPoint=dd}");
-}
-static void InstallPreviewGuards(void) {
-    // Scope every guard to descendants of our new Split; original graph is transparent pass-through.
-    Class c=NSClassFromString(@"Files.DOCItemCollectionViewController");
-    SEL p=NSSelectorFromString(@"performPreview:"); Method pm=class_getInstanceMethod(c,p); IMP po=method_getImplementation(pm);
-    class_replaceMethod(c,p,imp_implementationWithBlock(^(id s,id sender){ if(InExperiment(s)) { BlockPreview(s); return; } ((void(*)(id,SEL,id))po)(s,p,sender); }),method_getTypeEncoding(pm));
-    SEL menu=NSSelectorFromString(@"contextMenuInteraction:configurationForMenuAtLocation:"); Method mm=class_getInstanceMethod(c,menu); IMP mo=method_getImplementation(mm);
-    class_replaceMethod(c,menu,imp_implementationWithBlock(^id(id s,id interaction,CGPoint point){ if(InExperiment(s)) { BlockPreview(s); return nil; } return ((id(*)(id,SEL,id,CGPoint))mo)(s,menu,interaction,point); }),method_getTypeEncoding(mm));
-    for(NSString *name in @[@"collectionView:contextMenuConfigurationForItemsAtIndexPaths:point:",@"collectionView:contextMenuConfigurationForItemAtIndexPath:point:"]) {
-        SEL sel=NSSelectorFromString(name); Method m=class_getInstanceMethod(c,sel); IMP original=method_getImplementation(m);
-        class_replaceMethod(c,sel,imp_implementationWithBlock(^id(id s,id collection,id index,CGPoint point){ if(InExperiment(s)) { BlockPreview(s); return nil; } return ((id(*)(id,SEL,id,id,CGPoint))original)(s,sel,collection,index,point); }),method_getTypeEncoding(m));
-    }
-}
+#include "NativeActions.inc"
 static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *outConfig, id *outObserver, UIViewController **outOriginal) {
     char build[64]={0}; size_t length=sizeof(build); sysctlbyname("kern.osversion",build,&length,NULL,0);
     if(strcmp(build,"20G75") || !NSThread.isMainThread) return @"requires main thread and iOS build 20G75";
@@ -153,7 +177,6 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
         if(!ABI(full,key,"@@:")) return [@"Full getter unavailable: " stringByAppendingString:key];
     if(!ABI(full,@"setDelegate:","v@:@") || !ABI(full,@"fullDocumentManagerDelegate","@@:")) return @"Full external delegate binding unavailable";
     if(!ABI(NSClassFromString(@"Files.DOCDocumentManager"),@"uiBrowserDelegate","@@:")) return @"document manager delegate verification unavailable";
-    if(!PreviewABI()) return @"document preview/context-menu guard ABI unavailable";
     if(!RequiredMethods(@protocol(UIDocumentBrowserViewControllerDelegate),adapter)) return @"external browser protocol has unimplemented required methods";
     // Internal Split/sidebar/hierarchy protocols remain on factory-created native delegates.
     UIViewController *original=FindSplit(host,cls); if(!original) return @"no existing Split in original child tree";
@@ -179,7 +202,7 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
 
 @implementation FPDualContainer
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"双窗格 · 0.4.0"; self.view.backgroundColor=UIColor.systemBackgroundColor;
+    [super viewDidLoad]; self.title=@"双窗格 · 0.5.0"; self.view.backgroundColor=UIColor.systemBackgroundColor;
     self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStyleDone target:self action:@selector(close)];
     self.mode=[[UISegmentedControl alloc] initWithItems:@[@"并排",@"左栏",@"右栏"]];
     self.mode.selectedSegmentIndex=self.view.bounds.size.width>=700 ? 0 : 1;
@@ -192,7 +215,9 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
     for(FPBrowserPane *pane in self.panes) {
         [self addChildViewController:pane];
         UIStackView *column=[UIStackView new]; column.axis=UILayoutConstraintAxisVertical; column.backgroundColor=UIColor.systemBackgroundColor;
-        UILabel *label=[UILabel new]; label.text=pane==self.panes.firstObject ? @"左栏" : @"右栏"; label.textAlignment=NSTextAlignmentCenter; label.font=[UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
+        UIButton *label=[UIButton buttonWithType:UIButtonTypeSystem]; [label setTitle:pane==self.panes.firstObject ? @"左栏 · 操作" : @"右栏 · 操作" forState:UIControlStateNormal]; label.titleLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline];
+        [label.heightAnchor constraintGreaterThanOrEqualToConstant:44].active=YES;
+        [label addTarget:pane action:@selector(showActions) forControlEvents:UIControlEventTouchUpInside];
         [column addArrangedSubview:label]; [column addArrangedSubview:pane.view]; [self.stack addArrangedSubview:column]; [pane didMoveToParentViewController:self];
     }
     [self applyMode];
@@ -277,7 +302,7 @@ void FPDualPanePresent(UIViewController *host) {
         }
         ShowFailure(host,failure); return;
     }
-    static dispatch_once_t once; dispatch_once(&once,^{ InstallPreviewGuards(); });
+    static dispatch_once_t once; dispatch_once(&once,^{ InstallNativeActions(); });
     FPDualContainer *container=[FPDualContainer new]; container.panes=panes;
     UINavigationController *modal=[[UINavigationController alloc] initWithRootViewController:container];
     modal.modalPresentationStyle=UIModalPresentationFullScreen; modal.modalInPresentation=YES;
