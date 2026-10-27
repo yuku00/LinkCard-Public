@@ -205,7 +205,7 @@ void FPExperimentPresent(UIViewController *host) {
         id oldFull=Get(original,@"fullDocumentManagerViewController");
         // Factory is dynamically evidenced on 20G75; no guessed enum or nil required argument.
         Note(@"construction=entered");
-        UIViewController *split=[(id<FPNativeFactory>)[NSClassFromString(@"DOCSplitBrowserViewController") alloc] initWithConfiguration:config sourceObserver:observer];
+        UIViewController *split=(UIViewController *)[(id<FPNativeFactory>)[NSClassFromString(@"DOCSplitBrowserViewController") alloc] initWithConfiguration:config sourceObserver:observer];
         id full=Get(split,@"fullDocumentManagerViewController");
         if(!split || !full || split==original || full==oldFull || split.parentViewController) failure=@"factory did not produce unattached independent Split/Full";
         if(!failure) {
