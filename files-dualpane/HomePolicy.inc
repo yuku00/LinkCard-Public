@@ -18,3 +18,5 @@ static BOOL FPHomeIsBrowse(BOOL visibleSidebar, BOOL matchesBrowseLocation) {
 static BOOL FPHomeCanCommit(BOOL bookmarkValid, NSUInteger savedGeneration, NSUInteger currentGeneration) {
     return bookmarkValid && savedGeneration==currentGeneration;
 }
+
+static BOOL FPHomeLocationUnchanged(id before,id now) { return before==now || [before isEqual:now]; }

@@ -6,7 +6,7 @@ static void FPDisclosure(UICollectionViewCell *cell, BOOL compact) {
     NSDictionary *saved=objc_getAssociatedObject(list,&FPDisclosureKey);
     if(!compact) {
         if(saved) {
-            if([list.accessories isEqual:saved[@"filtered"]]) list.accessories=saved[@"original"];
+            if(list.accessories==saved[@"filtered"] && [list.accessories isEqual:saved[@"filtered"]]) list.accessories=saved[@"original"];
             objc_setAssociatedObject(list,&FPDisclosureKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
         return;
@@ -17,7 +17,8 @@ static void FPDisclosure(UICollectionViewCell *cell, BOOL compact) {
         else [kept addObject:item];
     }];
     if(!removed.count) return;
-    objc_setAssociatedObject(list,&FPDisclosureKey,@{@"original":list.accessories,@"filtered":kept},OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    NSArray *original=list.accessories;
     list.accessories=kept;
+    objc_setAssociatedObject(list,&FPDisclosureKey,@{@"original":original,@"filtered":list.accessories},OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     // Cell accessibility traits/actions and all delegate callbacks remain native.
 }

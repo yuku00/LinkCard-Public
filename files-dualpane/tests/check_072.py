@@ -20,7 +20,7 @@ assert 'defaultDownloads' in p+v and 'custom' in p and 'browse' in p
 assert 'isKindOfClass:NSData.class' in p+h and 'schema' in p
 assert 'revision!=pane.homeRevision' in v and 'FPHomeCanCommit' in v
 assert '原首页保留' in v and '5*NSEC_PER_SEC' in v+h
-assert '[self restoreWhenReady:0]' in s and 'self.homeAttempted=YES; FPRestoreHome(self)' not in s
+assert '[self restoreWhenReady:0 token:self.homeGeneration]' in s and 'self.homeAttempted=YES; FPRestoreHome(self)' not in s
 assert 'FPHomeTouchObserver' in s and 'cancelsTouchesInView=NO' in s
 assert 'FPRestorePaneStyles(pane)' in s and 'savedLargeTitles.boolValue' in s
 assert 'FPDisclosure(cell,compact)' in a and 'FPDisclosure' not in (r/'CompactCells.inc').read_text()
@@ -29,6 +29,5 @@ assert 'saved[@"filtered"]' in d and 'saved[@"original"]' in d
 assert 'scaledFontForFont:' in (r/'CompactCells.inc').read_text() and 'FPCellFont(cell,14)' in a
 assert 'CGSizeMake(20,20)' in a and 'MAX(44,' in a and 'return 1;' in a
 assert 'CollectLabels' not in a and 'UIAppearance' not in a.split('static char')[1]
-assert 'original' not in n.split('InstallHomeLocationTracking')[1] or True
 print('PASS 0.7.2 production bindings: visible-folder vs Browse, semantic system download read only, true native navigation, isolated schema migration/failure preservation, bounded touch-cancellable restoration, sidebar/arrow scope and restoration')
 print('LIMIT no device UIKit/provider runtime execution; missing cached system download item intentionally falls back to Browse without creation')

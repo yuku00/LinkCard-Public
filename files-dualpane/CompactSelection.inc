@@ -18,7 +18,7 @@ static void FPSelectionVisual(UICollectionViewCell *cell, BOOL compact) {
         NSArray *filtered=objc_getAssociatedObject(cell,&FPFilteredAccessoriesKey);
         objc_setAssociatedObject(cell,&FPAccessoriesKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         objc_setAssociatedObject(cell,&FPFilteredAccessoriesKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        if(original && [cell isKindOfClass:UICollectionViewListCell.class] && [((UICollectionViewListCell *)cell).accessories isEqual:filtered]) ((UICollectionViewListCell *)cell).accessories=original;
+        if(original && [cell isKindOfClass:UICollectionViewListCell.class] && ((UICollectionViewListCell *)cell).accessories==filtered && [((UICollectionViewListCell *)cell).accessories isEqual:filtered]) ((UICollectionViewListCell *)cell).accessories=original;
         return;
     }
     if([cell isKindOfClass:UICollectionViewListCell.class]) {
@@ -27,7 +27,7 @@ static void FPSelectionVisual(UICollectionViewCell *cell, BOOL compact) {
         if(filtered.count!=list.accessories.count) {
             objc_setAssociatedObject(cell,&FPAccessoriesKey,list.accessories,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             list.accessories=filtered;
-            objc_setAssociatedObject(cell,&FPFilteredAccessoriesKey,filtered,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(cell,&FPFilteredAccessoriesKey,list.accessories,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
     }
     if(!highlight) {

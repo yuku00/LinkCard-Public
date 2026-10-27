@@ -58,6 +58,7 @@ int main(void) { @autoreleasepool {
  homes[@"left"]=legacy;
  if(FPHomeCanCommit(NO,1,1)) homes[@"left"]=FPHomeRecord(nil); assert(homes[@"left"]==legacy);
  assert(!FPHomeCanCommit(YES,1,2)); assert(FPHomeCanCommit(YES,2,2));
+ assert(FPHomeLocationUnchanged(nil,nil)); assert(!FPHomeLocationUnchanged(@"old",@"new")); assert(FPHomeLocationUnchanged(@"same",@"same"));
  assert(FPHomeMayContinue(1,1,YES,NO,19)); assert(!FPHomeMayContinue(1,1,YES,NO,20));
  assert(!FPHomeMayContinue(1,2,YES,NO,0)); assert(!FPHomeMayContinue(1,1,YES,YES,0)); assert(!FPHomeMayContinue(1,1,NO,NO,0));
  assert(!FPHomeIsBrowse(NO,NO)); assert(FPHomeIsBrowse(YES,NO)); assert(FPHomeIsBrowse(NO,YES));

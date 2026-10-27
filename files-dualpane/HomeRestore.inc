@@ -35,7 +35,9 @@ static void FPFetchLocation(FPBrowserPane *pane,NSURL *url,void(^completion)(id)
     });
 }
 static BOOL FPHomeAlive(FPBrowserPane *pane,NSUInteger token,NSUInteger attempt) {
-    return FPHomeMayContinue(token,pane.homeGeneration,pane.parentViewController!=nil,pane.homeTouched,attempt);
+    if(!FPHomeMayContinue(token,pane.homeGeneration,pane.parentViewController!=nil,pane.homeTouched,attempt)) return NO;
+    // Also respect keyboard/VoiceOver navigation that did not create a touch event.
+    return pane.homeNavigationIssued || FPHomeLocationUnchanged(pane.homeInitialLocation,FPCurrentLocation(pane));
 }
 static void FPHomeFallback(FPBrowserPane *pane,NSString *reason) {
     id split=pane.nativeSplit; SEL s=NSSelectorFromString(@"showSidebar");
@@ -45,11 +47,14 @@ static void FPHomeFallback(FPBrowserPane *pane,NSString *reason) {
 static void FPConfirmHome(FPBrowserPane *pane,id location,NSUInteger token,NSUInteger attempt) {
     if(!FPHomeAlive(pane,token,0)) return;
     if([FPCurrentLocation(pane) isEqual:location]) { FPNotice((id)pane.parentViewController,@"首页目录已打开"); return; }
+    id current=FPCurrentLocation(pane);
+    if(current && !FPHomeLocationUnchanged(pane.homeInitialLocation,current)) return;
     if(attempt>=19) { FPHomeFallback(pane,@"首页目录未确认打开，已退回浏览；保存的首页未更改。"); return; }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/4),dispatch_get_main_queue(),^{ FPConfirmHome(pane,location,token,attempt+1); });
 }
 static void FPOpenHomeLocation(FPBrowserPane *pane,id location,NSUInteger token) {
     if(!FPHomeAlive(pane,token,0)) return;
+    pane.homeNavigationIssued=YES;
     if(!location || !FPShowLocation(pane,location)) { FPHomeFallback(pane,@"该提供商没有可用的目录导航入口，已退回浏览；原首页保留。"); return; }
     FPConfirmHome(pane,location,token,0);
 }
@@ -64,7 +69,7 @@ static void FPDefaultDownloads(FPBrowserPane *pane,NSUInteger token,NSUInteger a
 }
 static void FPRestoreHome(FPBrowserPane *pane) {
     if(pane.homeTouched || !pane.parentViewController) return;
-    NSUInteger token=++pane.homeGeneration;
+    NSUInteger token=++pane.homeGeneration; pane.homeInitialLocation=FPCurrentLocation(pane); pane.homeNavigationIssued=NO;
     id old=[FPHomeDefaults() objectForKey:FPHomeKey(pane)]; NSDictionary *record=FPHomeRecord(old);
     if(!record) { FPHomeFallback(pane,@"首页记录损坏或版本不支持；原记录保留，已退回浏览。"); return; }
     if([old isKindOfClass:NSData.class]) [FPHomeDefaults() setObject:record forKey:FPHomeKey(pane)];

@@ -83,9 +83,11 @@ static BOOL InstallStateIsolation(void) {
 @property(nonatomic) NSUInteger homeGeneration;
 @property(nonatomic) NSUInteger homeRevision;
 @property(nonatomic,strong) id downloadSettings;
+@property(nonatomic,strong) id homeInitialLocation;
+@property(nonatomic) BOOL homeNavigationIssued;
 @property(nonatomic,strong) NSNumber *savedLargeTitles;
 - (void)homeTouch;
-- (void)restoreWhenReady:(NSUInteger)attempt;
+- (void)restoreWhenReady:(NSUInteger)attempt token:(NSUInteger)token;
 - (void)applyInitialList;
 - (void)previewURLs:(NSArray<NSURL *> *)urls;
 - (void)unsupported;
@@ -142,14 +144,14 @@ static BOOL InExperiment(id v) {
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
     if(!self.initialListStarted) { self.initialListStarted=YES; [self applyInitialList]; }
-    if(!self.homeAttempted) { self.homeAttempted=YES; [self restoreWhenReady:0]; }
+    if(!self.homeAttempted) { self.homeAttempted=YES; [self restoreWhenReady:0 token:self.homeGeneration]; }
 }
 - (void)homeTouch { self.homeTouched=YES; ++self.homeGeneration; }
-- (void)restoreWhenReady:(NSUInteger)attempt {
-    if(!FPHomeMayContinue(self.homeGeneration,self.homeGeneration,self.parentViewController!=nil,self.homeTouched,attempt)) return;
+- (void)restoreWhenReady:(NSUInteger)attempt token:(NSUInteger)token {
+    if(!FPHomeMayContinue(token,self.homeGeneration,self.parentViewController!=nil,self.homeTouched,attempt)) return;
     if(FPVisibleController(self) || FPBool(self.nativeSplit,@"isShowingCollapsedSidebarViewController")) { FPRestoreHome(self); return; }
     if(attempt==19) { FPHomeFallback(self,@"首页浏览器尚未就绪，保留浏览；不会再抢占导航。"); return; }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/4),dispatch_get_main_queue(),^{ [self restoreWhenReady:attempt+1]; });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC/4),dispatch_get_main_queue(),^{ [self restoreWhenReady:attempt+1 token:token]; });
 }
 - (void)applyInitialList {
     if(!self.parentViewController || !self.nativeSplit) return;
