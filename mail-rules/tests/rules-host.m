@@ -18,6 +18,18 @@
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)selector { return [self.target methodSignatureForSelector:selector]; }
 - (void)forwardInvocation:(NSInvocation *)invocation { [invocation invokeWithTarget:self.target]; }
 @end
+@interface FixtureMessage : NSObject
+@property(copy) NSArray *senderList;
+@property(readonly) id senderAddress;
+@property(readonly) NSArray *fixtureDerivedSenders;
+@property(readonly) NSArray *recipientValues;
+@end
+@implementation FixtureMessage
+- (id)senderAddress {return self.senderList.firstObject;}
+- (NSArray *)fixtureDerivedSenders {return [self.senderList valueForKey:@"stringValue"];}
+- (NSArray *)recipientValues {return @[@"mr.fixture+keep@fixture.invalid"];}
+@end
+static id Message(NSArray *senders) {FixtureMessage *m=[FixtureMessage new];m.senderList=senders;return m;}
 static id Address(NSString *s) {FixtureAddress *a=[FixtureAddress new]; a.stringValue=MRNormalize(s); return a;}
 int main(void) { @autoreleasepool {
     NSMutableDictionary *identities=[NSMutableDictionary dictionary];
@@ -29,6 +41,16 @@ int main(void) { @autoreleasepool {
     assert([MRIdentityKey(serialized,reloaded) isEqual:key]);
     assert(![MRIdentityKey(@{@"id":@"fixture-account-B"},reloaded) isEqual:key]);
     assert(!MRIdentityKey(nil,reloaded) && !MRIdentityKey([NSObject new],reloaded));
+    assert(!MRIdentityKey(@{},reloaded) && !MRIdentityKey(@"",reloaded));
+    NSMutableDictionary *ambiguous=[reloaded mutableCopy]; ambiguous[@"object:duplicate"]=serialized;
+    assert(!MRIdentityKey(serialized,ambiguous));
+    NSObject *owner=[NSObject new], *source=[NSObject new], *boxA=[NSObject new], *boxB=[NSObject new];
+    assert(MRContextMatches(owner,source,source,@"A",@"A",boxA,boxA));
+    assert(!MRContextMatches(owner,source,source,@"A",@"B",boxA,boxB));
+    assert(!MRContextMatches(owner,source,source,@"A",@"A",boxA,boxB));
+    assert(!MRContextMatches(owner,source,[NSObject new],@"A",@"A",boxA,boxA));
+    assert(!MRContextMatches(nil,source,source,@"A",@"A",boxA,boxA));
+    assert(!MRContextMatches(owner,source,source,@"A",nil,boxA,boxA));
     ForwardedAddress *forwarded=[ForwardedAddress alloc]; forwarded.target=Address(@"A.B+tag@EXAMPLE.COM");
     assert([MRReadAddress(forwarded) isEqual:@"A.B+tag@example.com"]);
     assert(!MRReadAddress(nil) && !MRReadAddress(@42));
@@ -43,7 +65,21 @@ int main(void) { @autoreleasepool {
     for(NSPredicate *bad in @[[NSPredicate predicateWithFormat:@"senderAddress.stringValue CONTAINS %@",address], [NSPredicate predicateWithFormat:@"senderAddress.stringValue ==[c] %@",address], [NSPredicate predicateWithFormat:@"subject == %@",address], [NSPredicate predicateWithFormat:@"senderAddress.stringValue BEGINSWITH %@",address], [NSPredicate predicateWithValue:YES]]) assert(!MRValidateSenderPredicate(bad,address,^id(NSString *s){return Address(s);}));
     assert(NSAnyPredicateModifier==2 && NSEqualToPredicateOperatorType==4 && NSCaseInsensitivePredicateOption==1);
     NSPredicate *nativeShape=[NSPredicate predicateWithFormat:@"ANY senderList.emailAddressValue.simpleAddress ==[c] %@",address];
-    assert(MRValidateSenderPredicate(nativeShape,address,^id(NSString *s){return Address(s);}));
+    assert(MRValidateSenderPredicateWithModel(nativeShape,address,^id(NSString *s){return Address(s);},^id(NSArray *senders){return Message(senders);}));
+    assert([nativeShape evaluateWithObject:Message(@[Address(@"other@fixture.invalid"),Address([address uppercaseString])])]);
+    assert(![nativeShape evaluateWithObject:Message(@[Address(@"other@fixture.invalid"),Address(@"prefixmr.fixture+keep@fixture.invalid")])]);
+    assert(!MRValidateSenderPredicateWithModel(nativeShape,address,^id(NSString *s){return Address(s);},^id(NSArray *senders){return nil;}));
+    NSPredicate *derived=[NSPredicate predicateWithFormat:@"ANY fixtureDerivedSenders ==[c] %@",address];
+    assert(MRValidateNativeSenderPredicate(derived,address,^id(NSString *s){return Address(s);},^id(NSArray *senders){return Message(senders);}));
+    assert(!MRValidateSenderPredicateWithModel(derived,address,^id(NSString *s){return Address(s);},^id(NSArray *senders){return Message(senders);}));
+    for (NSString *keyPath in @[@"recipientValues",@"notADeclaredField",@"senderList.@count",@"senderList.description"]) {
+        NSPredicate *bad=[NSComparisonPredicate predicateWithLeftExpression:[NSExpression expressionForKeyPath:keyPath] rightExpression:[NSExpression expressionForConstantValue:address] modifier:NSAnyPredicateModifier type:NSEqualToPredicateOperatorType options:NSCaseInsensitivePredicateOption];
+        assert(!MRValidateNativeSenderPredicate(bad,address,^id(NSString *s){return Address(s);},^id(NSArray *senders){return Message(senders);}));
+    }
+    for (NSComparisonPredicateOptions options=2;options<8;options++) {
+        NSPredicate *bad=[NSComparisonPredicate predicateWithLeftExpression:[NSExpression expressionForKeyPath:@"senderList.emailAddressValue.simpleAddress"] rightExpression:[NSExpression expressionForConstantValue:address] modifier:NSAnyPredicateModifier type:NSEqualToPredicateOperatorType options:options];
+        assert(!MRValidateSenderPredicate(bad,address,^id(NSString *s){return Address(s);}));
+    }
     for (NSString *badKey in @[@"toList.emailAddressValue.simpleAddress", @"senderList.displayName", @"senderList.@count", @"accountIdentifier", @"subject"]) {
         NSPredicate *bad=[NSComparisonPredicate predicateWithLeftExpression:[NSExpression expressionForKeyPath:badKey] rightExpression:[NSExpression expressionForConstantValue:address] modifier:NSAnyPredicateModifier type:NSEqualToPredicateOperatorType options:NSCaseInsensitivePredicateOption];
         assert(!MRValidateSenderPredicate(bad,address,^id(NSString *s){return Address(s);}));
@@ -51,6 +87,15 @@ int main(void) { @autoreleasepool {
     NSPredicate *base=[NSPredicate predicateWithFormat:@"unread == YES"], *ignore=[NSPredicate predicateWithFormat:@"ignored == YES"];
     NSPredicate *exclude=[NSCompoundPredicate notPredicateWithSubpredicate:include];
     NSPredicate *combined=MRCombine(base,exclude);
+    assert(MRCombineSection(base,exclude,@"OtherSection")==base);
+    assert(MRCombineSection(base,exclude,nil)==base);
+    assert([MRCombineSection(base,exclude,@"MessageListSectionRecent") isEqual:combined]);
+    // The same guard used by production restore must not replay A's baseline into B.
+    NSPredicate *bBase=[NSPredicate predicateWithFormat:@"unread == NO"];
+    NSPredicate *restored=MRContextMatches(owner,source,source,@"A",@"B",boxA,boxB) ? base : bBase;
+    assert(restored==bBase);
+    restored=MRContextMatches(owner,source,source,@"A",@"A",boxA,boxA) ? base : bBase;
+    assert(restored==base);
     NSDictionary *hidden=@{@"senderAddress":Address(address),@"unread":@YES,@"ignored":@NO};
     NSDictionary *visible=@{@"senderAddress":Address(@"other@fixture.invalid"),@"unread":@YES,@"ignored":@NO};
     assert(![combined evaluateWithObject:hidden]); assert([combined evaluateWithObject:visible]);

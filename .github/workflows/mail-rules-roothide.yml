@@ -46,7 +46,7 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.mailrules.probe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.3.0
+          test "$(dpkg-deb -f "$deb" Version)" = 0.3.1
           dpkg-deb -x "$deb" "$RUNNER_TEMP/mail-rules-package"
           binary=$(python3 -c 'import os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"mail-rules-package"; binaries=list(p.rglob("*.dylib")); assert len(binaries)==1 and binaries[0].name=="MailRules.dylib"; print(binaries[0])')
           lipo "$binary" -verify_arch arm64 arm64e
@@ -56,7 +56,7 @@ jobs:
           shasum -a 256 packages/*.deb > packages/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: mail-rules-0.3.0-${{ github.sha }}
+          name: mail-rules-0.3.1-${{ github.sha }}
           path: |
             mail-rules/packages/*.deb
             mail-rules/packages/SHA256SUMS

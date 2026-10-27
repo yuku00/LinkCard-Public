@@ -45,8 +45,19 @@ static NSArray *Boxes(id vc) {
     return [boxes isKindOfClass:NSArray.class] ? boxes : ([boxes isKindOfClass:NSSet.class] ? [boxes allObjects] : @[]);
 }
 static NSString *BoxAccount(id box) {
-    if (![box isKindOfClass:NSClassFromString(@"EMMailbox")] || !ABI(box,@"accountIdentifier","@16@0:8")) return nil;
+    if (![box isKindOfClass:NSClassFromString(@"EMMailbox")] || !ABI(box,@"accountIdentifier","@16@0:8") || !ABI(box,@"isSmartMailbox","B16@0:8") || Flag(box,@"isSmartMailbox")) return nil;
     return Identity(Get(box,@"accountIdentifier"));
+}
+static NSString *AccountTitle(id vc, NSString *key) {
+    NSString *suffix=key.length>8 ? [key substringFromIndex:key.length-8] : key;
+    for (id box in Boxes(vc)) {
+        if (![BoxAccount(box) isEqual:key] || !ABI(box,@"account","@16@0:8")) continue;
+        id account=Get(box,@"account");
+        if (!ABI(account,@"objectID","@16@0:8") || ![Get(account,@"objectID") isEqual:Get(box,@"accountIdentifier")] || !ABI(account,@"name","@16@0:8")) continue;
+        id name=Get(account,@"name");
+        if ([name isKindOfClass:NSString.class] && [name length]) return [NSString stringWithFormat:@"%@ · %@",name,suffix];
+    }
+    return [NSString stringWithFormat:@"本地账号 · %@",suffix ?: @"未识别"];
 }
 static NSString *EditingAccount(id vc) {
     NSArray *boxes=Boxes(vc);
@@ -82,7 +93,19 @@ static NSPredicate *NativeInclude(NSString *s, BOOL stringArgument) {
     if (MRDiagnosticActive()) MRDiagnosticRecord(@"sender-factory",@{@"synthetic":@([s hasSuffix:@"@fixture.invalid"]),@"ast":MRPredicateShape(p)});
     return [p isKindOfClass:NSPredicate.class] ? p : nil;
 }
+static BOOL ValidateNativeSender(NSPredicate *predicate, NSString *address) {
+    Class model=NSClassFromString(@"EMMessage");
+    if (!model) return NO;
+    return MRValidateNativeSenderPredicate(predicate,address,^id(NSString *s){return Address(s);},^id(NSArray *senders){
+        id message=[[model alloc] init];
+        if (!ABI(message,@"setSenderList:","v24@0:8@16") || !ABI(message,@"senderList","@16@0:8")) { [message release]; return nil; }
+        ((void(*)(id,SEL,id))objc_msgSend)(message,NSSelectorFromString(@"setSenderList:"),senders);
+        return [message autorelease];
+    });
+}
 static NSInteger PredicateMode = -2;
+static NSString *SenderKey;
+static NSComparisonPredicateOptions SenderOptions;
 static NSPredicate *Exclusion(NSArray *rules, NSString **reason) {
     @try {
         if (PredicateMode == -2) {
@@ -90,7 +113,10 @@ static NSPredicate *Exclusion(NSArray *rules, NSString **reason) {
             for (NSInteger mode=0;mode<2;mode++) {
                 @try {
                     NSPredicate *p=NativeInclude(@"mr.fixture+keep@fixture.invalid",mode==1);
-                    if (MRValidateSenderPredicate(p,@"mr.fixture+keep@fixture.invalid",^id(NSString *s){return Address(s);})) { PredicateMode=mode; break; }
+                    if (ValidateNativeSender(p,@"mr.fixture+keep@fixture.invalid")) {
+                        PredicateMode=mode; SenderKey=[((NSComparisonPredicate *)p).leftExpression.keyPath copy];
+                        SenderOptions=((NSComparisonPredicate *)p).options; break;
+                    }
                 } @catch (__unused NSException *e) { /* Try the other documented convertible representation. */ }
             }
         }
@@ -101,10 +127,11 @@ static NSPredicate *Exclusion(NSArray *rules, NSString **reason) {
             NSString *s=MRNormalize(rule[@"address"]);
             if (!s) continue;
             NSPredicate *p=NativeInclude(s,PredicateMode==1);
-            if (!MRValidateSenderPredicate(p,s,^id(NSString *value){return Address(value);})) { *reason=@"此地址的原生精确匹配验证失败，本账号隐藏已停用。"; return nil; }
+            if (!ValidateNativeSender(p,s) || ![((NSComparisonPredicate *)p).leftExpression.keyPath isEqual:SenderKey] || ((NSComparisonPredicate *)p).options != SenderOptions) { *reason=@"此地址的原生精确匹配验证失败，本账号隐藏已停用。"; return nil; }
             [predicates addObject:p];
         }
-        return predicates.count ? [NSCompoundPredicate notPredicateWithSubpredicate:[NSCompoundPredicate orPredicateWithSubpredicates:predicates]] : nil;
+        if (!predicates.count) { *reason=@"本账号没有已启用的有效规则：未隐藏任何邮件。"; return nil; }
+        return [NSCompoundPredicate notPredicateWithSubpredicate:[NSCompoundPredicate orPredicateWithSubpredicates:predicates]];
     } @catch (__unused NSException *e) { *reason=@"原生谓词接口拒绝合成测试，隐藏已停用。"; return nil; }
 }
 
@@ -112,10 +139,12 @@ static NSPredicate *Exclusion(NSArray *rules, NSString **reason) {
 @public
     UIViewController *owner; // assign; cleared by the base-class dealloc hook (also covers KVO subclasses).
     id source;
+    id boundMailbox;
     NSPredicate *exclude;
     NSMutableArray *calls;
     UIBarButtonItem *button;
     NSString *status;
+    NSString *activeAccount;
     BOOL visible;
     NSUInteger depth;
 }
@@ -126,6 +155,23 @@ static NSPredicate *Exclusion(NSArray *rules, NSString **reason) {
 - (void)diagnostics;
 - (void)edit:(NSUInteger)index account:(NSString *)account;
 - (void)manage:(NSUInteger)index account:(NSString *)account;
+@end
+static UIViewController *Presenter(MRState *s) {
+    UIViewController *vc=s->owner;
+    while (vc.presentedViewController && !vc.presentedViewController.isBeingDismissed && ![vc.presentedViewController isKindOfClass:UIAlertController.class] && ![vc.presentedViewController isKindOfClass:UIActivityViewController.class]) vc=vc.presentedViewController;
+    if ([vc isKindOfClass:UINavigationController.class]) vc=[(UINavigationController *)vc topViewController];
+    return vc;
+}
+static BOOL CanEdit(MRState *s, NSString *account) {
+    if (!s->owner || !account.length) return NO;
+    for (id box in Boxes(s->owner)) if ([BoxAccount(box) isEqual:account]) return YES;
+    return NO;
+}
+@interface MRRulesController : UITableViewController {
+    MRState *_state;
+    NSString *_account;
+}
+- (instancetype)initWithState:(MRState *)state account:(NSString *)account;
 @end
 static void (*Apply)(id,SEL,id,id);
 static void (*ApplySection)(id,SEL,id,id,id);
@@ -141,28 +187,44 @@ static id Unnull(id x) {return x==NSNull.null ? nil : x;}
 static void Remember(MRState *s, id p, id i, id section, BOOL sectional) {
     if (!sectional) [s->calls removeAllObjects];
     else {
-        NSIndexSet *old=[s->calls indexesOfObjectsPassingTest:^BOOL(NSArray *a,NSUInteger n,BOOL *stop){return [a[3] boolValue] && Unnull(a[2])==section;}];
+        NSIndexSet *old=[s->calls indexesOfObjectsPassingTest:^BOOL(NSArray *a,NSUInteger n,BOOL *stop){return [a[3] boolValue] && [Unnull(a[2]) isEqual:section];}];
         [s->calls removeObjectsAtIndexes:old];
     }
     [s->calls addObject:@[p ?: NSNull.null,i ?: NSNull.null,section ?: NSNull.null,@(sectional)]];
 }
-static NSPredicate *Filter(MRState *s, id p) {
+static BOOL ContextMatches(MRState *s) {
+    return s && s->owner && ABI(s->owner,@"dataSource","@16@0:8") &&
+        MRContextMatches(s->owner,s->source,Get(s->owner,@"dataSource"),s->activeAccount,EditingAccount(s->owner),s->boundMailbox,Boxes(s->owner).firstObject);
+}
+static NSPredicate *Filter(MRState *s, id p, NSString *section) {
     if (!s || s->depth || !s->exclude) return p;
     // During preview keep the current filter stable; explicit scope transitions restore before changing scope.
-    if (s->visible && !Account(s->owner)) { [s->exclude release]; s->exclude=nil; }
-    return MRCombine(p,s->exclude);
+    if (!ContextMatches(s) || ![Account(s->owner) isEqual:s->activeAccount]) { [s->exclude release]; s->exclude=nil; [s->status release]; s->status=[@"账号、邮箱或数据源已变化：暂停隐藏，等待原生列表更新。" copy]; }
+    return MRCombineSection(p,s->exclude,section);
 }
 static void ApplyHook(id ds,SEL cmd,id p,id ignored) {
     if (MRDiagnosticActive()) MRDiagnosticRecord(@"natural-filter",@{@"sourceClass":NSStringFromClass([ds class]),@"ast":MRPredicateShape(p),@"ignoredAST":MRPredicateShape(ignored)});
     MRState *s=objc_getAssociatedObject(ds,&SourceKey);
     if (!s || s->depth) { Apply(ds,cmd,p,ignored); return; }
-    Remember(s,p,ignored,nil,NO); id combined=Filter(s,p);
-    s->depth++; @try { Apply(ds,cmd,combined,ignored); } @finally {s->depth--;}
+    Remember(s,p,ignored,nil,NO);
+    s->depth++;
+    @try {
+        // A system global update must stay global, but our rule belongs only to
+        // MessageListSectionRecent (the section used by MobileMail's controller).
+        Apply(ds,cmd,p,ignored);
+    } @finally {s->depth--;}
+    id combined=Filter(s,p,@"MessageListSectionRecent");
+    if (combined!=p) {
+        s->depth++;
+        @try { ApplySection(ds,NSSelectorFromString(@"applyFilterPredicate:ignoreMessagesPredicate:section:"),combined,ignored,@"MessageListSectionRecent"); }
+        @finally {s->depth--;}
+    }
 }
 static void SectionHook(id ds,SEL cmd,id p,id ignored,id section) {
     MRState *s=objc_getAssociatedObject(ds,&SourceKey);
     if (!s || s->depth) {ApplySection(ds,cmd,p,ignored,section);return;}
-    Remember(s,p,ignored,section,YES); id combined=Filter(s,p);
+    Remember(s,p,ignored,section,YES);
+    id combined=Filter(s,p,section);
     s->depth++; @try {ApplySection(ds,cmd,combined,ignored,section);} @finally {s->depth--;}
 }
 
@@ -170,9 +232,10 @@ static void SectionHook(id ds,SEL cmd,id p,id ignored,id section) {
 - (instancetype)init { if ((self=[super init])) calls=[NSMutableArray new]; return self; }
 - (void)restore {
     if (source) {
+        BOOL ownsSource=objc_getAssociatedObject(source,&SourceKey)==self && ContextMatches(self);
         depth++;
         @try {
-            for (NSArray *a in calls) {
+            for (NSArray *a in (ownsSource ? calls : @[])) {
                 if ([a[3] boolValue]) ApplySection(source,NSSelectorFromString(@"applyFilterPredicate:ignoreMessagesPredicate:section:"),Unnull(a[0]),Unnull(a[1]),Unnull(a[2]));
                 else Apply(source,NSSelectorFromString(@"applyFilterPredicate:ignoreMessagesPredicate:"),Unnull(a[0]),Unnull(a[1]));
             }
@@ -180,30 +243,35 @@ static void SectionHook(id ds,SEL cmd,id p,id ignored,id section) {
         if (objc_getAssociatedObject(source,&SourceKey)==self) objc_setAssociatedObject(source,&SourceKey,nil,OBJC_ASSOCIATION_ASSIGN);
         [source release]; source=nil;
     }
+    [boundMailbox release]; boundMailbox=nil;
     [calls removeAllObjects]; [exclude release]; exclude=nil;
+    [activeAccount release]; activeAccount=nil;
 }
 - (void)refresh {
+    UIViewController *presenter=Presenter(self);
+    if ([presenter isKindOfClass:MRRulesController.class]) [[(UITableViewController *)presenter tableView] reloadData];
     if (!visible || depth) return;
     NSString *account=Account(owner);
     NSString *scope=ScopeReason(owner);
     if (!HooksReady || !account) { [status release]; status=[(scope ?: @"原生过滤钩子未就绪。") copy]; [self restore]; return; }
+    if (!ABI(owner,@"dataSource","@16@0:8")) { [self restore]; [status release]; status=[@"数据源接口签名不匹配：隐藏已暂停。" copy]; return; }
     id ds=Get(owner,@"dataSource");
-    if (![ds isKindOfClass:NSClassFromString(@"MessageListDataSource")]) { [self restore]; return; }
+    if (![ds isKindOfClass:NSClassFromString(@"MessageListDataSource")]) { [self restore]; [status release]; status=[@"当前数据源类型未确认：隐藏已暂停。" copy]; return; }
     MRState *other=objc_getAssociatedObject(ds,&SourceKey);
-    if (other && other!=self) { [self restore]; return; }
+    if (other && other!=self) { [self restore]; [status release]; status=[@"数据源仍属于另一列表：本账号隐藏已暂停，未复用其他账号上下文。" copy]; return; }
     NSDictionary *config=Load()[account];
     NSString *why=nil;
     NSPredicate *next=nil;
     if ([config isKindOfClass:NSDictionary.class] && [config[@"enabled"] boolValue] && [config[@"rules"] isKindOfClass:NSArray.class]) next=Exclusion(config[@"rules"],&why);
     [status release]; status=[why copy];
     if (!next) { [self restore]; return; }
-    if (source==ds && [exclude isEqual:next]) return;
+    if (ContextMatches(self) && source==ds && [exclude isEqual:next] && [activeAccount isEqual:account]) return;
     if (!ABI(owner,@"currentFilterPredicate","@16@0:8") || !ABI(owner,@"currentMessagesToIgnorePredicate","@16@0:8") || !ABI(owner,@"_inMultiSelectionMode","B16@0:8") || !ABI(owner,@"_exitMultiSelectionForce:","v20@0:8B16")) { [self restore]; return; }
     if (Flag(owner,@"_inMultiSelectionMode")) ((void(*)(id,SEL,BOOL))objc_msgSend)(owner,NSSelectorFromString(@"_exitMultiSelectionForce:"),YES);
     [self restore];
-    source=[ds retain]; exclude=[next retain];
+    source=[ds retain]; boundMailbox=[Boxes(owner).firstObject retain]; exclude=[next retain]; activeAccount=[account copy];
     objc_setAssociatedObject(source,&SourceKey,self,OBJC_ASSOCIATION_ASSIGN);
-    ApplyHook(source,NSSelectorFromString(@"applyFilterPredicate:ignoreMessagesPredicate:"),Get(owner,@"currentFilterPredicate"),Get(owner,@"currentMessagesToIgnorePredicate"));
+    SectionHook(source,NSSelectorFromString(@"applyFilterPredicate:ignoreMessagesPredicate:section:"),Get(owner,@"currentFilterPredicate"),Get(owner,@"currentMessagesToIgnorePredicate"),@"MessageListSectionRecent");
 }
 - (void)showRules {
     [self refresh];
@@ -213,48 +281,38 @@ static void SectionHook(id ds,SEL cmd,id p,id ignored,id section) {
     for (id box in Boxes(owner)) {NSString *key=BoxAccount(box); if(key && ![accounts containsObject:key]) [accounts addObject:key];}
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"选择规则账号" message:ScopeReason(owner) preferredStyle:UIAlertControllerStyleActionSheet];
     [accounts enumerateObjectsUsingBlock:^(NSString *key,NSUInteger idx,BOOL *stop){
-        [a addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"原始账号 %lu",(unsigned long)idx+1] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){[self showAccount:key];}]];
+        [a addAction:[UIAlertAction actionWithTitle:AccountTitle(owner,key) style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){[self showAccount:key];}]];
     }];
     [a addAction:[UIAlertAction actionWithTitle:@"最后一次定向诊断（手动）" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){[self diagnostics];}]];
     [a addAction:[UIAlertAction actionWithTitle:@"关闭" style:UIAlertActionStyleCancel handler:nil]];
     a.popoverPresentationController.barButtonItem=button;
-    [owner presentViewController:a animated:YES completion:nil];
+    a.popoverPresentationController.sourceView=Presenter(self).view;
+    a.popoverPresentationController.sourceRect=CGRectMake(CGRectGetMidX(Presenter(self).view.bounds),CGRectGetMidY(Presenter(self).view.bounds),1,1);
+    [Presenter(self) presentViewController:a animated:YES completion:nil];
 }
 - (void)showAccount:(NSString *)account {
-    NSDictionary *raw=Load()[account]; NSDictionary *config=[raw isKindOfClass:NSDictionary.class]?raw:@{};
-    NSArray *rules=[config[@"rules"] isKindOfClass:NSArray.class]?config[@"rules"]:@[];
-    NSString *message=status ?: ([config[@"enabled"] boolValue] ? @"账号隐藏开关已开。仅已启用的规则通过原生精确匹配自检后生效；不改已读、收藏、垃圾或位置。" : @"默认关闭。规则只属于当前账号；添加后还需启用规则及账号开关。不会删除或移动邮件。");
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"Mail Rules 0.3.0" message:message preferredStyle:UIAlertControllerStyleActionSheet];
-    [a addAction:[UIAlertAction actionWithTitle:@"最后一次定向诊断（手动）" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){[self diagnostics];}]];
-    [a addAction:[UIAlertAction actionWithTitle:([config[@"enabled"] boolValue]?@"关闭本账号隐藏":@"确认启用本账号隐藏") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){
-        NSMutableDictionary *all=Load(); NSMutableDictionary *c=[[config mutableCopy] autorelease]; c[@"enabled"]=@(![config[@"enabled"] boolValue]); all[account]=c; Save(all); [self refresh];
-        if (status) dispatch_async(dispatch_get_main_queue(),^{[self showRules];});
-    }]];
-    [a addAction:[UIAlertAction actionWithTitle:@"添加发件人邮箱" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){[self edit:NSNotFound account:account];}]];
-    [rules enumerateObjectsUsingBlock:^(id rule,NSUInteger idx,BOOL *stop){
-        if (![rule isKindOfClass:NSDictionary.class] || ![rule[@"address"] isKindOfClass:NSString.class]) return;
-        NSString *title=[NSString stringWithFormat:@"%@ %@",[rule[@"enabled"] boolValue]?@"✓":@"○",rule[@"address"]];
-        [a addAction:[UIAlertAction actionWithTitle:title style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){[self manage:idx account:account];}]];
-    }];
-    [a addAction:[UIAlertAction actionWithTitle:@"关闭" style:UIAlertActionStyleCancel handler:nil]];
-    a.popoverPresentationController.barButtonItem=button;
-    [owner presentViewController:a animated:YES completion:nil];
+    if (!CanEdit(self,account)) return;
+    MRRulesController *list=[[[MRRulesController alloc] initWithState:self account:account] autorelease];
+    UINavigationController *nav=[[[UINavigationController alloc] initWithRootViewController:list] autorelease];
+    nav.modalPresentationStyle=UIModalPresentationFormSheet;
+    [owner presentViewController:nav animated:YES completion:nil];
 }
 - (void)diagnostics {
     MRDiagnosticStart();
     for (NSInteger mode=0;mode<2;mode++) {
         @try {
             NSPredicate *p=NativeInclude(@"mr.fixture+keep@fixture.invalid",mode==1);
-            BOOL valid=MRValidateSenderPredicate(p,@"mr.fixture+keep@fixture.invalid",^id(NSString *s){return Address(s);});
+            BOOL valid=ValidateNativeSender(p,@"mr.fixture+keep@fixture.invalid");
             MRDiagnosticRecord(@"synthetic-validation",@{@"mode":@(mode),@"valid":@(valid)});
         } @catch (__unused NSException *e) { MRDiagnosticRecord(@"synthetic-unavailable",@{@"mode":@(mode)}); }
     }
     NSString *report=MRDiagnosticExport();
     UIActivityViewController *share=[[[UIActivityViewController alloc] initWithActivityItems:@[report ?: @"诊断不可用"] applicationActivities:nil] autorelease];
     share.popoverPresentationController.barButtonItem=button;
-    [owner presentViewController:share animated:YES completion:nil];
+    [Presenter(self) presentViewController:share animated:YES completion:nil];
 }
 - (void)edit:(NSUInteger)index account:(NSString *)account {
+    if (!CanEdit(self,account)) return;
     NSDictionary *raw=Load()[account]; NSDictionary *config=[raw isKindOfClass:NSDictionary.class]?raw:@{};
     NSArray *rules=[config[@"rules"] isKindOfClass:NSArray.class]?config[@"rules"]:@[];
     UIAlertController *a=[UIAlertController alertControllerWithTitle:index==NSNotFound?@"添加邮箱":@"编辑邮箱" message:@"输入完整 ASCII 邮箱地址。只规范域名大小写，保留 +tag 和点号。新规则默认停用。" preferredStyle:UIAlertControllerStyleAlert];
@@ -266,33 +324,106 @@ static void SectionHook(id ds,SEL cmd,id p,id ignored,id section) {
         if (!address) {
             UIAlertController *error=[UIAlertController alertControllerWithTitle:@"邮箱格式无效" message:@"请输入单个完整邮箱，不含显示名、空格或非 ASCII 字符。" preferredStyle:UIAlertControllerStyleAlert];
             [error addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleCancel handler:nil]];
-            [owner presentViewController:error animated:YES completion:nil]; return;
+            [Presenter(self) presentViewController:error animated:YES completion:nil]; return;
         }
+        if (!CanEdit(self,account) || ![Load()[account] ?: @{} isEqual:config]) return;
         NSMutableDictionary *all=Load(); NSMutableDictionary *c=[[config mutableCopy] autorelease]; NSMutableArray *r=[[rules mutableCopy] autorelease];
         NSDictionary *entry=@{@"address":address,@"enabled":@NO};
         if (index<r.count) r[index]=entry; else [r addObject:entry];
         c[@"rules"]=r; all[account]=c; Save(all); [self refresh];
     }]];
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    [owner presentViewController:a animated:YES completion:nil];
+    [Presenter(self) presentViewController:a animated:YES completion:nil];
 }
 - (void)manage:(NSUInteger)index account:(NSString *)account {
+    if (!CanEdit(self,account)) return;
     NSMutableDictionary *all=Load(); NSDictionary *config=all[account]; NSArray *rules=config[@"rules"];
     if (index>=rules.count) return;
     NSDictionary *rule=rules[index];
     UIAlertController *a=[UIAlertController alertControllerWithTitle:rule[@"address"] message:@"本账号规则" preferredStyle:UIAlertControllerStyleActionSheet];
     [a addAction:[UIAlertAction actionWithTitle:[rule[@"enabled"] boolValue]?@"停用":@"启用" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){
-        NSMutableDictionary *c=[[config mutableCopy] autorelease]; NSMutableArray *r=[[rules mutableCopy] autorelease]; NSMutableDictionary *entry=[[rule mutableCopy] autorelease]; entry[@"enabled"]=@(![rule[@"enabled"] boolValue]); r[index]=entry; c[@"rules"]=r; all[account]=c; Save(all); [self refresh]; if(status) dispatch_async(dispatch_get_main_queue(),^{[self showRules];});
+        if (!CanEdit(self,account) || ![Load()[account] ?: @{} isEqual:config]) return;
+        NSMutableDictionary *all=Load(); NSMutableDictionary *c=[[config mutableCopy] autorelease]; NSMutableArray *r=[[rules mutableCopy] autorelease]; NSMutableDictionary *entry=[[rule mutableCopy] autorelease]; entry[@"enabled"]=@(![rule[@"enabled"] boolValue]); r[index]=entry; c[@"rules"]=r; all[account]=c; Save(all); [self refresh];
     }]];
     [a addAction:[UIAlertAction actionWithTitle:@"编辑" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){[self edit:index account:account];}]];
     [a addAction:[UIAlertAction actionWithTitle:@"删除规则" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){
-        NSMutableDictionary *c=[[config mutableCopy] autorelease]; NSMutableArray *r=[[rules mutableCopy] autorelease]; [r removeObjectAtIndex:index]; c[@"rules"]=r; all[account]=c; Save(all); [self refresh];
+        if (!CanEdit(self,account) || ![Load()[account] ?: @{} isEqual:config]) return;
+        NSMutableDictionary *all=Load(); NSMutableDictionary *c=[[config mutableCopy] autorelease]; NSMutableArray *r=[[rules mutableCopy] autorelease]; [r removeObjectAtIndex:index]; c[@"rules"]=r; all[account]=c; Save(all); [self refresh];
     }]];
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     a.popoverPresentationController.barButtonItem=button;
-    [owner presentViewController:a animated:YES completion:nil];
+    a.popoverPresentationController.sourceView=Presenter(self).view;
+    a.popoverPresentationController.sourceRect=CGRectMake(CGRectGetMidX(Presenter(self).view.bounds),CGRectGetMidY(Presenter(self).view.bounds),1,1);
+    [Presenter(self) presentViewController:a animated:YES completion:nil];
 }
 - (void)dealloc { [self restore]; [calls release]; [button release]; [status release]; [super dealloc]; }
+@end
+
+@implementation MRRulesController
+- (instancetype)initWithState:(MRState *)state account:(NSString *)account {
+    if ((self=[super initWithStyle:UITableViewStyleInsetGrouped])) { _state=[state retain]; _account=[account copy]; }
+    return self;
+}
+- (void)viewDidLoad {
+    [super viewDidLoad]; self.title=@"发件人规则";
+    self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeAlways;
+    self.navigationController.navigationBar.prefersLargeTitles=YES;
+    self.navigationItem.rightBarButtonItem=[[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(close)] autorelease];
+    self.tableView.rowHeight=UITableViewAutomaticDimension; self.tableView.estimatedRowHeight=64;
+}
+- (void)viewWillAppear:(BOOL)animated { [super viewWillAppear:animated]; [self.tableView reloadData]; }
+- (void)close { [self dismissViewControllerAnimated:YES completion:nil]; }
+- (NSDictionary *)config { id c=Load()[_account]; return [c isKindOfClass:NSDictionary.class] ? c : @{}; }
+- (NSArray *)rules { id r=[self config][@"rules"]; return [r isKindOfClass:NSArray.class] ? r : @[]; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 3; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return section==0 ? 2 : (section==1 ? (NSInteger)[self rules].count+1 : 1); }
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return @[@"当前账号",@"精确发件人匹配",@"验证"][(NSUInteger)section]; }
+- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
+    if(section==0) return @"开关与下方规则仅属于本页账号。规则数不是邮件数量；不改已读状态、归属或实体位置。";
+    if(section==1) return @"新建和编辑后默认停用。保留 +tag 和点号；原生 ANY 不区分大小写的精确相等必须先通过合成模型自检。";
+    return @"Mail Rules 0.3.1 · 诊断仅使用合成地址，不读取或导出真实邮件。";
+}
+- (void)toggleAccount:(UISwitch *)sender {
+    if (!CanEdit(_state,_account)) { sender.on=NO; [self.tableView reloadData]; return; }
+    NSMutableDictionary *all=Load(); NSMutableDictionary *c=[[[self config] mutableCopy] autorelease];
+    c[@"enabled"]=@(sender.on); all[_account]=c; Save(all); [_state refresh]; [self.tableView reloadData];
+}
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
+    UITableViewCell *cell=[[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil] autorelease];
+    cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0;
+    cell.textLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    cell.detailTextLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    cell.textLabel.adjustsFontForContentSizeCategory=YES; cell.detailTextLabel.adjustsFontForContentSizeCategory=YES;
+    cell.detailTextLabel.textColor=UIColor.secondaryLabelColor;
+    BOOL editable=CanEdit(_state,_account);
+    if (path.section==0 && path.row==0) {
+        cell.textLabel.text=AccountTitle(_state->owner,_account);
+        NSString *reason=editable ? ScopeReason(_state->owner) : @"当前邮箱账号已变化，本页编辑和隐藏已暂停；请关闭后重新打开规则。";
+        BOOL current=[EditingAccount(_state->owner) isEqual:_account];
+        cell.detailTextLabel.text=reason ?: (current && _state->status ? _state->status : (_state->exclude && [_state->activeAccount isEqual:_account] ? @"已通过自检：仅当前账号收件箱列表生效。" : ([[self config][@"enabled"] boolValue] ? @"已启用；关闭规则页后对当前收件箱执行自检，失败则暂停并显示原因。" : @"本账号隐藏已关闭。")));
+        cell.imageView.image=[UIImage systemImageNamed:reason ? @"exclamationmark.shield" : @"person.crop.circle"];
+        cell.selectionStyle=UITableViewCellSelectionStyleNone;
+    } else if (path.section==0) {
+        cell.textLabel.text=@"启用本账号隐藏";
+        UISwitch *toggle=[[[UISwitch alloc] init] autorelease]; toggle.on=[[self config][@"enabled"] boolValue]; toggle.enabled=editable;
+        toggle.accessibilityLabel=[@"启用隐藏：" stringByAppendingString:AccountTitle(_state->owner,_account)];
+        [toggle addTarget:self action:@selector(toggleAccount:) forControlEvents:UIControlEventValueChanged]; cell.accessoryView=toggle;
+        cell.selectionStyle=UITableViewCellSelectionStyleNone;
+    } else if (path.section==1) {
+        NSArray *rules=[self rules];
+        if ((NSUInteger)path.row==rules.count) { cell.textLabel.text=@"添加发件人邮箱"; cell.textLabel.textColor=editable ? self.view.tintColor : UIColor.secondaryLabelColor; cell.imageView.image=[UIImage systemImageNamed:@"plus.circle.fill"]; }
+        else { NSDictionary *rule=rules[(NSUInteger)path.row]; cell.textLabel.text=rule[@"address"]; cell.detailTextLabel.text=[rule[@"enabled"] boolValue]?@"规则已启用 · 仍需账号开关和自检通过":@"规则已停用"; cell.imageView.image=[UIImage systemImageNamed:[rule[@"enabled"] boolValue]?@"checkmark.circle.fill":@"circle"]; }
+        cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
+    } else {cell.textLabel.text=@"运行合成匹配诊断"; cell.imageView.image=[UIImage systemImageNamed:@"checkmark.shield"]; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;}
+    return cell;
+}
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
+    [tableView deselectRowAtIndexPath:path animated:YES];
+    if (!CanEdit(_state,_account)) { [tableView reloadData]; return; }
+    if(path.section==1) { if ((NSUInteger)path.row==[self rules].count) [_state edit:NSNotFound account:_account]; else [_state manage:(NSUInteger)path.row account:_account]; }
+    if(path.section==2) [_state diagnostics];
+}
+- (void)dealloc { [_state release]; [_account release]; [super dealloc]; }
 @end
 
 static void (*DidAppear)(id,SEL,BOOL), (*WillDisappear)(id,SEL,BOOL), (*DidLayout)(id,SEL), (*Dealloc)(id,SEL);
@@ -308,7 +439,7 @@ static void DidAppearHook(id vc,SEL cmd,BOOL animated) {
     DidAppear(vc,cmd,animated); MRState *s=State(vc,YES); s->visible=YES; AttachButton(s); [s refresh];
 }
 static void DisappearHook(id vc,SEL cmd,BOOL animated) {
-    MRState *s=State(vc,NO); if(s) s->visible=NO;
+    MRState *s=State(vc,NO); if(s) { s->visible=NO; [s restore]; }
     WillDisappear(vc,cmd,animated);
 }
 static void LayoutHook(id vc,SEL cmd) {

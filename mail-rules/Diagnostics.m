@@ -38,7 +38,7 @@ NSString *MRDiagnosticExport(void) {
     NSMutableDictionary *declarations=[NSMutableDictionary dictionary];
     NSDictionary *targets=@{
         @"EMObjectID":@[@"serializedRepresentation",@"isEphemeral"],
-        @"EMMessageTransferAction":@[@"initWithMessageListItems:destinationMailboxURL:copyMessages:",@"initWithMessageListItemSelection:destinationMailboxURL:copyMessages:"],
+        @"EMMessageTransferAction":@[@"initWithMessageListItems:destinationMailbox:copyMessages:",@"initWithMessageListItems:specialDestinationMailboxType:flagChange:copyMessages:",@"initWithMessageListItems:destinationMailboxURL:copyMessages:",@"initWithMessageListItemSelection:destinationMailboxURL:copyMessages:"],
         @"EMCreateMailboxChangeAction":@[@"initWithMailboxName:parentMailbox:"],
         @"EMMailboxRepository":@[@"performMailboxChangeAction:"],
         @"EMMessageRepository":@[@"performMessageChangeAction:"],
@@ -48,7 +48,7 @@ NSString *MRDiagnosticExport(void) {
         for(NSString *sel in targets[name]) {Method m=class_getInstanceMethod(NSClassFromString(name),NSSelectorFromString(sel)); methods[sel]=m ? @(method_getTypeEncoding(m)) : @"absent";}
         declarations[name]=methods;
     }
-    NSDictionary *report=@{@"version":@"0.3.0-targeted",@"events":Events ?: @[],@"declarations":declarations,@"limits":@"60 events; AST depth 5 / 8 children; memory only; constants redacted; no mailbox operations; submission/server completion not observed"};
+    NSDictionary *report=@{@"version":@"0.3.1-targeted",@"events":Events ?: @[],@"declarations":declarations,@"limits":@"60 events; AST depth 5 / 8 children; memory only; constants redacted; no mailbox operations; submission/server completion not observed"};
     NSData *data=[NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:NULL];
     return [[[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] autorelease];
 }
