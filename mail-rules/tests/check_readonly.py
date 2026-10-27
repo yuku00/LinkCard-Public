@@ -17,7 +17,9 @@ assert '[host dismissViewController' not in src
 assert 'Version: 0.5.2' in (R/'control').read_text()
 postrm=(R/'layout/DEBIAN/postrm').read_text()
 assert not re.search(r'\b(rm|defaults|killall|plutil)\b',postrm)
-workflow=(R/'workflow/mail-rules-roothide.yml').read_text()
+workflow_path=R.parent/'.github/workflows/mail-rules-roothide.yml'
+if not workflow_path.exists(): workflow_path=R/'workflow/mail-rules-roothide.yml'
+workflow=workflow_path.read_text()
 assert 'tests/readonly-host.m' in workflow and 'tests/check_readonly.py' in workflow
 assert not any(x in workflow for x in ['NativeCore.m','Trace.m','Theme.m','tests/native-host.m'])
 print('PASS: production allowlist; no rules, value getters, networking or preference IO')
