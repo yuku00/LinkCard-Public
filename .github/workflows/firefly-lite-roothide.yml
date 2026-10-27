@@ -35,7 +35,7 @@ jobs:
           command -v ldid
           command -v dpkg-deb
           # Xcode omits private framework stubs; fetch only the official Preferences stub.
-          stub="$THEOS/lib/iphone/Preferences.framework/Preferences.tbd"
+          stub="$THEOS/lib/iphone/roothide/Preferences.framework/Preferences.tbd"
           mkdir -p "$(dirname "$stub")"
           curl --fail --location --retry 3 'https://raw.githubusercontent.com/theos/sdks/0222fd5413cf4b9af096f37b4621afa2688572f7/iPhoneOS16.5.sdk/System/Library/PrivateFrameworks/Preferences.framework/Preferences.tbd' -o "$stub"
           echo "9daceaff6cf94346594a12f9ef9c2ea23de15475b516f9e33c20871a018c098b  $stub" | shasum -a 256 -c -
