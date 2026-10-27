@@ -51,7 +51,7 @@ jobs:
           binary=$(python3 -c 'import os,pathlib; print(next(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("files-package").rglob("FilesNativeProbe.dylib")))')
           test -n "$binary"
           lipo -info "$binary"
-          lipo -verify_arch arm64 arm64e "$binary"
+          lipo "$binary" -verify_arch arm64 arm64e
           dpkg-deb -I "$deb"
           dpkg-deb -c "$deb"
           shasum -a 256 packages/*.deb > packages/SHA256SUMS
