@@ -32,8 +32,6 @@ static NSError *FPTransferOne(NSURL *source, NSURL *folder, BOOL move) {
         // Foundation copy/move refuse existing destinations; this check gives a clear error.
         if([[NSFileManager defaultManager] fileExistsAtPath:to.path]) { failure=FPFileError(@"目标存在同名项目；未覆盖，源项目保留。"); return; }
         if(move) {
-            [coordinator itemAtURL:from willMoveToURL:to error:&failure];
-            if(failure) return;
             completed=[[NSFileManager defaultManager] moveItemAtURL:from toURL:to error:&failure];
             if(completed) [coordinator itemAtURL:from didMoveToURL:to];
         } else completed=[[NSFileManager defaultManager] copyItemAtURL:from toURL:to error:&failure];

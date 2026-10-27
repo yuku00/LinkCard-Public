@@ -76,7 +76,7 @@ int main(void) { @autoreleasepool {
     FakeFull *full=[FakeFull new]; full.currentItemCollectionViewController=current; full.fullDocumentManagerViewController=full;
     FPBrowserPane *pane=[FPBrowserPane new]; pane.nativeSplit=full;
     NSError *error=nil;
-    assert([FPSelectedURLs(pane,&error) isEqual:@[a,b]]); // No visible cells exist.
+    assert(([FPSelectedURLs(pane,&error) isEqual:@[a,b]])); // No visible cells exist.
     item2.fileURL=nil; assert(!FPSelectedURLs(pane,&error)); item2.fileURL=b;
     cv.indexPathsForSelectedItems=@[]; assert(!FPSelectedURLs(pane,&error)); cv.indexPathsForSelectedItems=@[p];
     DOCConcreteLocation *location=[DOCConcreteLocation new]; FPItem *dir=[FPItem new]; dir.fileURL=right; location.node=dir;
