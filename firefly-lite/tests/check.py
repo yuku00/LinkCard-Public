@@ -23,24 +23,33 @@ assert '@"AllApps": @(!!c.allApps)' in preferences
 assert 'CFPreferencesCopyKeyList(FL_DOMAIN' in preferences  # Clears the entire domain, including new keys.
 assert 'CFPreferencesSetMultiple(NULL, keys, FL_DOMAIN' in preferences
 assert 'config.enabled, config.allApps, badge, [view isFolderIcon]' in (root/'Tweak.mm').read_text()
-assert 'Version: 0.1.2\n' in (root/'control').read_text()
+assert 'Version: 0.1.3\n' in (root/'control').read_text()
 print('PASS: AllApps read/default/write wiring, whole-domain cleanup and version checks')
 assert 'id follow = FLGet(CFSTR("FollowIconColor"));' in preferences
 assert '[follow isKindOfClass:NSNumber.class] && [follow boolValue]' in preferences
 assert '@"FollowIconColor": @(!!c.followIconColor)' in preferences
 colors = (root/'Shared/FLIconColor.h').read_text()
-assert 'state.image != image || state.icon != icon' in colors
-assert 'objc_getAssociatedObject(owner, &colorKey) != state' in colors
+assert 'FLNeedsIconSample(state != nil, same, state.dirty)' in colors
+assert 'objc_getAssociatedObject(owner, &colorKey) == state' in colors
+assert '[owner icon] == state.icon' in colors
 assert 'Signature(view.class, selector, "@", 2)' in colors
 assert 'DISPATCH_QUEUE_SERIAL' in colors
 assert '跟随图标颜色' in (root/'Preferences/FLRootController.m').read_text()
-for forbidden in ('drawViewHierarchyInRect', 'renderInContext', 'UIGraphicsBeginImageContext', 'snapshotViewAfterScreenUpdates'):
+assert '[imageView.layer renderInContext:ctx]' in colors
+assert 'CFGetTypeID((__bridge CFTypeRef)contents) == CGImageGetTypeID()' in colors
+assert 'state.refreshPending' in colors and 'state.retries == 0' in colors
+assert 'state.imageView == imageView' in colors and 'state.contents == contents' in colors
+assert 'UIImage *thumbnail = IconThumbnail(imageView, image, &localCapture)' in colors
+for forbidden in ('drawViewHierarchyInRect', 'snapshotViewAfterScreenUpdates', '[view.layer renderInContext:', '[owner.layer renderInContext:'):
     assert forbidden not in source
-print('PASS: FollowIconColor default/write/UI, identity cache/stale-result guards, no screen capture')
+print('PASS: icon-local fallback, bounded retry/coalescing, source identity and stale-result wiring')
 print('PASS: package/domain/filter/dependency and prohibited API checks')
 with tempfile.TemporaryDirectory(prefix='firefly-test-') as tmp:
     tmp = Path(tmp)
     binary = tmp/'logic'
+    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', str(root/'tests/sample-policy.c'), '-o', str(binary)], check=True)
+    subprocess.run([str(binary)], check=True)
+    print('PASS: cache/retry/reuse/switch policy, including 1000 unchanged layouts')
     subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', str(root/'tests/logic.c'), '-lm', '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
     print('PASS: 25 visibility/boundary assertions plus 13 color/follow/fallback assertions')

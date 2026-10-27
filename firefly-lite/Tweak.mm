@@ -22,6 +22,7 @@ static void (*originalLayout)(SBIconView *, SEL);
 static void (*originalWindow)(SBIconView *, SEL);
 static void (*originalSetIcon)(SBIconView *, SEL, id);
 static void (*originalAccessories)(SBIconView *, SEL, id);
+static void (*originalIconImageChanged)(SBIconView *, SEL, id);
 
 static BOOL Signature(Class cls, SEL sel, const char *ret, unsigned args, const char *arg = NULL) {
     Method m = class_getInstanceMethod(cls, sel);
@@ -56,7 +57,7 @@ static void Update(SBIconView *view) {
     id candidate = [view _iconImageView];
     if (![candidate isKindOfClass:UIView.class]) { Remove(view); return; }
     UIView *image = candidate;
-    if (![image isDescendantOfView:view]) { Remove(view); return; }
+    if (image == view || ![image isDescendantOfView:view]) { Remove(view); return; }
     CGRect frame = [image convertRect:image.bounds toView:view];
     if (CGRectIsEmpty(frame) || CGRectIsInfinite(frame) || CGRectIsNull(frame)
         || !isfinite(frame.origin.x) || !isfinite(frame.origin.y)
@@ -96,6 +97,10 @@ static void SetIcon(SBIconView *self, SEL cmd, id icon) {
 static void Accessories(SBIconView *self, SEL cmd, id icon) {
     originalAccessories(self, cmd, icon); Schedule(self);
 }
+static void IconImageChanged(SBIconView *self, SEL cmd, id icon) {
+    originalIconImageChanged(self, cmd, icon);
+    dispatch_async(dispatch_get_main_queue(), ^{ RefreshImage([self _iconImageView]); });
+}
 static void Notify(CFNotificationCenterRef center, void *observer, CFStringRef name,
                    const void *object, CFDictionaryRef info) {
     BOOL stop = CFEqual(name, FL_STOP);
@@ -129,6 +134,9 @@ __attribute__((constructor)) static void Initialize(void) {
             CFNotificationSuspensionBehaviorDeliverImmediately);
         CFNotificationCenterAddObserver(center, &observerKey, Notify, FL_STOP, NULL,
             CFNotificationSuspensionBehaviorDeliverImmediately);
+        SEL imageChanged = NSSelectorFromString(@"iconImageDidUpdate:");
+        if (Signature(cls, imageChanged, "v", 3, "@"))
+            MSHookMessageEx(cls, imageChanged, (IMP)IconImageChanged, (IMP *)&originalIconImageChanged);
         MSHookMessageEx(cls, @selector(layoutSubviews), (IMP)Layout, (IMP *)&originalLayout);
         MSHookMessageEx(cls, @selector(didMoveToWindow), (IMP)Window, (IMP *)&originalWindow);
         MSHookMessageEx(cls, NSSelectorFromString(@"setIcon:"), (IMP)SetIcon, (IMP *)&originalSetIcon);

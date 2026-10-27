@@ -62,3 +62,21 @@ https://github.com/MTACS/iOS-17-Runtime-Headers/blob/d1d960dfaa4107765dd7fcf891e
 
 ## 下载信任记录
 Shell 的 HTTPS CA 链校验失败；公开只读研究文件使用 curl -k 获取，仅作接口线索，没有执行下载文件、没有安装包、没有作为可执行依赖打包。由此不能将取证称为完整 TLS 认证。上述固定提交可在可信网络上重新核对。
+
+## 0.1.3 重新核对（以下取代0.1.2取色限制描述）
+
+通过浏览器 TLS fetch（HTTP 200）核对 iOS16.4 20E247 固定提交：
+https://github.com/lechium/iPhone_OS_16.4_20E247/blob/6e936b9f702d6d5746430d3d918709479dffafb5/System/Library/PrivateFrameworks/SpringBoardHome/SBIconObserver-Protocol.h
+```objc
+- (void)iconAccessoriesDidUpdate:(SBIcon *)arg1;
+- (void)iconImageDidUpdate:(SBIcon *)arg1;
+```
+同目录 SBCrossfadingIconImageSource-Protocol.h 明确 sourceView 返回 UIView*；SBHIconImageCacheObserver-Protocol.h 声明 iconImageCache:didUpdateImageForIcon:。本版只新增前述单参数 iconImageDidUpdate: 可选 hook，检查 v/@/参数数3，不调用 sourceView 或猜测新的 getter。
+
+已检查 lechium 的16.0和16.4 SpringBoardHome目录：有这些协议，没有完整 SBIconImageView 类头。qingralf/iOS16-Runtime-Headers 的根递归结果被截断，改查 PrivateFrameworks 子树后确认没有 SpringBoardHome。Tweaker177 的“iOS-14-16”仓库中 SBIconImageView.h 文首实际标记 iOS15.7.2，不能冒称16头。Limneos16.3页面访问未取得可核对头文件。**因此没有证据证明16.6缺少 displayedImage，也没有证据证明实际签名错误；这两点仍是假设，不据此放宽 ABI 检查。**
+
+确定的代码缺陷：旧版 getter 返回nil/非CGImage/过大图片时无局部采图路径；同 UIImage/icon 身份的失败状态在图像更新回调中不会失效。新增公开 UIKit/QuartzCore 图标局部 fallback，避免必须依赖该私有getter；图像事件使失败和局部渲染缓存失效，250ms合并回调；首次失败一次延迟重试，之后等待真实事件/源变化/开关刷新。
+
+安全与性能边界：仅渲染经验证为 SBIconView 严格子视图的 _iconImageView 图层树；不渲染容器、窗口或屏幕，自有光晕为容器的兄弟图层。采图和24×24缩放在主线程，颜色投票在串行后台；源不变的layout复用缓存。无磁盘、照片、网络、日志采集。CALayer局部渲染对特殊硬件图层不保证有像素；全中性图标仍回手动色。尚未验证16.6实际 getter/hook覆盖、视觉效果或功耗。
+
+测试等级：旧版缺少 renderInContext 路径的静态断言已观察到失败；修复后静态接线检查、生产代码共用的缓存决策C测试（含1000次不变layout决策）、颜色算法测试和卸载脚本测试通过。这不是UIKit/SpringBoard运行复现，不把主机模型测试称为真机修复证明。
