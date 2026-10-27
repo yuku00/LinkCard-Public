@@ -30,5 +30,5 @@ int main(void) { @autoreleasepool {
     assert([loaded filteredArrayUsingPredicate:MRCombine(base,nil)].count==2);
     NSDictionary *accounts=@{@"account-A":@{@"enabled":@YES,@"rules":@[address]},@"account-B":@{@"enabled":@NO,@"rules":@[]}};
     assert([accounts[@"account-A"][@"rules"] count]==1); assert(![accounts[@"account-B"][@"enabled"] boolValue]); assert([accounts[@"account-B"][@"rules"] count]==0);
-    puts("PASS: normalization, 128 scope combinations, exact predicate AST/fixtures, original filter restoration, ignore preservation, new arrival reevaluation, account isolation");
+    puts("PASS: normalization, 64 scope combinations, exact predicate AST/fixtures, original filter restoration, ignore preservation, new arrival reevaluation, account isolation");
 } return 0; }
