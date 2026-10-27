@@ -1,56 +1,44 @@
-# Mail 0.5.1 — opt-in operation trace; native rules unchanged
+# Mail Read-only Probe 0.5.2
 
-Experimental RootHide tweak for **iOS 16.6 build 20G75**, arm64 + arm64e. Package ID remains `dev.mailrules.probe`. **This is an implemented client adapter, not a claim of device acceptance.** Host tests/CI are separate from real Mail/daemon/server testing.
+这是纯只读采集替代包，不是旧规则功能加 trace。仅用于 iOS 16.6 / build 20G75，RootHide arm64 + arm64e。
 
-## 0.5.1 diagnostic session (build `mail051-trace-r2`)
+- 包 ID：`dev.mailrules.probe`，保持 `MailRules.dylib` 与 `MailRules.plist` 同名覆盖，不新增第二个注入文件。
+- 生产模块：`readonly/Entry.m`、`readonly/Session.m`、`readonly/Graph.m`、`readonly/Metadata.m`、`readonly/Observer.m`。
+- `query mutation hooks:none; rule engine absent`。
+- 不链接旧 Native、NativeCore、RuleCore、Rules、Theme、Safety、Trace、Probe、Metadata 实现。旧文件仅为历史源码，不进入产品。
+- 没有添加规则、地址校验、合成 predicate 测试、保存规则、过滤、修改选择、原生新建/移动面板调用及主题功能。不会修改 Mail 偏好、条目数量或排序。
+- 旧插件配置保留，不读取、不修改、不删除。卸载脚本不删除邮件、账号或偏好，不做全域恢复删除。
 
-This is an operation-tracing release, not another metadata dump or a declaration that 0.5.0 features work on-device. The **Mail 0.5.1** button is installed on the native mailbox home/list where its UI ABI is available, including when the query adapter is unavailable. Appearance remains the existing independently switchable theme.
+## 安装
 
-1. Fully close/reopen Mail after installing the package. Open a physical mailbox → **Mail 0.5.1 → 诊断会话（手动开始 / 停止） → 开始诊断（新一轮，清空旧记录）**. The visible diagnostic title must show **0.5.1 / mail051-trace-r2**.
-2. Use dedicated test mail. Press each relevant existing operation once: **输入发件人添加规则** (or **从选中邮件的发件人添加**) → choose the account/mailbox → **保存：此邮箱**; **开启发件人隐藏 / 关闭隐藏，恢复原始列表**; **管理规则 / 同发件人整理** → the test rule → **修改地址与范围**, **停用规则 / 启用规则**, **打开同发件人整理预览**. If an operation fails, do not repeatedly retry; its boundary/skip reason is recorded.
-3. In the preview, **在此账号新建邮箱…** opens the real native editor: inspect then press its native **取消**. Select only **1–3 dedicated test messages** in the list before **预览已加载邮件并选择移动… → 选择同账号目标…**; inspect the native chooser and cancel without selecting a destination. No automatic all-message selection is done during diagnosis. If the preview cannot open, export that failure rather than improvising another route.
-4. Finish with **结束整理，返回规则列表**, optionally **删除规则** for the test rule and toggle **开启简洁外观 / 关闭简洁外观** once. Then **Mail 0.5.1 → 诊断会话（手动开始 / 停止） → 停止并查看 / 分享 → 分享文本**. Export once after the whole pass. **关闭报告** only closes the report; alert transitions never dismiss the entire Mail container. **清空** removes the in-memory report.
+安装前彻底退出 Mail，覆盖安装后再重新打开；必须结束旧 Mail 进程，才能清掉 0.5.1 已装入内存的旧 hooks。若仍见旧规则或主题按钮，不能继续采集，应先核实旧进程已退出及安装版本。不要删邮件或清空系统偏好来排查。
 
-**无写入演练 means no final mailbox-create/message-move submission, not no preference changes.** Rule save/toggle/delete and appearance still update this plugin's original preferences so their actual save/readback path can be diagnosed. Recording itself never writes a log/report to disk, starts networking, copies to the clipboard or uploads automatically. Manual system sharing is an explicit user export. Keep the default safety mode; do not use **仅测试邮件：申请允许原生提交…** for this pass. That optional destructive confirmation is not needed to diagnose entry points. Panels opened in safety mode remain blocked even after stopping recording or later granting permission. If the native move hook cannot be installed, plugin organization/move is refused rather than opening an unguarded operation.
+## 一轮采集（3–4 个原生页面）
 
-Trace is opt-in and memory-bounded: 600 rolling events, 256 critical events, finite stage summaries, up to 512 weak object IDs and 128 per-session account aliases. Constructor facts (max 32 nonpersonal ABI declarations) are copied into the report only after Start. Account identities are converted using a random per-session HMAC key; raw identities and digests are not exported. Event field names, reasons, action codes, types, interface names and AST key paths are allowlisted. Sender/recipient/account addresses, names, subjects, bodies, attachment URLs, tokens, paths, predicate constants and original `NSError.localizedDescription` never enter the report. Error domains are allowlisted and only numeric codes are retained. Only targeted scalar/object/block ABI encodings are exported; unsupported encoding text is redacted.
+1. 打开 Mail 原生邮箱首页，点小按钮 **只读采集0.5.2 → 开始只读采集**。默认不采集；开始会清掉上轮采集内存，但不碰旧插件配置。
+2. 进入真正的收件箱，点按钮选 **标记：实际收件箱**。报告只称“邮件列表候选”，不读取邮箱值来假装确认身份。若当前是 MailboxPicker，面板会明确提示这不是邮件列表，请取消选择器后进入收件箱。
+3. 自然操作 Mail 原生选择、原生筛选，分别用 **标记：选择 / 标记：原生筛选** 留下关键快照；原生取消后标记 **取消后**，自然下拉刷新结束后标记 **自然刷新后**。标记只记录当前页面，不替你选择、筛选或刷新。一次流程即可，不必为采集反复操作。
+4. 点 **停止分享**，采集停止后进入报告页，点右上角系统分享按钮。取消分享后仍在报告页，点完成只关闭探针自己的报告容器，不关闭 Mail 原生容器。
 
-The report includes version/build/session, constructor **installed/skipped**, expected/actual targeted ABI, real button codes, account scope, sender factory/AST/self-test, save/readback, reload/TLS/thread/factory/transform, list snapshot counts, selection mapping, native move/create entry and completion, appearance and presentation lifecycle. Every stage is listed even with **not reached / hits=0**. **blocked_by_diagnostic** is a deliberate no-submit result; **cancelled** is cancellation; neither proves an original feature failed. **failed** marks an observed guard/contract/error failure. Native didPerform/editor completion still does not prove server synchronization. Cancelling an editor/chooser intentionally leaves commit/perform stages at zero; do not force a write merely to fill them.
+不需要移动或新建任何邮件/邮箱。若要额外观察原生相关菜单，只由你自然打开后取消；探针从不自动调用或弹出业务界面，也不会拦截你的真实操作。因此不要点击原生移动目标、保存、删除等提交动作来“补齐采集”。
 
-Verification uses 9 source-boundary checks plus ASan execution of production `Trace.m`/`NativeCore.m` on macOS (MRC trace; ARC and MRC core). Tests execute the real final-submit policy and factory transform, privacy/error mapping, lifecycle, stale callbacks, concurrency and caps. Synthetic event fixtures verify recorder coverage; static hook/button checks are wiring evidence, **not execution of UIKit, system Mail or Email.framework**. Actual on-device capture remains required.
+## 实际采集范围
 
-## User flow
+仅保存公开 UIKit 已加载视图/控制器/列表 delegate、dataSource 的匿名关系，以及少量目标类、完整可达父类链和协议声明（各项上限明确报告）。不强制加载未打开的页面，不遍历全进程类或全镜像。
 
-1. Open a native mailbox list → **插件**. Appearance is independently switchable.
-2. Add a rule from the sender of one natively selected message, or enter an exact ASCII email address. Select the owning account/mailbox; choose this mailbox or this account's mailboxes. Edit, enable/disable and delete are available under rule management.
-3. The **global hiding switch defaults off**. Rules do not move mail. Enable it explicitly to hide matching messages from supported current mailbox queries. Address comparison follows the native ANY/equality/case-insensitive predicate, preserving dots and +tags. No display-name/substring matching. Non-ASCII addresses need their ASCII/punycode representation.
-4. To organize mail, select a rule → **打开同发件人整理预览**. This is a separate, exact inclusion query, even if hiding is disabled. The source is the selected account's mailbox(es) already present in the current list, not a silently expanded all-account search.
-5. Optionally choose **在此账号新建邮箱…**. The real Mail `MailboxEditingController` is initialized with a single valid legacy account and no existing mailbox. The user saves in native UI; Mail validates the name/parent and submits through its own operation queue. Closing that UI is not a server-success receipt. Wait for the mailbox to appear in the native destination chooser.
-6. Choose **预览已加载邮件并选择移动…**. The confirmation states sender, source and exact loaded count. Unresolved futures are not waited on synchronously or silently counted. Native stable item IDs are selected, then Mail's existing non-predictive move picker opens. Choosing a same-account destination is the actual native move action. Cross-account, same-source destination, mailbox-wide selections, mixed-thread objects, changed owner/scope or unmatched messages are rejected before execution. It does not move unloaded server history or auto-move future messages.
-7. End organization to rebuild the current owner's normal query. Disable hiding for the original unfiltered plugin view. No saved predicate or model is replayed into another account.
+唯一被动 hook 是当前 UIApplication 实际类的公开 `sendEvent:`，严格匹配 `v24@0:8@16`；相同 self、selector、event 交给原函数恰好一次，先原调用后观察，返回为 void。不读 UIEvent 的触点、按键、坐标或任何值。只聚合 owner 匿名编号、owner 类型、参数类型、调用次数和“参数传给 owner”关系。ABI 不匹配则完全不装 hook，手动阶段标记仍可用。没有任何 Mail 私有业务方法 hook、查询 hook 或谓词 hook。
 
-## Production architecture
+开始后，公开事件触发约 350ms 的有界快照；结构不变的自动快照去重。弹出探针控制面板时暂停；停止、清空或阶段切换使旧延迟回调失效。手动标记用于补足原生过渡动画、异步刷新或相同结构的不同操作，不将未观察到的操作写成已发生。
 
-Only `Native.m`, `NativeCore.m`, `Theme.m`, `Trace.m` are linked. `Rules.m`, `RuleCore.m`, `Safety.m`, old metadata/probe modules are historical, not loaded.
+不读发件人、邮箱地址、主题、正文、URL、附件、账号值、token、UI 文本或错误原文；不读 predicate、常量、KVC、ivar、Swift offset；没有全局 objc_msgSend hook。字段值白名单为空。方法/属性名称是声明元数据，不代表调用了其 getter。
 
-The synchronous `_reloadDataSource` call establishes a thread-local owner context with an immutable per-call frame; nested/unsupported owners mask that frame and `@finally` restores it. Only that owner's `EMMessageList.simpleMessageListForMailboxes:...transformPredicate:...` factory call gets a wrapped predicate transform. It explicitly copies the typed original transform and wrapper under MRC, preserves all factory arguments, and ANDs the original mailbox scope with per-mailbox sender conditions. Outside that call context the factory is unchanged. Native system filters are applied by Mail afterward; their filter/ignore arguments are not intercepted or replayed.
+最多 24 阶段，其中自动快照最多占前 16 个阶段位置，每阶段最多 180 节点、400 关系、16 层；元数据按类/协议去重并标记截断；导出上限 1.5 MiB，超限会明确标注省略。只存内存、不写日志文件、不自动上传或联网；系统分享是你主动选择的导出行为。
 
-**When rules or organization apply, the affected owner displays native individual messages, not grouped threads.** This is deliberate: filtering/moving a whole mixed-sender thread would be incorrect. The original stable message IDs, native data source, selection model and reading path remain in use. The system's thread preference is not written; it resumes when the local rule query is removed. Unified lists are supported when their supplied mailboxes have stable physical identities; each exclusion branch belongs only to its originating mailbox/account. Search controllers and smart/nonphysical scopes retain their original models.
+## 验证边界
 
-Native sender factories are verified on freshly allocated synthetic EMMessage objects with populated senderList, including positive/negative ANY, case, prefix/domain, +tag/dot, empty and mixed arrays. The returned AST must be equality with case-insensitive options and an identifier-only key path. Derived getters need not be ObjC declared properties (the old gate wrongly assumed that). A failed contract leaves that list's original query unchanged; it never falls back to hiding cells or entire threads. This runtime self-test is not a claim that an actual device passed it.
+- `python3 tests/check_readonly.py` 验证生产链接白名单及禁止 API；旧 0.5.1 Makefile 在该测试下失败。
+- macOS ASan host fixture 执行真实生产 Session、Graph、Metadata、Observer。敏感 getter、业务 action 一旦被调用即 abort；验证父类/协议、MailboxPicker 不能认成列表、六种阶段、开始/暂停/停止/分享期排除、容量上限、去重、ABI 拒绝、原事件参数不变且调用一次。
+- CI 构建 RootHide arm64 与 arm64e，解包确认只有同名 MailRules.dylib，使用实际 Mach-O 字节/strings 和符号检查排除旧提示、规则函数、偏好与网络 API。
+- 主机 fixture 不等同于系统 UIKit 或真实 Mail 验收；入口/分享的 UIKit 生命周期仍需实机确认。没有声称已在用户设备测试，也不声称声明元数据证明了原生业务执行成功。
 
-Organization uses the existing selection model and `_showTransferPickerForNonPredictiveMoveOfMessages:`. A local stamp on each move interaction retains the expected owner/rule/scope. The actual `MFMoveMessageTriageInteraction` execution is guarded against repeated submission, and its native `(interaction, didPerform)` completion is forwarded once even on a repeated/reentrant callback. Unstable selection configuration and late status updates for another preview are rejected. Statuses distinguish handoff, not performed and performed/pending synchronization. No per-item server success is invented. Native errors/permissions and synchronization remain Mail's responsibility. There are no guessed RPCs, new credentials, direct repository transfer/create actions or custom copy+delete implementation.
-
-## Isolation and appearance
-
-Configuration is independent: `dev.mailrules.native5` (stable serialized object identities; no migration of old data). Appearance uses `dev.mailrules.theme`. Mail's own preferences, favorites, account order, global mailbox picker, badges and message HTML are not written. No mailbox setter/data-source setter/filter-apply/section-prepare hook is installed. Native appearance changes are scoped to home, list and reading chrome and restored by Theme.m. No row-count or data-source substitution.
-
-Close and reopen Mail after upgrade/uninstall because injected code cannot be hot-unloaded. Old 0.3.x configuration is preserved but not read. The uninstall script does not reset Mail data/preferences. The application-specific ABI gate does not broaden support to other OS builds.
-
-## Verification and remaining acceptance
-
-`python3 tests/check_native.py` checks the actual production manifest, forbidden global/replay/RPC APIs, native interaction wiring and appearance scope. The independent GitHub Actions workflow compiles and executes the actual **production NativeCore.m** with Foundation native-shaped models in both ARC and production MRC modes under AddressSanitizer (including deferred transforms, all factory arguments, and reentrant callbacks), then builds both iOS slices and verifies package identity and linked functionality. Fixtures cover multiple accounts, no-rule owner transitions, same-thread different senders, derived native getters, ANY/case, original filters/scope, stable IDs, new arrivals, disable/restore, failure-with-no-submit and pending-sync vs completion.
-
-Host fixtures cannot execute system Email.framework or UIKit on an iOS device. Real-device acceptance is still required for runtime predicate self-test, injected UI, native list/reading/selection consistency, account-provider mapping, mailbox creation permissions, destination picker behavior and server synchronization. This release implements those client flows; it does not certify that they have succeeded on a user's private mailbox.
-
-Public upload is an explicit source/test/config/workflow whitelist. IPA, extracted binaries/disassembly, screenshots, private runtime reports and local handoffs are excluded. No mail is accessed or modified during development.
+GitHub 上传仅限本版本源码、说明、测试、工作流、控制文件与无删除卸载脚本；不上传用户报告、IPA、凭据或本地安装包目录。不修改并行 Files 项目。

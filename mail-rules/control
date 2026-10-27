@@ -1,9 +1,9 @@
 Package: dev.mailrules.probe
-Name: Mail Rules
-Version: 0.5.1
+Name: Mail Read-only Probe
+Version: 0.5.2
 Architecture: iphoneos-arm64e
-Description: Opt-in bounded operation diagnostics with default no-submit rehearsal for native Mail sender rules and organization.
-Maintainer: Mail Rules
-Author: Mail Rules
+Description: Explicit opt-in read-only UIKit structure and metadata collector. No rule engine, Mail query mutation, preferences or automatic upload.
+Maintainer: Mail Read-only Probe
+Author: Mail Read-only Probe
 Section: Tweaks
 Depends: firmware (>= 16.6), firmware (<< 16.7)

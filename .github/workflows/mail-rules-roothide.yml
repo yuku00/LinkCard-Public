@@ -1,4 +1,4 @@
-name: Mail Rules RootHide
+name: Mail Read-only Probe RootHide
 on:
   workflow_dispatch:
 permissions:
@@ -18,21 +18,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Verify native release boundaries
+      - name: Verify isolated read-only source boundary
+        run: python3 tests/check_readonly.py
+      - name: Execute production graph metadata observer and lifecycle with abort traps
         run: |
-          python3 tests/check_native.py
-          python3 tests/check_trace.py
-      - name: Execute opt-in trace host before native fixtures
-        run: |
-          clang -fno-objc-arc -fblocks -fsanitize=address -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -I. -c Trace.m -o "$RUNNER_TEMP/mail-trace.o"
-          clang -fno-objc-arc -fblocks -fsanitize=address -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -I. -framework Foundation NativeCore.m tests/trace-host.m "$RUNNER_TEMP/mail-trace.o" -o "$RUNNER_TEMP/mail-trace-host"
-          ASAN_OPTIONS=detect_leaks=0 "$RUNNER_TEMP/mail-trace-host"
-      - name: Execute production query and native interaction fixtures
-        run: |
-          for memory in -fobjc-arc -fno-objc-arc; do
-            clang "$memory" -fblocks -fsanitize=address -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -I. -framework Foundation NativeCore.m tests/native-host.m "$RUNNER_TEMP/mail-trace.o" -o "$RUNNER_TEMP/mail-native-host"
-            ASAN_OPTIONS=detect_leaks=0 "$RUNNER_TEMP/mail-native-host"
-          done
+          clang -DRO_HOST=1 -fobjc-arc -fblocks -fsanitize=address -Wall -Wextra -Werror -Wno-unused-parameter -Wno-deprecated-declarations -I. -framework Foundation readonly/Session.m readonly/Graph.m readonly/Metadata.m readonly/Observer.m tests/readonly-host.m -o "$RUNNER_TEMP/mail-readonly-host"
+          ASAN_OPTIONS=detect_leaks=0 "$RUNNER_TEMP/mail-readonly-host"
       - name: Prepare RootHide Theos
         run: |
           brew install make ldid dpkg
@@ -53,18 +44,20 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.mailrules.probe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.5.1
+          test "$(dpkg-deb -f "$deb" Version)" = 0.5.2
           dpkg-deb -x "$deb" "$RUNNER_TEMP/mail-rules-package"
           binary=$(python3 -c 'import os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"mail-rules-package"; binaries=list(p.rglob("*.dylib")); assert len(binaries)==1 and binaries[0].name=="MailRules.dylib"; print(binaries[0])')
           lipo "$binary" -verify_arch arm64 arm64e
-          python3 -c 'import pathlib,sys; b=pathlib.Path(sys.argv[1]).read_bytes(); forbidden=[b"applyFilterPredicate:",b"filteredMessageListWithPredicate:",b"MRState",b"dev.mailrules.rules",b"EMCreateMailboxChangeAction",b"EMMessageTransferAction"]; assert not any(x in b for x in forbidden), "Legacy functionality linked"; required=[b"mail051-trace-r2",b"selection.map",b"install.query",b"diagnostic_dry_run",b"blocked_by_diagnostic",b"query.generated",b"dev.mailrules.native5",b"MR5State",b"_showTransferPickerForNonPredictiveMoveOfMessages:",b"initWithMailbox:account:validAccounts:"]; assert all(x in b for x in required), "Native functionality missing"; print("PASS: native query/organization present; old replay and direct repository actions absent")' "$binary"
+          python3 tests/check_readonly_binary.py "$binary"
+          nm -m "$binary" > "$RUNNER_TEMP/mail-readonly-symbols.txt"
+          ! rg 'MR5|MRD|MRState|MRTheme|MRNative|MRRule|MRTrace' "$RUNNER_TEMP/mail-readonly-symbols.txt"
           lipo -info "$binary"
           dpkg-deb -I "$deb"
           dpkg-deb -c "$deb"
           shasum -a 256 packages/*.deb > packages/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
-          name: mail-rules-0.5.1-${{ github.sha }}
+          name: mail-rules-0.5.2-${{ github.sha }}
           path: |
             mail-rules/packages/*.deb
             mail-rules/packages/SHA256SUMS
