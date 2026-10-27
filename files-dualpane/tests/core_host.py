@@ -27,8 +27,17 @@ prefix='''#import <Foundation/Foundation.h>
 @property id delegate;
 @property id dataSource;
 @property NSArray *indexPathsForSelectedItems;
+@property NSDictionary *cells;
+- (id)cellForItemAtIndexPath:(NSIndexPath *)path;
 @end
-@implementation UICollectionView @end
+@implementation UICollectionView
+- (id)cellForItemAtIndexPath:(NSIndexPath *)path { return self.cells[path]; }
+@end
+@interface DOCThumbnailFittingImageView : UIView
+@property id node;
+@property NSURL *url;
+@end
+@implementation DOCThumbnailFittingImageView @end
 @interface FPItem : NSObject
 @property NSURL *fileURL;
 @end
@@ -79,6 +88,12 @@ int main(void) { @autoreleasepool {
     assert(([FPSelectedURLs(pane,&error) isEqual:@[a,b]])); // No visible cells exist.
     item2.fileURL=nil; assert(!FPSelectedURLs(pane,&error)); item2.fileURL=b;
     cv.indexPathsForSelectedItems=@[]; assert(!FPSelectedURLs(pane,&error)); cv.indexPathsForSelectedItems=@[p];
+    cv.dataSource=[NSObject new]; assert(!FPSelectedURLs(pane,&error)); // Swift-like data source: no ObjC mapping.
+    DOCThumbnailFittingImageView *thumb=[DOCThumbnailFittingImageView new]; thumb.node=item;
+    UIView *cell=[UIView new]; cell.subviews=@[thumb]; cv.cells=@{p:cell};
+    assert(([FPSelectedURLs(pane,&error) isEqual:@[a]]));
+    cv.indexPathsForSelectedItems=@[p,p2]; assert(!FPSelectedURLs(pane,&error)); // All-or-none when one selected row is offscreen.
+    cv.dataSource=ds; cv.indexPathsForSelectedItems=@[p];
     DOCConcreteLocation *location=[DOCConcreteLocation new]; FPItem *dir=[FPItem new]; dir.fileURL=right; location.node=dir;
     full.hierarchyController=full; full.lastLocation=location; assert([FPFolder(pane) isEqual:right]);
     assert(!FPTransferOne(a,right,NO)); assert([fm fileExistsAtPath:a.path]);

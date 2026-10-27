@@ -14,19 +14,39 @@ static void FPFindCollections(UIView *view, NSMutableArray *result) {
     if([view isKindOfClass:UICollectionView.class]) [result addObject:view];
     for(UIView *child in view.subviews) FPFindCollections(child,result);
 }
+static void FPSelectedCellURLs(UIView *view, NSMutableArray<NSURL *> *urls) {
+    Class thumbnail=NSClassFromString(@"DOCThumbnailFittingImageView");
+    if(thumbnail && [view isKindOfClass:thumbnail]) {
+        NSURL *url=FPNodeURL(Get(view,@"node"));
+        if(!url) { id candidate=Get(view,@"url"); if([candidate isKindOfClass:NSURL.class] && [candidate isFileURL]) url=candidate; }
+        if(url && ![urls containsObject:url]) [urls addObject:url];
+    }
+    for(UIView *child in view.subviews) FPSelectedCellURLs(child,urls);
+}
 static NSArray<NSURL *> *FPSelectedURLs(FPBrowserPane *pane, NSError **error) {
     UIViewController *current=Get(FPFull(pane),@"currentItemCollectionViewController");
     if(!InExperiment(current) || !current.isViewLoaded) { *error=FPFileError(@"当前栏尚未就绪。"); return nil; }
     NSMutableArray *collections=[NSMutableArray new], *urls=[NSMutableArray new]; FPFindCollections(current.view,collections);
     for(UICollectionView *cv in collections) {
-        if(cv.delegate!=current) continue;
+        if((id)cv.delegate!=current) continue;
         NSArray *paths=[cv.indexPathsForSelectedItems copy];
         id data=cv.dataSource;
-        if(![data isKindOfClass:UICollectionViewDiffableDataSource.class] || !ABI([data class],@"itemIdentifierForIndexPath:","@@:@")) { *error=FPFileError(@"此列表不支持可靠的选中项映射，未执行操作。"); return nil; }
+        Class bridge=NSClassFromString(@"FPDiffableBridge");
+        SEL supports=NSSelectorFromString(@"supportsDataSource:"), nodeSelector=NSSelectorFromString(@"nodeFrom:indexPath:");
+        BOOL swiftMapped=bridge && ABI(object_getClass(bridge),NSStringFromSelector(supports),"B@:@") && ABI(object_getClass(bridge),NSStringFromSelector(nodeSelector),"@@:@@") && ((BOOL(*)(id,SEL,id))[(id)bridge methodForSelector:supports])(bridge,supports,data);
+        BOOL mapped=[data isKindOfClass:UICollectionViewDiffableDataSource.class] && ABI([data class],@"itemIdentifierForIndexPath:","@@:@");
         for(NSIndexPath *path in paths) {
-            id node=[(UICollectionViewDiffableDataSource *)data itemIdentifierForIndexPath:path];
-            NSURL *url=FPNodeURL(node);
-            if(!url) { *error=FPFileError(@"部分选中项尚无文件 URL。请下载或授权后重试；本次未执行任何项目。"); return nil; }
+            NSURL *url=nil;
+            if(swiftMapped) url=FPNodeURL(((id(*)(id,SEL,id,id))[(id)bridge methodForSelector:nodeSelector])(bridge,nodeSelector,data,path));
+            else if(mapped) url=FPNodeURL([(UICollectionViewDiffableDataSource *)data itemIdentifierForIndexPath:path]);
+            else {
+                // The captured Swift generic data source has no ObjC item getter.
+                // Only inspect its genuinely displayed selected cell; never dequeue or infer paths.
+                UIView *cell=[cv cellForItemAtIndexPath:path];
+                NSMutableArray *visible=[NSMutableArray new]; if(cell) FPSelectedCellURLs(cell,visible);
+                if(visible.count==1) url=visible.firstObject;
+            }
+            if(!url) { *error=FPFileError(@"部分选中项在屏外、无已验证节点或无文件 URL。请只选择可见且已下载的项目后重试；本次未执行任何项目。"); return nil; }
             if(![urls containsObject:url]) [urls addObject:url];
         }
     }
@@ -94,7 +114,7 @@ static void FPTransfer(FPDualContainer *container, NSUInteger index, BOOL move) 
         for(NSURL *url in urls) { failure=FPTransferOne(url,folder,move); if(failure) break; done++; }
         dispatch_async(dispatch_get_main_queue(),^{
             container.transferBusy=NO;
-            FPNotice(container,[NSString stringWithFormat:@"%@ %lu/%lu 项 → %@%@",move ? @"移动完成" : @"复制完成",(unsigned long)done,(unsigned long)urls.count,folder.lastPathComponent,failure ? [@"；已停止：" stringByAppendingString:failure.localizedDescription] : @"（提供商云端同步另计）"]);
+            FPNotice(container,[NSString stringWithFormat:@"%@：成功 %lu/%lu 项 → %@%@",move ? @"移动" : @"复制",(unsigned long)done,(unsigned long)urls.count,folder.lastPathComponent,failure ? [@"；已停止：" stringByAppendingString:failure.localizedDescription] : @"（提供商云端同步另计）"]);
         });
     });
 }

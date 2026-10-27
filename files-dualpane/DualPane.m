@@ -230,7 +230,9 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
     [self.view addSubview:self.stack];
     self.status=[UILabel new]; self.status.translatesAutoresizingMaskIntoConstraints=NO;
     self.status.font=[UIFont preferredFontForTextStyle:UIFontTextStyleCaption2]; self.status.adjustsFontForContentSizeCategory=YES;
-    self.status.numberOfLines=2; self.status.text=@"长按原生项目操作 · 下方跨栏/首页";
+    self.status.numberOfLines=2; self.status.text=@"下方跨栏/首页 · 点状态查看完整结果";
+    self.status.userInteractionEnabled=YES; self.status.accessibilityTraits|=UIAccessibilityTraitButton;
+    [self.status addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(showStatus)]];
     [self.view addSubview:self.status];
     [NSLayoutConstraint activateConstraints:@[[self.status.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:8],[self.status.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-8],[self.status.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor]]];
     UIBarButtonItem *left=[[UIBarButtonItem alloc] initWithTitle:@"左栏 ⇄ / 首页" menu:FPPaneMenu(self,0)];
@@ -243,6 +245,12 @@ static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *o
         [self.stack addArrangedSubview:pane.view]; [pane didMoveToParentViewController:self];
     }
     [self applyMode];
+}
+- (void)showStatus {
+    if(self.presentedViewController) return;
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"操作结果" message:self.status.text preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"返回" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 - (void)changeMode { self.userSelectedMode=YES; [self applyMode]; }
 - (void)applyMode {

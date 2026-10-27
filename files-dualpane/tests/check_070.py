@@ -11,8 +11,15 @@ assert 'numberOfLines=3' not in a+c
 assert 'FPNameLines' in c and 'FPCompactRowHeight' in a
 assert 'UIFontMetrics' in c and 'clipsToBounds=YES' in c
 assert 'CellStyleKey,nil' in c and 'original.textProperties.font' in c
+bridge=(r/'DiffableBridge.swift').read_text()
+assert 'extension UICollectionViewDiffableDataSource: FPRealDiffableSource' in bridge
+assert 'itemIdentifier(for: indexPath)' in bridge and 'dataSource as? FPRealDiffableSource' in bridge
+assert 'Mirror(' not in bridge and 'unsafeBitCast' not in bridge
+assert 'DiffableBridge.swift' in (r/'Makefile').read_text()
+assert 'swiftMapped' in x and 'supportsDataSource:' in x
 assert 'indexPathsForSelectedItems' in x and 'itemIdentifierForIndexPath:' in x
-assert 'cellForItemAtIndexPath' not in x
+assert 'cellForItemAtIndexPath:path' in x and 'DOCThumbnailFittingImageView' in x
+assert 'dequeueReusableCell' not in x and 'visible.count==1' in x
 assert 'isKindOfClass:UICollectionViewDiffableDataSource.class' in x
 assert 'lastLocation' in x and 'DOCConcreteLocation' in x
 assert 'FPNodeURL(Get(location,@"node"))' in x
