@@ -1,0 +1,9 @@
+Package: dev.mailrules.probe
+Name: Mail Probe
+Version: 0.1.0
+Architecture: iphoneos-arm64e
+Description: Explicit read-only Mail interface metadata probe for iOS 16.6 build 20G75. No mail actions.
+Maintainer: Mail Rules
+Author: Mail Rules
+Section: Development
+Depends: firmware (>= 16.6), firmware (<< 16.7)
