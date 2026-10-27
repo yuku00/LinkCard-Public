@@ -22,6 +22,7 @@ jobs:
         run: |
           python3 tests/check.py
           python3 tests/check_lifecycle.py
+          python3 tests/check_experiment.py
       - name: Execute production MRC wrappers on host
         run: |
           clang -fno-objc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation tests/lifecycle-host.m -o "$RUNNER_TEMP/lifecycle-host"
@@ -33,7 +34,7 @@ jobs:
           xcodebuild -version
           git -C "$THEOS" rev-parse HEAD
           git -C "$THEOS" submodule status --recursive
-      - name: Build observation-only probe
+      - name: Build native experiment arm64 and arm64e
         run: |
           set -o pipefail
           gmake package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide 2>&1 | tee "$RUNNER_TEMP/files-probe-build.log"
@@ -45,6 +46,12 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.filesdualpane.nativeprobe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
+          test "$(dpkg-deb -f "$deb" Version)" = 0.3.0
+          dpkg-deb -x "$deb" "$RUNNER_TEMP/files-package"
+          binary=$(python3 -c 'import os,pathlib; print(next(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("files-package").rglob("FilesNativeProbe.dylib")))')
+          test -n "$binary"
+          lipo -info "$binary"
+          lipo -verify_arch arm64 arm64e "$binary"
           dpkg-deb -I "$deb"
           dpkg-deb -c "$deb"
           shasum -a 256 packages/*.deb > packages/SHA256SUMS

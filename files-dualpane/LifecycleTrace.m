@@ -41,7 +41,10 @@ static unsigned record(unsigned h,unsigned call,BOOL exit,id self,id a,id b,id c
     e->refs[0]=refLocked(self); e->refs[1]=refLocked(a); e->refs[2]=refLocked(b); e->refs[3]=refLocked(c); e->refs[4]=refLocked(result);
     pthread_mutex_unlock(&lock); return call;
 }
+static void (*eventObserver)(id, const char *);
+void FPLifecycleSetEventObserver(void (*observer)(id, const char *)) { if([NSThread isMainThread]) eventObserver=observer; }
 static unsigned enter(unsigned h,id s,id a,id b,id c) {
+    if([NSThread isMainThread] && eventObserver && (!strcmp(hooks[h].sel,"collectionView:didSelectItemAtIndexPath:") || !strcmp(hooks[h].sel,"fullDocumentManagerViewController:didUpdateHierarchy:displayedRootLocation:"))) eventObserver(s,hooks[h].sel);
     if(!atomic_load_explicit(&enabled,memory_order_relaxed)) return 0;
     unsigned hit=atomic_fetch_add_explicit(&hooks[h].hits,1,memory_order_relaxed)+1;
     // First 16 calls per natural getter; critical init/binding/subscription/dealloc are never sampled.
@@ -140,6 +143,7 @@ void FPLifecycleStart(void) {
     hook("Files.DOCItemCollectionViewController","collectionView:didDeselectItemAtIndexPath:","v@:@@");
     hook("Files.DOCItemCollectionViewController","setEditing:animated:","v@:BB");
     hook("Files.DOCBrowserContainerController","setEditing:animated:","v@:BB");
+    hook("DOCSplitBrowserViewController","fullDocumentManagerViewController:didUpdateHierarchy:displayedRootLocation:","v@:@@@");
     hook("Files.DOCBrowserHistoryDataSource","init","@@:");
     hook("Files.DOCActionManager","init","@@:");
     const char *lives[]={"DOCFullDocumentManagerViewController","DOCSplitBrowserViewController","DOCTabbedBrowserViewController","DOCSourceObserver","DOCSourceObserverToken","Files.DOCDocumentManager","Files.DOCHierarchyController","Files.DOCBrowserHistoryDataSource","Files.DOCBrowserNavigationDataSource","Files.DOCBrowserContainerController","Files.DOCItemCollectionViewController"};
@@ -159,7 +163,7 @@ static void protocolInfo(Protocol *p,NSMutableSet *seen,NSMutableString *out) {
 }
 NSString *FPLifecycleReport(void) {
     FPLifecycleStop();
-    NSMutableString *out=[NSMutableString stringWithString:@"Files lifecycle trace 0.2.0; phase 1 of maximum 2 device rounds\nObject IDs are process-local address/class observations. A dealloc retires tracked IDs; pointer reuse without a tracked dealloc is ambiguous. No proof of retention ownership follows from IDs alone.\nINIT return self/nil/replacement is passed through with original MRC ownership. Only Objective-C dispatch is observed; direct Swift calls are not. No second instance was constructed. No completion block was wrapped or invoked. The probe performs no file/prefs operations; normal Files history writes remain allowed.\nNatural getters record their first 16 calls per selector/class; hits counts all calls until stop/deadline. Critical lifecycle events are not sampled. Event order is lock acquisition order, with per-thread nesting; not a cross-thread causal proof.\nStop freezes capture; installed hooks remain transparent pass-through until process exit. No re-arm, disk log, or upload.\n"];
+    NSMutableString *out=[NSMutableString stringWithString:@"Files lifecycle trace 0.3.0; final native experiment round\nObject IDs are process-local address/class observations. A dealloc retires tracked IDs; pointer reuse without a tracked dealloc is ambiguous. No proof of retention ownership follows from IDs alone.\nINIT return self/nil/replacement is passed through with original MRC ownership. Only Objective-C dispatch is observed; direct Swift calls are not. See experiment section for new-instance construction/presentation. No completion block was wrapped or invoked by this recorder. The recorder performs no file/prefs operations; normal Files history writes remain allowed.\nNatural getters record their first 16 calls per selector/class; hits counts all calls until stop/deadline. Critical lifecycle events are not sampled. Event order is lock acquisition order, with per-thread nesting; not a cross-thread causal proof.\nStop freezes capture; installed hooks remain transparent pass-through until process exit. No re-arm, disk log, or upload.\n"];
     pthread_mutex_lock(&lock);
     [out appendFormat:@"EVENTS %u/%d OBJECTS %u/%d eventCap=%d objectCap=%d elapsed=%.1fs deadline=180s\n",enum_,ECAP,onum,OCAP,eventLimit,objectLimit,(mach_absolute_time()-startTicks)*secondsPerTick];
     for(unsigned i=0;i<hnum;i++) {

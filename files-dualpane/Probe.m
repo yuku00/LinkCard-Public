@@ -1,12 +1,13 @@
 #import <UIKit/UIKit.h>
 #import "LifecycleTrace.h"
+#import "NativeExperiment.h"
 
 @interface FPViewer : UIViewController
 @property(nonatomic,copy) NSString *report;
 @end
 @implementation FPViewer
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"Files 0.2.0 生命周期";
+    [super viewDidLoad]; self.title=@"Files 0.3.0 原生实验";
     self.view.backgroundColor=UIColor.systemBackgroundColor;
     UITextView *text=[[UITextView alloc] initWithFrame:self.view.bounds];
     text.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
@@ -40,8 +41,8 @@
             UIButton *b=[self.buttons objectForKey:w];
             if(b) { [w bringSubviewToFront:b]; continue; }
             b=[UIButton buttonWithType:UIButtonTypeSystem];
-            [b setTitle:@"停止并导出" forState:UIControlStateNormal];
-            b.accessibilityLabel=@"停止生命周期追踪并导出匿名报告";
+            [b setTitle:@"原生实验 / 导出" forState:UIControlStateNormal];
+            b.accessibilityLabel=@"打开最后一次原生实验或停止并导出匿名报告";
             b.backgroundColor=UIColor.secondarySystemBackgroundColor; b.layer.cornerRadius=10;
             b.translatesAutoresizingMaskIntoConstraints=NO;
             [b addTarget:self action:@selector(activate:) forControlEvents:UIControlEventTouchUpInside];
@@ -59,8 +60,16 @@
     while(host.presentedViewController && !host.presentedViewController.isBeingDismissed) host=host.presentedViewController;
     // Never stack over an existing sheet, picker or action menu.
     if(host!=w.rootViewController || host.isBeingPresented || host.isBeingDismissed) return;
+    if(!FPExperimentHasRun()) {
+        UIAlertController *a=[UIAlertController alertControllerWithTitle:@"最后一次原生实例实验" message:@"新增一个可关闭原生浏览实例，不修改原控制器树。只进入目录、返回和选择；不要使用复制/移动/删除/重命名等菜单。原生 Files 可能正常更新历史偏好；私有接口可能崩溃。请启动后尽快完成，关闭实验再导出。" preferredStyle:UIAlertControllerStyleAlert];
+        [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+        [a addAction:[UIAlertAction actionWithTitle:@"启动真实原生实例" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [host dismissViewControllerAnimated:YES completion:^{ FPExperimentPresent(host); }];
+        }]];
+        [host presentViewController:a animated:YES completion:nil]; return;
+    }
     FPLifecycleStop();
-    FPViewer *viewer=[FPViewer new]; viewer.report=FPLifecycleReport();
+    FPViewer *viewer=[FPViewer new]; viewer.report=[FPExperimentReport() stringByAppendingFormat:@"\n%@",FPLifecycleReport()];
     UINavigationController *nav=[[UINavigationController alloc] initWithRootViewController:viewer];
     [host presentViewController:nav animated:YES completion:nil];
 }

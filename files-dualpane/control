@@ -1,8 +1,8 @@
 Package: dev.filesdualpane.nativeprobe
 Name: Files Native Probe
-Version: 0.2.0
+Version: 0.3.0
 Architecture: iphoneos-arm64e
-Description: Bounded in-memory natural lifecycle trace for Files 16.6 (20G75). Explicit stop/export; no file operations or second browser.
+Description: Final restricted new native Split browser experiment for Files 16.6 (20G75). Independent dismissible container, isolated opening delegate and in-memory lifecycle export. Not a file-write sandbox.
 Maintainer: Files DualPane Research
 Author: Files DualPane Research
 Section: Development
