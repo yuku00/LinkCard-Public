@@ -72,7 +72,7 @@ static BOOL FPCompactImages(UIView *root, BOOL compact) {
                     stack.distribution=UIStackViewDistributionFill;
                     [text setContentHuggingPriority:249 forAxis:UILayoutConstraintAxisHorizontal];
                     if([text isKindOfClass:UIStackView.class] && ((UIStackView *)text).axis==UILayoutConstraintAxisVertical) ((UIStackView *)text).alignment=UIStackViewAlignmentFill;
-                    for(NSLayoutConstraint *c in stack.constraints) {
+                    for(NSLayoutConstraint *c in [text.constraints arrayByAddingObjectsFromArray:stack.constraints]) {
                         if(c.active && c.firstItem==text && c.firstAttribute==NSLayoutAttributeWidth && c.relation==NSLayoutRelationEqual && !c.secondItem) {
                             [state[@"constraints"] addObject:@[c,@YES]]; c.active=NO;
                         }

@@ -18,7 +18,7 @@ static id FPLocationForNode(FPBrowserPane *pane,id node) {
     }
     return nil;
 }
-static void FPFetchNodeURL(id node,void(^completion)(NSURL *)) {
+static void __attribute__((unused)) FPFetchNodeURL(id node,void(^completion)(NSURL *)) {
     NSURL *url=FPNodeURL(node); if(url) { completion(url); return; }
     id manager=FPClassGet(@"FPItemManager",@"defaultManager");
     SEL s=NSSelectorFromString(@"fetchURLForItem:creatingPlaceholderIfMissing:completionHandler:");
@@ -27,7 +27,7 @@ static void FPFetchNodeURL(id node,void(^completion)(NSURL *)) {
         dispatch_async(dispatch_get_main_queue(),^{ completion([value isKindOfClass:NSURL.class] && value.isFileURL ? value : nil); });
     });
 }
-static void FPFetchLocation(FPBrowserPane *pane,NSURL *url,void(^completion)(id)) {
+static void __attribute__((unused)) FPFetchLocation(FPBrowserPane *pane,NSURL *url,void(^completion)(id)) {
     id manager=FPClassGet(@"FPItemManager",@"defaultManager"); SEL s=NSSelectorFromString(@"fetchItemForURL:completionHandler:");
     if(!url || !ABI([manager class],NSStringFromSelector(s),"v@:@@?")) { completion(nil); return; }
     ((void(*)(id,SEL,id,id))[manager methodForSelector:s])(manager,s,url,^(id item,NSError *error){
