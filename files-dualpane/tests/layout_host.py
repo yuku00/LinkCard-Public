@@ -13,7 +13,6 @@ s=s.replace('@interface UIView : UIResponder','''@interface UIView : UIResponder
 @property CGFloat alpha;
 @property BOOL preservesSuperviewLayoutMargins;
 @property NSArray *layoutGuides;
-@property UILayoutGuide *safeAreaLayoutGuide;
 @property id window;
 - (CGRect)convertRect:(CGRect)rect toView:(UIView *)view;
 - (float)contentHuggingPriorityForAxis:(NSInteger)axis;
@@ -24,7 +23,6 @@ s=s.replace('@implementation UIView\n','''@implementation UIView
 - (float)contentCompressionResistancePriorityForAxis:(NSInteger)axis { return 750; }
 ''')
 s=s.replace('@interface NSLayoutConstraint : NSObject','@interface NSLayoutConstraint : NSObject\n@property NSString *identifier;')
-s=s.replace('@interface UIStackView : UIView','@interface UIStackView : UIView\n@property CGFloat spacing;')
 s=s.replace('@interface UILabel : UIView','''@interface UILabel : UIView
 @property NSAttributedString *attributedText;
 @property BOOL adjustsFontSizeToFitWidth;

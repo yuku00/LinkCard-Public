@@ -72,7 +72,8 @@ static BOOL FPNativeIdentityMatches(NSArray *a, NSArray *b) {
 // Sample only on existing style events, never from a layout callback. Do not key on
 // text/image widths changed by our own plan; do key on native owners and providers.
 static NSArray *FPNativeConfiguration(UICollectionViewCell *cell, UIStackView *row, UIView *slot) {
-    NSMutableArray *values=[NSMutableArray arrayWithObjects:[NSValue valueWithCGSize:cell.contentView.bounds.size],@(slot.bounds.size.height),nil];
+    NSMutableArray *values=[NSMutableArray arrayWithObjects:[NSValue valueWithCGSize:cell.contentView.bounds.size],@(slot.bounds.size.height),@(cell.contentView.effectiveUserInterfaceLayoutDirection),nil];
+    if([cell isKindOfClass:UICollectionViewListCell.class]) [values addObject:[[(UICollectionViewListCell *)cell accessories] copy] ?: @[]];
     NSMutableArray *owners=[NSMutableArray arrayWithObjects:cell,cell.contentView,nil];
     if(row) { [owners addObject:row]; [owners addObjectsFromArray:row.arrangedSubviews]; }
     if(slot) [owners addObjectsFromArray:slot.subviews];
@@ -83,11 +84,20 @@ static NSArray *FPNativeConfiguration(UICollectionViewCell *cell, UIStackView *r
         if([v isKindOfClass:UIStackView.class]) {
             UIStackView *stack=(id)v;
             [values addObject:@[@(stack.axis),@(stack.alignment),@(stack.distribution),@(stack.spacing),@(stack.layoutMarginsRelativeArrangement),[stack.arrangedSubviews copy]]];
+            for(UIView *child in stack.arrangedSubviews) [values addObject:@([stack customSpacingAfterView:child])];
         }
+        NSMutableDictionary *equations=[NSMutableDictionary new];
         for(NSLayoutConstraint *c in v.constraints) {
-            // Stack-generated spacing equations may be replaced with equivalent ones.
-            [values addObject:@[c.firstItem ?: NSNull.null,c.secondItem ?: NSNull.null,@(c.firstAttribute),@(c.secondAttribute),@(c.relation),@(c.multiplier),@(c.constant),@(c.priority),@(c.active)]];
+            if(!c.active) continue;
+            // Count semantic equations, not transient UISV identities or array order.
+            // Public custom spacing above owns horizontal stack spacing regeneration.
+            if([v isKindOfClass:UIStackView.class] && [(UIStackView *)v axis]==UILayoutConstraintAxisHorizontal &&
+                c.firstAttribute==NSLayoutAttributeLeading && c.secondAttribute==NSLayoutAttributeTrailing && c.relation==NSLayoutRelationEqual && c.multiplier==1 &&
+                [[(UIStackView *)v arrangedSubviews] containsObject:c.firstItem] && [[(UIStackView *)v arrangedSubviews] containsObject:c.secondItem]) continue;
+            NSArray *equation=@[c.firstItem ?: NSNull.null,c.secondItem ?: NSNull.null,@(c.firstAttribute),@(c.secondAttribute),@(c.relation),@(c.multiplier),@(c.constant),@(c.priority)];
+            equations[equation]=@([equations[equation] unsignedIntegerValue]+1);
         }
+        [values addObject:equations];
     }
     return values;
 }
@@ -135,6 +145,18 @@ static BOOL FPNativeStateMatches(NSDictionary *state, UICollectionViewCell *cell
             UIStackView *stack=entry[@"stack"];
             if(stack) { if(stack.axis!=UILayoutConstraintAxisVertical || stack.alignment!=UIStackViewAlignmentFill || stack.layoutMarginsRelativeArrangement) return FPLayoutReject(@"cacheMiss",@"FPNativeStateMatches_05"); continue; }
             NSLayoutConstraint *c=entry[@"target"];
+            if(!c.active) {
+                // A regenerated, identical native witness does not require a write.
+                UIView *first=[c.firstItem isKindOfClass:UILayoutGuide.class] ? [(UILayoutGuide *)c.firstItem owningView] : c.firstItem;
+                NSLayoutConstraint *replacement=nil;
+                for(UIView *owner=first;owner;owner=owner.superview) {
+                    for(NSLayoutConstraint *candidate in owner.constraints) if(candidate.active && candidate.firstItem==c.firstItem && candidate.secondItem==c.secondItem &&
+                        candidate.firstAttribute==c.firstAttribute && candidate.secondAttribute==c.secondAttribute && candidate.constant==[entry[@"constant"] doubleValue] &&
+                        candidate.multiplier==1 && candidate.relation==NSLayoutRelationEqual && candidate.priority==c.priority) replacement=candidate;
+                    if(owner==cell.contentView) break;
+                }
+                if(replacement) c=replacement;
+            }
             if(!c.active || c.firstItem!=entry[@"first"] || (c.secondItem ?: NSNull.null)!=entry[@"second"] || c.constant!=[entry[@"constant"] doubleValue] || c.multiplier!=1 || c.relation!=NSLayoutRelationEqual) return FPLayoutReject(@"cacheMiss",@"FPNativeStateMatches_06");
         }
     }
@@ -449,7 +471,7 @@ static BOOL FPPlanTrailing(UICollectionViewCell *cell, UIStackView *row, UIView 
             if(first[@"tags"]) {
                 // Public custom spacing, not a write to a transient UISV constraint.
                 if([first[@"emptyTags"] boolValue]) [watch addObject:@{@"spacingStack":row,@"after":textSlot,@"original":@([row customSpacingAfterView:textSlot]),@"value":@0}];
-            } else FPTrailingChange(local,c,c.constant+(target-offset)/sign);
+            } else if(target!=offset) FPTrailingChange(local,c,c.constant+(target-offset)/sign);
         }
         for(NSDictionary *entry in local) {
             BOOL found=NO; for(NSDictionary *old in changes) if(old[@"target"]==entry[@"target"]) found=YES;
