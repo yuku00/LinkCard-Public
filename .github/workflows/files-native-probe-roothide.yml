@@ -18,6 +18,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Execute complete observed layout graph
+        run: |
+          python3 tests/observed_host.py "$RUNNER_TEMP/observed.m"
+          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation -framework CoreGraphics "$RUNNER_TEMP/observed.m" -o "$RUNNER_TEMP/observed"
+          "$RUNNER_TEMP/observed"
       - name: Static safety checks
         run: |
           python3 tests/check_dualpane.py

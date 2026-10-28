@@ -103,6 +103,7 @@ static NSString *const UIFontTextStyleBody=@"body", *const UIFontTextStyleCaptio
 @property NSMutableArray<UIView *> *arrangedSubviews;
 @property NSInteger axis, distribution, alignment;
 @property BOOL layoutMarginsRelativeArrangement;
+@property CGFloat spacing;
 @property NSMapTable *spacings;
 - (void)addArrangedSubview:(UIView *)view;
 - (CGFloat)customSpacingAfterView:(UIView *)view;
@@ -112,7 +113,14 @@ static NSString *const UIFontTextStyleBody=@"body", *const UIFontTextStyleCaptio
 - (instancetype)init { if((self=[super init])) { _arrangedSubviews=[NSMutableArray new]; _spacings=[NSMapTable strongToStrongObjectsMapTable]; } return self; }
 - (void)addArrangedSubview:(UIView *)view { [self addSubview:view]; [_arrangedSubviews addObject:view]; }
 - (CGFloat)customSpacingAfterView:(UIView *)view { NSNumber *n=[_spacings objectForKey:view]; return n ? n.doubleValue : 12; }
-- (void)setCustomSpacing:(CGFloat)value afterView:(UIView *)view { [_spacings setObject:@(value) forKey:view]; NativeWrite(); }
+- (void)setCustomSpacing:(CGFloat)value afterView:(UIView *)view {
+    [_spacings setObject:@(value) forKey:view]; NativeWrite();
+    // UIKit's public setter updates its generated visible-adjacency equation.
+    NSUInteger i=[_arrangedSubviews indexOfObjectIdenticalTo:view]; UIView *next=nil;
+    if(i!=NSNotFound) for(NSUInteger j=i+1;j<_arrangedSubviews.count;j++) if(!_arrangedSubviews[j].hidden) { next=_arrangedSubviews[j]; break; }
+    for(NSLayoutConstraint *c in self.constraints) if(c.active && c.firstItem==next && c.secondItem==view && c.firstAttribute==NSLayoutAttributeLeading && c.secondAttribute==NSLayoutAttributeTrailing)
+        c.constant=value>1e30 ? self.spacing : value;
+}
 @end
 @interface UILabel : UIView
 @property(nonatomic) UIFont *font;
