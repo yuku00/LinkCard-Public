@@ -69,9 +69,9 @@ def audit_slice(d, arch):
     textaddr, textsize, textoff, _ = sections['__text']
     require(textsize == 4 and d[textoff:textoff+4] == bytes.fromhex('c0035fd6'), 'constructor must contain only ret')
     require(dict(symbols)['_MailLoadCheckInit'] == textaddr, 'constructor symbol mismatch')
-    require('__mod_init_func' in sections and '__init_offsets' not in sections, 'constructor section mismatch')
-    _, initsize, initoff, _ = sections['__mod_init_func']
-    require(initsize == 8 and struct.unpack_from('<Q', d, initoff)[0] == textaddr, 'constructor pointer mismatch')
+    require('__init_offsets' in sections and '__mod_init_func' not in sections, 'constructor section mismatch')
+    _, initsize, initoff, _ = sections['__init_offsets']
+    require(initsize == 4 and u32(d, initoff) == textaddr, 'constructor offset mismatch')
     require(b'MailLoadCheck 0.1.0 | TrollFools native load-only control\0' in d, 'missing immutable version')
     require(len(sigs) == 1, 'expected one code signature')
     sigoff, sigsize = sigs[0]
@@ -109,7 +109,7 @@ def audit_slice(d, arch):
         cds.append({'hash_type': hashtype, 'cdhash': digest(cd).digest()[:20].hex(), 'pages_verified': slots})
     require(cds, 'missing CodeDirectory')
     return {'arch': arch, 'install_name': ids[0], 'dependencies': deps, 'min_os': '16.6',
-            'constructor': 'one __mod_init_func pointer; one ret instruction; no stores/calls',
+            'constructor': 'one __init_offsets entry; one ret instruction; no stores/calls',
             'imports': [], 'signature': cds}
 
 
