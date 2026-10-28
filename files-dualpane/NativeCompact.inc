@@ -241,7 +241,7 @@ static BOOL FPTrailingAncestor(id item, id other, UIView *root) {
         UIView *owner=[(UILayoutGuide *)other owningView];
         return owner && (owner==view || [view isDescendantOfView:owner]) && (owner==root || [owner isDescendantOfView:root]);
     }
-    return [other isKindOfClass:UIView.class] && other!=view && [view isDescendantOfView:other] && (other==root || [(UIView *)other isDescendantOfView:root]);
+    return [other isKindOfClass:UIView.class] && other!=item && [view isDescendantOfView:other] && (other==root || [(UIView *)other isDescendantOfView:root]);
 }
 static BOOL FPTrailingPath(id item, UIView *stop, UIView *root, NSMutableArray *path, CGFloat *offset, NSUInteger depth) {
     if(item==stop) { *offset=0; return YES; }
