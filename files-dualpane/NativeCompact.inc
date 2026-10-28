@@ -1,3 +1,4 @@
+#include <math.h>
 // DOC's verified accessibility getters + the known horizontal thumbnail slot.
 // No Swift ivar access, label-tree guessing, frame repair or layout callback.
 static char FPNativeStyleKey;
@@ -14,7 +15,7 @@ static id FPNativeGet(id object, NSString *name) {
 }
 static void FPCollectKnownThumbnails(UIView *view, NSUInteger depth, NSMutableArray *matches) {
     if(matches.count>1) return;
-    if(FPClassInChain(view,@"DOCThumbnailFittingImageView")) { [matches addObject:view]; return; }
+    if(FPClassInChain(view,@"DOCThumbnailFittingImageView") || FPClassInChain(view,@"DOCFittingImageView")) { [matches addObject:view]; return; }
     if(depth) for(UIView *child in view.subviews) FPCollectKnownThumbnails(child,depth-1,matches);
 }
 static UIView *FPKnownThumbnail(UIView *view, NSUInteger depth) {
@@ -74,7 +75,7 @@ static void FPRestoreNative(UICollectionViewCell *cell, BOOL restore) {
     }
     if(!restore) return;
     UIStackView *row=state[@"row"]; UIView *slot=state[@"slot"];
-    if([row customSpacingAfterView:slot]==6) [row setCustomSpacing:[state[@"spacing"] doubleValue] afterView:slot];
+    if([state[@"geometry"] boolValue] && [row customSpacingAfterView:slot]==6) [row setCustomSpacing:[state[@"spacing"] doubleValue] afterView:slot];
     for(NSDictionary *entry in state[@"labels"]) {
         UILabel *label=entry[@"target"];
         if([label.font isEqual:entry[@"font"]]) label.font=entry[@"originalFont"];
@@ -88,7 +89,7 @@ static BOOL FPNativeStateMatches(NSDictionary *state, UICollectionViewCell *cell
        [state[@"leadingMargin"] doubleValue]!=cell.contentView.directionalLayoutMargins.leading || [state[@"trailingMargin"] doubleValue]!=cell.contentView.directionalLayoutMargins.trailing ||
        ![state[@"font"] isEqual:FPCompactFont(cell,NO)] || ![state[@"detailFont"] isEqual:FPCompactFont(cell,YES)]) return NO;
     UIStackView *row=state[@"row"];
-    if([row customSpacingAfterView:state[@"slot"]]!=6) return NO;
+    if([state[@"geometry"] boolValue] && [row customSpacingAfterView:state[@"slot"]]!=6) return NO;
     for(NSDictionary *entry in state[@"constraints"]) {
         NSLayoutConstraint *c=entry[@"target"];
         if(!c.active || c.constant!=[entry[@"value"] doubleValue]) return NO;
@@ -128,6 +129,76 @@ static BOOL FPPlanDimension(UIView *view, NSLayoutAttribute attribute, UIView *r
     }
     return YES;
 }
+// Only the evidenced fitting image's own width/height ratio is authoritative.
+static CGFloat FPDocumentAspect(UIView *image, UIView *root) {
+    CGFloat ratio=0;
+    for(UIView *owner=image;owner;owner=owner.superview) {
+        for(NSLayoutConstraint *c in owner.constraints) {
+            if(!c.active || c.firstItem!=image || c.secondItem!=image ||
+               !((c.firstAttribute==NSLayoutAttributeWidth && c.secondAttribute==NSLayoutAttributeHeight) ||
+                 (c.firstAttribute==NSLayoutAttributeHeight && c.secondAttribute==NSLayoutAttributeWidth))) continue;
+            if(c.relation!=NSLayoutRelationEqual || c.constant!=0 || !isfinite(c.multiplier) || c.multiplier<=0) return 0;
+            CGFloat value=c.firstAttribute==NSLayoutAttributeWidth ? c.multiplier : 1/c.multiplier;
+            if(ratio && fabs(ratio-value)>0.000001) return 0;
+            ratio=value;
+        }
+        if(owner==root) break;
+    }
+    return ratio;
+}
+static CGFloat FPDocumentDimension(id item, NSLayoutAttribute attribute, UIView *slot, UIView *image, CGSize fitted, CGSize slotSize, BOOL slotHeight) {
+    if(attribute!=NSLayoutAttributeWidth && attribute!=NSLayoutAttributeHeight) return -1;
+    if(item==image) return attribute==NSLayoutAttributeWidth ? fitted.width : fitted.height;
+    if(item==slot && (attribute==NSLayoutAttributeWidth || slotHeight)) return attribute==NSLayoutAttributeWidth ? slotSize.width : slotSize.height;
+    return -1;
+}
+static BOOL FPPlanDocumentDimensions(UIView *root, UIView *slot, UIView *image, CGFloat ratio, NSMutableArray *changes) {
+    if(!ratio || slot.translatesAutoresizingMaskIntoConstraints || image.translatesAutoresizingMaskIntoConstraints) return NO;
+    CGSize fitted=CGSizeMake(20*MIN(1,ratio),20*MIN(1,1/ratio)), slotSize=CGSizeMake(20,20);
+    BOOL slotHeight=NO;
+    NSMutableArray *links=[NSMutableArray new];
+    for(UIView *owner=image;owner;owner=owner.superview) {
+        for(NSLayoutConstraint *c in owner.constraints) {
+            if(!c.active) continue;
+            if((c.firstItem==slot && c.secondItem==image) || (c.firstItem==image && c.secondItem==slot)) {
+                if(c.relation==NSLayoutRelationEqual && c.multiplier==1 && c.constant==0 && c.firstAttribute==c.secondAttribute) {
+                    if(c.firstAttribute==NSLayoutAttributeWidth) slotSize.width=fitted.width;
+                    if(c.firstAttribute==NSLayoutAttributeHeight) { slotSize.height=fitted.height; slotHeight=YES; }
+                }
+            }
+            [links addObject:c];
+        }
+        if(owner==root) break;
+    }
+    // Plan the image and its coupled slot together; never squeeze a slot around an unshrinkable image.
+    NSMutableArray *dimensions=[NSMutableArray arrayWithObjects:@[image,@(NSLayoutAttributeWidth),@(fitted.width)],@[image,@(NSLayoutAttributeHeight),@(fitted.height)],nil];
+    if(slot!=image) {
+        [dimensions addObject:@[slot,@(NSLayoutAttributeWidth),@(slotSize.width)]];
+        if(slotHeight) [dimensions addObject:@[slot,@(NSLayoutAttributeHeight),@(slotSize.height)]];
+    }
+    NSMutableSet *fixed=[NSMutableSet new];
+    for(NSLayoutConstraint *c in links) {
+        CGFloat first=FPDocumentDimension(c.firstItem,c.firstAttribute,slot,image,fitted,slotSize,slotHeight);
+        CGFloat second=FPDocumentDimension(c.secondItem,c.secondAttribute,slot,image,fitted,slotSize,slotHeight);
+        if(first<0 && second<0) continue;
+        if(c.relation!=NSLayoutRelationEqual || !isfinite(c.multiplier) || c.multiplier<=0) return NO;
+        if(first>=0 && !c.secondItem && c.multiplier==1) {
+            [changes addObject:@{@"target":c,@"original":@(c.constant),@"value":@(first),@"added":@NO}];
+            [fixed addObject:@[c.firstItem,@(c.firstAttribute)]];
+        } else if(first>=0 && second>=0 && c.constant==0 && fabs(first-c.multiplier*second)<0.000001) {
+            // Retain and watch the native aspect/equality constraint; never deactivate it.
+            [changes addObject:@{@"target":c,@"original":@0,@"value":@0,@"added":@NO}];
+        } else return NO;
+    }
+    for(NSArray *dimension in dimensions) {
+        UIView *view=dimension[0]; NSLayoutAttribute attribute=[dimension[1] integerValue];
+        if([fixed containsObject:@[view,@(attribute)]]) continue;
+        NSLayoutConstraint *c=[NSLayoutConstraint constraintWithItem:view attribute:attribute relatedBy:NSLayoutRelationEqual toItem:nil attribute:NSLayoutAttributeNotAnAttribute multiplier:1 constant:[dimension[2] doubleValue]];
+        [changes addObject:@{@"target":c,@"original":dimension[2],@"value":dimension[2],@"added":@YES}];
+    }
+    return YES;
+}
+
 static BOOL FPPlanEdges(UIStackView *row, UIView *root, NSMutableArray *changes) {
     BOOL leading=NO,trailing=NO;
     for(UIView *owner=row;owner;owner=owner.superview) {
@@ -179,8 +250,9 @@ static BOOL FPCompactNative(UICollectionViewCell *cell, BOOL compact) {
     UIStackView *row=identity[5]==NSNull.null ? nil : identity[5];
     UIView *textSlot=FPArrangedSlot(title,row);
     if(!row || !textSlot || [row.arrangedSubviews indexOfObjectIdenticalTo:textSlot]!=[row.arrangedSubviews indexOfObjectIdenticalTo:slot]+1 ||
-       row.distribution!=UIStackViewDistributionFill || cell.bounds.size.height<28 ||
+       row.distribution!=UIStackViewDistributionFill || cell.bounds.size.height<44 ||
        (row.layoutMarginsRelativeArrangement && (row.directionalLayoutMargins.leading!=0 || row.directionalLayoutMargins.trailing!=0))) return NO;
+    CGFloat documentAspect=FPDocumentAspect(image,root);
     UIFont *font=FPCompactFont(cell,NO), *detail=FPCompactFont(cell,YES);
     NSMutableArray *labels=[NSMutableArray new]; NSMutableArray *targets=[NSMutableArray arrayWithObject:title];
     for(NSString *getter in @[@"accessibilitySubtitleLabel",@"accessibilityDateLabel",@"accessibilitySizeLabel"]) {
@@ -192,17 +264,31 @@ static BOOL FPCompactNative(UICollectionViewCell *cell, BOOL compact) {
         UIFont *targetFont=label==title ? font : detail;
         CGFloat height=MIN(label.bounds.size.height,cell.bounds.size.height-8);
         // Fixed native rows must actually fit their chosen line count; do not force self-sizing.
-        if(height<targetFont.lineHeight || label.bounds.size.width<=0) return NO;
+        if(height<targetFont.lineHeight || label.bounds.size.width<=0) {
+            if(documentAspect) continue; // Image/slot sizing does not require a font rewrite.
+            return NO;
+        }
         NSInteger lines=label==title ? FPCompactNameLines(height,targetFont.lineHeight,0) : 1;
         [labels addObject:@{@"target":label,@"originalFont":label.font,@"font":targetFont,@"originalLines":@(label.numberOfLines),@"lines":@(lines),
             @"originalBreak":@(label.lineBreakMode),@"originalDynamic":@(label.adjustsFontForContentSizeCategory)}];
     }
-    if(!labels.count) return NO;
+    if(!labels.count && !documentAspect) return NO;
     NSMutableArray *constraints=[NSMutableArray new];
-    if(!FPPlanDimension(slot,NSLayoutAttributeWidth,root,slot,image,constraints) ||
-       (image!=slot && !FPPlanDimension(image,NSLayoutAttributeWidth,root,slot,image,constraints)) ||
-       !FPPlanDimension(image,NSLayoutAttributeHeight,root,slot,image,constraints) || !FPPlanEdges(row,root,constraints)) return NO;
-    NSDictionary *state=@{@"identity":identity,@"row":row,@"slot":slot,@"spacing":@([row customSpacingAfterView:slot]),
+    BOOL geometry;
+    if(documentAspect) geometry=FPPlanDocumentDimensions(root,slot,image,documentAspect,constraints);
+    else geometry=FPPlanDimension(slot,NSLayoutAttributeWidth,root,slot,image,constraints) &&
+       (image==slot || FPPlanDimension(image,NSLayoutAttributeWidth,root,slot,image,constraints)) &&
+       FPPlanDimension(image,NSLayoutAttributeHeight,root,slot,image,constraints);
+    geometry=geometry && FPPlanEdges(row,root,constraints);
+    if(!geometry) {
+        if(!documentAspect) return NO;
+        [constraints removeAllObjects];
+        // A verified standalone image can fit without shrinking an unsupported outer slot.
+        BOOL imageOnly=slot!=image && FPPlanDocumentDimensions(root,image,image,documentAspect,constraints);
+        if(!imageOnly) [constraints removeAllObjects];
+        if(!imageOnly && !labels.count) return NO;
+    }
+    NSDictionary *state=@{@"identity":identity,@"row":row,@"slot":slot,@"spacing":@([row customSpacingAfterView:slot]),@"geometry":@(geometry),
         @"constraints":constraints,@"labels":labels,@"size":[NSValue valueWithCGSize:cell.bounds.size],@"font":font,@"detailFont":detail,
         @"leadingMargin":@(root.directionalLayoutMargins.leading),@"trailingMargin":@(root.directionalLayoutMargins.trailing)};
     // Commit the entire plan BEFORE any native layout setter can reenter configuration.
@@ -212,7 +298,7 @@ static BOOL FPCompactNative(UICollectionViewCell *cell, BOOL compact) {
         if([entry[@"added"] boolValue]) { c.priority=999; c.active=YES; }
         else if(c.constant!=[entry[@"value"] doubleValue]) c.constant=[entry[@"value"] doubleValue];
     }
-    if([row customSpacingAfterView:slot]!=6) [row setCustomSpacing:6 afterView:slot];
+    if(geometry && [row customSpacingAfterView:slot]!=6) [row setCustomSpacing:6 afterView:slot];
     for(NSDictionary *entry in labels) {
         UILabel *label=entry[@"target"];
         if(![label.font isEqual:entry[@"font"]]) label.font=entry[@"font"];

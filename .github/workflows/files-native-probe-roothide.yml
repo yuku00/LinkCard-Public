@@ -26,6 +26,7 @@ jobs:
           python3 tests/check_070.py
           python3 tests/check_074.py
           python3 tests/check_076.py
+          python3 tests/check_077.py
       - name: Execute native current location fixture
         run: |
           python3 tests/location_host.py "$RUNNER_TEMP/location-host.m"
@@ -42,6 +43,11 @@ jobs:
           python3 tests/style_host.py "$RUNNER_TEMP/native-mutant.m" --mutate-native-size
           clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation -framework CoreGraphics "$RUNNER_TEMP/native-mutant.m" -o "$RUNNER_TEMP/native-mutant"
           if "$RUNNER_TEMP/native-mutant" > "$RUNNER_TEMP/native-mutant.log" 2>&1; then echo 'FAIL: native sizing regression escaped fixture'; exit 1; else echo 'PASS: deliberate native-size mutant rejected'; fi
+      - name: Reject document square-preview regression
+        run: |
+          python3 tests/style_host.py "$RUNNER_TEMP/document-mutant.m" --mutate-document-square
+          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation -framework CoreGraphics "$RUNNER_TEMP/document-mutant.m" -o "$RUNNER_TEMP/document-mutant"
+          if "$RUNNER_TEMP/document-mutant" > "$RUNNER_TEMP/document-mutant.log" 2>&1; then echo 'FAIL: square document preview escaped fixture'; exit 1; else echo 'PASS: deliberate square document preview mutant rejected'; fi
       - name: Execute production Swift generic bridge host model
         run: |
           python3 tests/swift_host.py "$RUNNER_TEMP/swift-host.swift"
@@ -81,7 +87,7 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.filesdualpane.nativeprobe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.7.6
+          test "$(dpkg-deb -f "$deb" Version)" = 0.7.7
           dpkg-deb -x "$deb" "$RUNNER_TEMP/files-package"
           binary=$(python3 -c 'import os,pathlib; print(next(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("files-package").rglob("FilesNativeProbe.dylib")))')
           test -n "$binary"
