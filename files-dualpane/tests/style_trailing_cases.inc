@@ -42,7 +42,8 @@ static NativeFixture *TrailingFixture(BOOL folder, BOOL provider, BOOL disclosur
             f.edges=@[boundary,edge,width,right];
         }
         // Unsupported image width is not permission to reject a proven text trailing path.
-        Constraint(f.slot,f.image,NSLayoutAttributeWidth,f.row,NSLayoutAttributeWidth,-244);
+        f.sizes[1].constant=44;
+        Constraint(f.slot,f.image,NSLayoutAttributeWidth,f.slot,NSLayoutAttributeWidth,4);
     }
     return f;
 }
@@ -55,11 +56,13 @@ static void TrailingCases(void) {
         f.cell.reenter=YES; nativeReentry=f.cell;
         FPStyleVisibleCell(f.cell);
         CGFloat expected=provider ? 274 : 310;
+        if(fabs(TextWidth(f.title,f)-(expected-70))>=0.00001)
+            fprintf(stderr,"trailing fixture folder=%d disclosure=%d provider=%d width=%g expected=%g native=%d\n",folder,disclosure,provider,(double)TextWidth(f.title,f),(double)(expected-70),objc_getAssociatedObject(f.cell,&FPNativeStyleKey)!=nil);
         assert(fabs(TextWidth(f.title,f)-(expected-70))<0.00001);
         assert(fabs(TextWidth(f.detail,f)-(expected-70))<0.00001);
         assert(TextWidth(f.title,f)>before && TextWidth(f.detail,f)>detailBefore);
         assert(f.cell.accessories.count==(NSUInteger)provider && nested==0);
-        if(!folder) { assert(f.sizes[1].constant==40); assert(f.edges[0].constant==(provider ? -36 : -28)); }
+        if(!folder) { assert(f.sizes[1].constant==44); assert(f.edges[0].constant==(provider ? -36 : -28)); }
         int n=nativeWrites,a=accessoryWrites,b=backgroundWrites,w=writes;
         for(int i=0;i<1000;i++) FPStyleVisibleCell(f.cell);
         assert(n==nativeWrites && a==accessoryWrites && b==backgroundWrites && w==writes);
