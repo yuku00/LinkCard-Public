@@ -1,21 +1,33 @@
 // Known native DOC getter identities; equations are evaluated, not simulated frames.
 static CGFloat TrailingValue(id item, NativeFixture *f, NSMutableSet *seen) {
     if(item==f.cell.contentView) return 320;
-    if(item==f.cell.contentView.layoutMarginsGuide) return 304;
+    if(item==f.cell.contentView.layoutMarginsGuide) return 320-f.cell.contentView.directionalLayoutMargins.trailing;
     NSValue *key=[NSValue valueWithPointer:(__bridge const void *)item];
-    assert(![seen containsObject:key]); [seen addObject:key];
-    UIView *owner=[item isKindOfClass:UILayoutGuide.class] ? [(UILayoutGuide *)item owningView] : item;
-    for(;owner;owner=owner.superview) {
+    if([seen containsObject:key]) return NAN;
+    [seen addObject:key];
+    UIView *view=[item isKindOfClass:UILayoutGuide.class] ? [(UILayoutGuide *)item owningView] : item;
+    for(UIView *owner=view;owner;owner=owner.superview) {
         for(NSLayoutConstraint *c in owner.constraints) {
-            if(!c.active || c.relation!=NSLayoutRelationEqual || c.multiplier!=1 || c.firstAttribute!=NSLayoutAttributeTrailing || c.secondAttribute!=NSLayoutAttributeTrailing) continue;
-            id other=c.firstItem==item ? c.secondItem : c.secondItem==item ? c.firstItem : nil;
+            if(!c.active || c.relation!=NSLayoutRelationEqual || c.multiplier!=1) continue;
+            BOOL first=c.firstItem==item;
+            if(!first && c.secondItem!=item) continue;
+            NSLayoutAttribute edge=first ? c.firstAttribute : c.secondAttribute;
+            if(edge!=NSLayoutAttributeTrailing && edge!=NSLayoutAttributeRight) continue;
+            id other=first ? c.secondItem : c.firstItem;
             if(!other || ([other isKindOfClass:UIView.class] && [item isKindOfClass:UIView.class] && [(UIView *)other isDescendantOfView:item])) continue;
-            if(c.firstItem==item) return TrailingValue(c.secondItem,f,seen)+c.constant;
-            if(c.secondItem==item) return TrailingValue(c.firstItem,f,seen)-c.constant;
+            NSLayoutAttribute otherEdge=first ? c.secondAttribute : c.firstAttribute;
+            CGFloat width=0;
+            if(otherEdge==NSLayoutAttributeLeading || otherEdge==NSLayoutAttributeLeft) {
+                BOOL found=NO;
+                for(NSLayoutConstraint *size in [(UIView *)other constraints]) if(size.active && size.firstItem==other && size.firstAttribute==NSLayoutAttributeWidth && !size.secondItem && size.relation==NSLayoutRelationEqual) { width=size.constant; found=YES; }
+                if(!found) continue;
+            } else if(otherEdge!=NSLayoutAttributeTrailing && otherEdge!=NSLayoutAttributeRight) continue;
+            CGFloat value=TrailingValue(other,f,[seen mutableCopy]);
+            if(isfinite(value)) return value-width+(first ? c.constant : -c.constant);
         }
         if(owner==f.cell.contentView) break;
     }
-    assert(!"missing native trailing equation"); return NAN;
+    return NAN;
 }
 static CGFloat TextWidth(UILabel *label, NativeFixture *f) {
     return TrailingValue(label,f,[NSMutableSet new])-70;

@@ -28,11 +28,27 @@ jobs:
           python3 tests/check_076.py
           python3 tests/check_077.py
           python3 tests/check_078.py
+          python3 tests/check_079.py
       - name: Execute native current location fixture
         run: |
           python3 tests/location_host.py "$RUNNER_TEMP/location-host.m"
           clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation "$RUNNER_TEMP/location-host.m" -o "$RUNNER_TEMP/location-host"
           "$RUNNER_TEMP/location-host"
+      - name: Prove five regressions against pinned 0.7.8 production
+        run: |
+          git fetch --depth=1 origin 8a803fd6df47febded148e8892a1556071a1a295
+          git show 8a803fd6df47febded148e8892a1556071a1a295:files-dualpane/NativeCompact.inc > "$RUNNER_TEMP/native-078.inc"
+          python3 -c 'import hashlib,os,pathlib; assert hashlib.sha256(pathlib.Path(os.environ["RUNNER_TEMP"],"native-078.inc").read_bytes()).hexdigest()=="3dafbbeb248fbfbd760bf62ee262a8afbedf02c6d03a0f468ccd4f472c28b2f0"'
+          python3 tests/style_host.py "$RUNNER_TEMP/old-host.m" --native-source "$RUNNER_TEMP/native-078.inc"
+          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation -framework CoreGraphics "$RUNNER_TEMP/old-host.m" -o "$RUNNER_TEMP/old-host"
+          for case in width max sibling status delayedready; do
+            set +e
+            FILES_STYLE_CASE="$case" "$RUNNER_TEMP/old-host" > "$RUNNER_TEMP/old-$case.log" 2>&1
+            result=$?
+            set -e
+            test "$result" -eq 134
+            python3 -c 'import os,pathlib,sys; name=sys.argv[1]; expected={"width":"WidthLimitCase","max":"AssertTextLimits","sibling":"SiblingCase","status":"StatusCase","delayedready":"ReadyCase"}[name]; text=pathlib.Path(os.environ["RUNNER_TEMP"],"old-"+name+".log").read_text(); assert "Assertion failed:" in text and "function "+expected+"," in text; print("PASS pinned 0.7.8 RED:",name,expected)' "$case"
+          done
       - name: Execute production style synchronous reentry and restore policy
         run: |
           python3 tests/style_host.py "$RUNNER_TEMP/ui-host.m"
@@ -93,7 +109,7 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.filesdualpane.nativeprobe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.7.8
+          test "$(dpkg-deb -f "$deb" Version)" = 0.7.9
           dpkg-deb -x "$deb" "$RUNNER_TEMP/files-package"
           binary=$(python3 -c 'import os,pathlib; print(next(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("files-package").rglob("FilesNativeProbe.dylib")))')
           test -n "$binary"

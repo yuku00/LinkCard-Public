@@ -5,9 +5,13 @@
 #include <assert.h>
 #include <string.h>
 #include <math.h>
+static int readyQueued;
+static void __attribute__((unused)) HostDispatch(dispatch_queue_t queue, dispatch_block_t block) { readyQueued++; dispatch_async(queue,block); }
+#define dispatch_async HostDispatch
 typedef struct { CGFloat top, leading, bottom, trailing; } NSDirectionalEdgeInsets;
 typedef NSInteger NSLayoutAttribute;
 enum { NSLayoutAttributeNotAnAttribute=0, NSLayoutAttributeLeft=1, NSLayoutAttributeRight=2, NSLayoutAttributeLeading=5, NSLayoutAttributeTrailing=6, NSLayoutAttributeWidth=7, NSLayoutAttributeHeight=8 };
+enum { UIUserInterfaceLayoutDirectionLeftToRight=0, UIStackViewAlignmentFill=0 };
 enum { NSLayoutRelationEqual=0, NSLayoutRelationLessThanOrEqual=-1, UILayoutConstraintAxisHorizontal=0, UILayoutConstraintAxisVertical=1, UIStackViewDistributionFill=0, NSLineBreakByTruncatingTail=4 };
 static int copies, writes, nested, accessoryWrites, backgroundWrites, nativeWrites;
 static int parentUpdates, childUpdates, bridgeUpdates, parentReuse, childReuse, parentDisplays, childDisplays;
@@ -68,6 +72,7 @@ static NSString *const UIFontTextStyleBody=@"body", *const UIFontTextStyleCaptio
 @property CGRect bounds;
 @property NSDirectionalEdgeInsets directionalLayoutMargins;
 @property id layoutMarginsGuide;
+@property NSInteger effectiveUserInterfaceLayoutDirection;
 @property BOOL translatesAutoresizingMaskIntoConstraints;
 @property(getter=isHidden) BOOL hidden;
 - (void)addSubview:(UIView *)view;
@@ -96,7 +101,7 @@ static NSString *const UIFontTextStyleBody=@"body", *const UIFontTextStyleCaptio
 @end
 @interface UIStackView : UIView
 @property NSMutableArray<UIView *> *arrangedSubviews;
-@property NSInteger axis, distribution;
+@property NSInteger axis, distribution, alignment;
 @property BOOL layoutMarginsRelativeArrangement;
 @property NSMapTable *spacings;
 - (void)addArrangedSubview:(UIView *)view;
