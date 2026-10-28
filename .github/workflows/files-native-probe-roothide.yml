@@ -27,6 +27,7 @@ jobs:
           python3 tests/check_074.py
           python3 tests/check_076.py
           python3 tests/check_077.py
+          python3 tests/check_078.py
       - name: Execute native current location fixture
         run: |
           python3 tests/location_host.py "$RUNNER_TEMP/location-host.m"

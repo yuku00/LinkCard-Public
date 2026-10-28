@@ -259,7 +259,15 @@ static BOOL FPTrailingPath(id item, UIView *stop, UIView *root, NSMutableArray *
             if(a==NSLayoutAttributeWidth && c.relation==NSLayoutRelationEqual) return NO;
             if(a!=NSLayoutAttributeTrailing) continue;
             id other=first ? c.secondItem : c.firstItem;
-            if(!FPTrailingAncestor(item,other,root)) continue; // Not the downstream label/stack links.
+            if(!FPTrailingAncestor(item,other,root)) {
+                BOOL traversed=NO;
+                for(NSDictionary *link in path) if(link[@"target"]==c) { traversed=YES; break; }
+                if(traversed) continue;
+                // Descendant label links do not bound this view. A guide with any
+                // additional foreign/status link is not proven disposable space.
+                if([item isKindOfClass:UIView.class] && [other isKindOfClass:UIView.class] && [(UIView *)other isDescendantOfView:item]) continue;
+                return NO;
+            }
             if((first ? c.secondAttribute : c.firstAttribute)!=NSLayoutAttributeTrailing || c.relation!=NSLayoutRelationEqual || c.multiplier!=1 || edge) return NO;
             edge=c; next=other; sign=first ? 1 : -1;
         }

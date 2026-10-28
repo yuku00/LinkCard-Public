@@ -35,6 +35,12 @@ static NativeFixture *TrailingFixture(BOOL folder, BOOL provider, BOOL disclosur
         NSLayoutConstraint *boundary=Constraint(root,guide,NSLayoutAttributeTrailing,root,NSLayoutAttributeTrailing,provider ? -36 : -28);
         NSLayoutConstraint *edge=Constraint(root,f.row,NSLayoutAttributeTrailing,guide,NSLayoutAttributeTrailing,-6);
         f.edges=@[boundary,edge];
+        if(provider) {
+            UIView *status=[UIView new]; [root addSubview:status];
+            NSLayoutConstraint *width=Constraint(status,status,NSLayoutAttributeWidth,nil,0,26);
+            NSLayoutConstraint *right=Constraint(root,status,NSLayoutAttributeTrailing,root,NSLayoutAttributeTrailing,-10);
+            f.edges=@[boundary,edge,width,right];
+        }
         // Unsupported image width is not permission to reject a proven text trailing path.
         Constraint(f.slot,f.image,NSLayoutAttributeWidth,f.row,NSLayoutAttributeWidth,-244);
     }
@@ -61,9 +67,15 @@ static void TrailingCases(void) {
         f.cell.selected=NO; FPStyleVisibleCell(f.cell); assert(fabs(TextWidth(f.title,f)-(expected-70))<0.00001);
         f.cell.selected=YES; FPStyleVisibleCell(f.cell); assert(fabs(TextWidth(f.detail,f)-(expected-70))<0.00001);
         if(provider) {
-            f.edges[0].constant=-52; FPStyleVisibleCell(f.cell);
+            UIView *status=f.edges[2].firstItem;
+            assert(f.edges[2].constant==26 && f.edges[3].constant==-10);
+            CGFloat statusLeading=TrailingValue(status,f,[NSMutableSet new])-f.edges[2].constant;
+            assert(fabs(TextWidth(f.title,f)+70-(statusLeading-10))<0.00001);
+            f.edges[2].constant=42; f.edges[0].constant=-52; FPStyleVisibleCell(f.cell);
+            statusLeading=TrailingValue(status,f,[NSMutableSet new])-f.edges[2].constant;
             assert(fabs(TextWidth(f.title,f)-(258-70))<0.00001 && f.edges[0].constant==-52);
-            f.edges[0].constant=-36; FPStyleVisibleCell(f.cell);
+            assert(fabs(TextWidth(f.detail,f)+70-(statusLeading-10))<0.00001 && f.edges[2].constant==42 && f.edges[3].constant==-10);
+            f.edges[2].constant=26; f.edges[0].constant=-36; FPStyleVisibleCell(f.cell);
         }
         SetScope(f.cell,NO); FPStyleVisibleCell(f.cell);
         assert(fabs(TextWidth(f.title,f)-before)<0.00001 && fabs(TextWidth(f.detail,f)-detailBefore)<0.00001);
@@ -80,5 +92,11 @@ static void TrailingCases(void) {
     [f.cell prepareForReuse]; assert(f.edges[1].constant==-6 && f.cell.accessories.count==1);
     f.title.text=@"Next document"; f.cell.cellContent=[NSObject new]; FPStyleVisibleCell(f.cell);
     assert(fabs(TextWidth(f.title,f)-240)<0.00001);
+    f=TrailingFixture(NO,NO,NO);
+    UIView *status=[UIView new]; [f.cell.contentView addSubview:status];
+    Constraint(f.cell.contentView,f.edges[0].firstItem,NSLayoutAttributeTrailing,status,NSLayoutAttributeLeading,0);
+    CGFloat unchanged=TextWidth(f.title,f); int n=nativeWrites;
+    FPStyleVisibleCell(f.cell);
+    assert(!objc_getAssociatedObject(f.cell,&FPNativeStyleKey) && nativeWrites==n && TextWidth(f.title,f)==unchanged);
     puts("PASS native trailing equations: file/folder title+subtitle width growth; disclosure/no-disclosure reserved gap; 10pt edge; real provider boundary width preserved and updated; independent image/leading gate; selected/mode/reuse restore; synchronous reentry; 1000 zero writes");
 }
