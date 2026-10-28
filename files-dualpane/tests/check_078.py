@@ -2,7 +2,7 @@ from pathlib import Path
 import subprocess,sys,tempfile
 r=Path(__file__).resolve().parents[1]
 n=(r/'NativeCompact.inc').read_text()
-assert 'Version: 0.7.10' in (r/'control').read_text()
+assert 'Version: 0.7.11' in (r/'control').read_text()
 with tempfile.TemporaryDirectory() as d:
     p=Path(d)/'host.m'
     subprocess.run([sys.executable,str(r/'tests/style_host.py'),str(p)],check=True); host=p.read_text()

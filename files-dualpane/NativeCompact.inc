@@ -69,6 +69,28 @@ static BOOL FPNativeIdentityMatches(NSArray *a, NSArray *b) {
     for(NSUInteger i=10;i<a.count;i++) if(![a[i] isEqual:b[i]]) return NO;
     return YES;
 }
+// Sample only on existing style events, never from a layout callback. Do not key on
+// text/image widths changed by our own plan; do key on native owners and providers.
+static NSArray *FPNativeConfiguration(UICollectionViewCell *cell, UIStackView *row, UIView *slot) {
+    NSMutableArray *values=[NSMutableArray arrayWithObjects:[NSValue valueWithCGSize:cell.contentView.bounds.size],@(slot.bounds.size.height),nil];
+    NSMutableArray *owners=[NSMutableArray arrayWithObjects:cell,cell.contentView,nil];
+    if(row) { [owners addObject:row]; [owners addObjectsFromArray:row.arrangedSubviews]; }
+    if(slot) [owners addObjectsFromArray:slot.subviews];
+    for(UIView *v in row.arrangedSubviews) if([v isKindOfClass:UIStackView.class]) [owners addObjectsFromArray:v.subviews];
+    for(UIView *v in owners) {
+        [values addObject:@[v,@(v.hidden)]];
+        if(FPClassInChain(v,@"DOCChainedTagsView")) [values addObject:[NSValue valueWithCGSize:v.bounds.size]];
+        if([v isKindOfClass:UIStackView.class]) {
+            UIStackView *stack=(id)v;
+            [values addObject:@[@(stack.axis),@(stack.alignment),@(stack.distribution),@(stack.spacing),@(stack.layoutMarginsRelativeArrangement),[stack.arrangedSubviews copy]]];
+        }
+        for(NSLayoutConstraint *c in v.constraints) {
+            // Stack-generated spacing equations may be replaced with equivalent ones.
+            [values addObject:@[c.firstItem ?: NSNull.null,c.secondItem ?: NSNull.null,@(c.firstAttribute),@(c.secondAttribute),@(c.relation),@(c.multiplier),@(c.constant),@(c.priority),@(c.active)]];
+        }
+    }
+    return values;
+}
 static void FPRestoreNative(UICollectionViewCell *cell, BOOL restore) {
     NSDictionary *state=objc_getAssociatedObject(cell,&FPNativeStyleKey);
     if(!state) return;
@@ -81,6 +103,10 @@ static void FPRestoreNative(UICollectionViewCell *cell, BOOL restore) {
         else if(restore && c.active && c.constant==[entry[@"value"] doubleValue]) c.constant=[entry[@"original"] doubleValue];
     }
     if(!restore) return;
+    for(NSDictionary *entry in state[@"watch"]) if(entry[@"spacingStack"]) {
+        UIStackView *stack=entry[@"spacingStack"]; UIView *after=entry[@"after"];
+        if([stack customSpacingAfterView:after]==[entry[@"value"] doubleValue]) [stack setCustomSpacing:[entry[@"original"] doubleValue] afterView:after];
+    }
     UIStackView *row=state[@"row"]; UIView *slot=state[@"slot"];
     if([state[@"geometry"] boolValue] && [row customSpacingAfterView:slot]==6) [row setCustomSpacing:[state[@"spacing"] doubleValue] afterView:slot];
     for(NSDictionary *entry in state[@"labels"]) {
@@ -95,12 +121,17 @@ static BOOL FPNativeStateMatches(NSDictionary *state, UICollectionViewCell *cell
     if(!FPNativeIdentityMatches(state[@"identity"],identity) || !CGSizeEqualToSize([state[@"size"] CGSizeValue],cell.bounds.size) ||
        [state[@"leadingMargin"] doubleValue]!=cell.contentView.directionalLayoutMargins.leading || [state[@"trailingMargin"] doubleValue]!=cell.contentView.directionalLayoutMargins.trailing ||
        ![state[@"font"] isEqual:FPCompactFont(cell,NO)] || ![state[@"detailFont"] isEqual:FPCompactFont(cell,YES)]) return FPLayoutReject(@"cacheMiss",@"FPNativeStateMatches_01");
+    if(![state[@"configuration"] isEqual:FPNativeConfiguration(cell,state[@"row"],state[@"slot"])]) return FPLayoutReject(@"cacheMiss",@"FPNativeStateMatches_06");
     for(UIView *view in state[@"pendingViews"]) if(view.bounds.size.width>0 && view.bounds.size.height>0) return FPLayoutReject(@"cacheMiss",@"FPNativeStateMatches_02");
     if([state[@"trailing"] boolValue]) {
         if(cell.contentView.effectiveUserInterfaceLayoutDirection!=UIUserInterfaceLayoutDirectionLeftToRight) return FPLayoutReject(@"cacheMiss",@"FPNativeStateMatches_03");
         NSArray *accessories=[cell isKindOfClass:UICollectionViewListCell.class] ? [(UICollectionViewListCell *)cell accessories] : @[];
         if(![state[@"accessories"] isEqual:accessories]) return FPLayoutReject(@"cacheMiss",@"FPNativeStateMatches_04");
         for(NSDictionary *entry in state[@"watch"]) {
+            if(entry[@"spacingStack"]) {
+                if([(UIStackView *)entry[@"spacingStack"] customSpacingAfterView:entry[@"after"]]!=[entry[@"value"] doubleValue]) return FPLayoutReject(@"cacheMiss",@"FPNativeStateMatches_07");
+                continue;
+            }
             UIStackView *stack=entry[@"stack"];
             if(stack) { if(stack.axis!=UILayoutConstraintAxisVertical || stack.alignment!=UIStackViewAlignmentFill || stack.layoutMarginsRelativeArrangement) return FPLayoutReject(@"cacheMiss",@"FPNativeStateMatches_05"); continue; }
             NSLayoutConstraint *c=entry[@"target"];
@@ -197,6 +228,19 @@ static BOOL FPPlanDocumentDimensions(UIView *root, UIView *slot, UIView *image, 
     }
     NSMutableSet *fixed=[NSMutableSet new];
     for(NSLayoutConstraint *c in links) {
+        // The observed square ties width to an independently native-owned height.
+        // Replace only this exact self equality; keep outer height and centering intact.
+        if(slot!=image && !slotHeight && c.firstItem==slot && c.secondItem==slot &&
+           c.relation==NSLayoutRelationEqual && c.multiplier==1 && c.constant==0 &&
+           ((c.firstAttribute==NSLayoutAttributeWidth && c.secondAttribute==NSLayoutAttributeHeight) ||
+            (c.firstAttribute==NSLayoutAttributeHeight && c.secondAttribute==NSLayoutAttributeWidth))) {
+            BOOL heightProved=NO;
+            for(NSLayoutConstraint *h in links) if(h.firstItem==slot && h.firstAttribute==NSLayoutAttributeHeight && h.secondItem==root && h.secondAttribute==NSLayoutAttributeHeight &&
+                h.relation==NSLayoutRelationEqual && h.multiplier==1 && h.priority>=999 && isfinite(h.constant) && root.bounds.size.height+h.constant>=fitted.height) heightProved=YES;
+            if(!heightProved) return FPLayoutReject(@"geometryReject",@"FPPlanDocumentDimensions_03");
+            [changes addObject:@{@"target":c,@"original":@0,@"value":@0,@"added":@NO,@"disabled":@YES}];
+            continue;
+        }
         CGFloat first=FPDocumentDimension(c.firstItem,c.firstAttribute,slot,image,fitted,slotSize,slotHeight);
         CGFloat second=FPDocumentDimension(c.secondItem,c.secondAttribute,slot,image,fitted,slotSize,slotHeight);
         if(first<0 && second<0) continue;
@@ -218,6 +262,12 @@ static BOOL FPPlanDocumentDimensions(UIView *root, UIView *slot, UIView *image, 
     return YES;
 }
 
+static BOOL FPInternalGuideEdge(UIView *view, NSLayoutConstraint *c) {
+    BOOL first=c.firstItem==view; id other=first ? c.secondItem : c.firstItem;
+    return (c.firstItem==view || c.secondItem==view) && [other isKindOfClass:UILayoutGuide.class] &&
+        [(UILayoutGuide *)other owningView]==view && (other==view.layoutMarginsGuide || other==view.safeAreaLayoutGuide) &&
+        c.firstAttribute==c.secondAttribute && c.relation==NSLayoutRelationEqual && c.multiplier==1 && c.constant==0;
+}
 static BOOL FPPlanEdges(UIStackView *row, UIView *root, NSMutableArray *changes) {
     BOOL leading=NO,trailing=NO;
     for(UIView *owner=row;owner;owner=owner.superview) {
@@ -228,6 +278,7 @@ static BOOL FPPlanEdges(UIStackView *row, UIView *root, NSMutableArray *changes)
             id other=first ? c.secondItem : c.firstItem;
             NSLayoutAttribute edge=first ? c.firstAttribute : c.secondAttribute;
             NSLayoutAttribute otherEdge=first ? c.secondAttribute : c.firstAttribute;
+            if(FPInternalGuideEdge(row,c)) continue;
             // A fixed/foreign horizontal link may conflict with the new insets. Do not guess.
             if(edge==NSLayoutAttributeWidth || edge==NSLayoutAttributeLeft || edge==NSLayoutAttributeRight) return FPLayoutReject(@"geometryReject",@"FPPlanEdges_01");
             if(edge!=NSLayoutAttributeLeading && edge!=NSLayoutAttributeTrailing) continue;
@@ -291,15 +342,22 @@ static BOOL FPTrailingPath(id item, UIView *stop, UIView *root, NSArray *known, 
             NSLayoutAttribute a=first ? c.firstAttribute : c.secondAttribute;
             if(!FPTrailingAttribute(a)) continue;
             BOOL traversed=NO; for(NSDictionary *link in path) if(link[@"target"]==c) traversed=YES;
-            if(traversed) continue;
+            if(traversed || (item==view && FPInternalGuideEdge(view,c))) continue;
             id other=first ? c.secondItem : c.firstItem;
             NSLayoutAttribute otherEdge=first ? c.secondAttribute : c.firstAttribute;
             if([item isKindOfClass:UIView.class] && [other isKindOfClass:UIView.class] && [(UIView *)other isDescendantOfView:item]) continue;
             BOOL sibling=[known containsObject:item] && [known containsObject:other] && [other isKindOfClass:UIView.class] && [(UIView *)other superview]==view.superview;
+            UIStackView *fill=[view.superview isKindOfClass:UIStackView.class] ? (id)view.superview : nil;
+            if(fill && fill.axis==UILayoutConstraintAxisVertical && fill.alignment==UIStackViewAlignmentFill && !fill.layoutMarginsRelativeArrangement &&
+                [fill.arrangedSubviews containsObject:item] && [fill.arrangedSubviews containsObject:other] &&
+                a==otherEdge && c.relation==NSLayoutRelationEqual && c.multiplier==1 && c.constant==0) {
+                [path addObject:@{@"stack":fill}]; continue;
+            }
             BOOL tail=NO;
             if([known containsObject:item] && [other isKindOfClass:UIView.class] && [view.superview isKindOfClass:UIStackView.class]) {
                 UIStackView *stack=(id)view.superview;
                 NSUInteger i=[stack.arrangedSubviews indexOfObjectIdenticalTo:view], j=[stack.arrangedSubviews indexOfObjectIdenticalTo:other];
+                if(stack.axis==UILayoutConstraintAxisHorizontal && j!=NSNotFound && [(UIView *)other isHidden] && c.priority<999) continue;
                 tail=stack.axis==UILayoutConstraintAxisHorizontal && i!=NSNotFound && j!=NSNotFound && j>i && (otherEdge==NSLayoutAttributeLeading || otherEdge==NSLayoutAttributeLeft);
             }
             if((!FPTrailingAncestor(item,other,root) && !sibling && !tail) ||
@@ -327,7 +385,7 @@ static BOOL FPTrailingPath(id item, UIView *stop, UIView *root, NSArray *known, 
         for(UIView *owner=next;owner;owner=owner.superview) {
             for(NSLayoutConstraint *c in owner.constraints) {
                 if(!c.active || c.firstItem!=next || c.firstAttribute!=NSLayoutAttributeWidth) continue;
-                if(width || c.secondItem || c.relation!=NSLayoutRelationEqual || c.multiplier!=1 || !isfinite(c.constant) || c.constant<=0) return FPLayoutReject(@"trailingReject",@"FPTrailingPath_08");
+                if(width || c.secondItem || c.relation!=NSLayoutRelationEqual || c.multiplier!=1 || !isfinite(c.constant) || c.constant<0) return FPLayoutReject(@"trailingReject",@"FPTrailingPath_08");
                 width=c;
             }
             if(owner==root) break;
@@ -340,6 +398,15 @@ static BOOL FPTrailingPath(id item, UIView *stop, UIView *root, NSArray *known, 
         for(NSDictionary *link in providerPath) if(link[@"target"]) [path addObject:@{@"target":link[@"target"],@"provider":@YES}];
         [path addObject:@{@"target":width,@"provider":@YES}];
         rest-=width.constant; *reservation=rest;
+        NSMutableDictionary *providerLink=[path[0] mutableCopy]; providerLink[@"providerProved"]=@YES;
+        if(FPClassInChain(next,@"DOCChainedTagsView")) {
+            BOOL zeroHeight=NO;
+            for(NSLayoutConstraint *c in [(UIView *)next constraints]) if(c.active && c.firstItem==next && c.firstAttribute==NSLayoutAttributeHeight && !c.secondItem &&
+                c.relation==NSLayoutRelationEqual && c.multiplier==1 && c.constant==0 && c.priority>=999) zeroHeight=YES;
+            providerLink[@"tags"]=next;
+            providerLink[@"emptyTags"]=@(width.constant==0 && zeroHeight && CGSizeEqualToSize([(UIView *)next bounds].size,CGSizeZero));
+        }
+        path[0]=providerLink;
     } else if(!FPTrailingPath(next,stop,root,known,changes,path,&rest,reservation,depth-1)) return FPLayoutReject(@"trailingReject",@"FPTrailingPath_11");
     *offset=sign*edge.constant+rest; return YES;
 }
@@ -369,8 +436,8 @@ static BOOL FPPlanTrailing(UICollectionViewCell *cell, UIStackView *row, UIView 
             continue; // One unsupported optional label does not reject a verified title.
         }
         // A later arranged item needs a proved provider.leading boundary, not row.trailing.
-        if(item==textSlot && row.arrangedSubviews.lastObject!=textSlot && !reservation) return FPLayoutReject(@"trailingReject",@"FPPlanTrailing_03");
         NSDictionary *first=nil; for(NSDictionary *link in path) if(link[@"target"]) { first=link; break; }
+        if(item==textSlot && row.arrangedSubviews.lastObject!=textSlot && ![first[@"providerProved"] boolValue]) return FPLayoutReject(@"trailingReject",@"FPPlanTrailing_03");
         if(first) {
             NSLayoutConstraint *c=first[@"target"]; CGFloat sign=[first[@"sign"] doubleValue];
             CGFloat target=item==row ? -10 : 0;
@@ -379,7 +446,10 @@ static BOOL FPPlanTrailing(UICollectionViewCell *cell, UIStackView *row, UIView 
             if(reservation) target=reservation-10;
             else if(item==row && accessories && [boundary isKindOfClass:UILayoutGuide.class] && boundary!=root.layoutMarginsGuide)
                 target += offset-sign*c.constant;
-            FPTrailingChange(local,c,c.constant+(target-offset)/sign);
+            if(first[@"tags"]) {
+                // Public custom spacing, not a write to a transient UISV constraint.
+                if([first[@"emptyTags"] boolValue]) [watch addObject:@{@"spacingStack":row,@"after":textSlot,@"original":@([row customSpacingAfterView:textSlot]),@"value":@0}];
+            } else FPTrailingChange(local,c,c.constant+(target-offset)/sign);
         }
         for(NSDictionary *entry in local) {
             BOOL found=NO; for(NSDictionary *old in changes) if(old[@"target"]==entry[@"target"]) found=YES;
@@ -388,6 +458,7 @@ static BOOL FPPlanTrailing(UICollectionViewCell *cell, UIStackView *row, UIView 
         for(NSDictionary *link in path) {
             if(link[@"stack"]) { [watch addObject:link]; continue; }
             NSLayoutConstraint *c=link[@"target"];
+            if(first[@"tags"] && c==first[@"target"]) continue;
             [watch addObject:@{@"target":c,@"first":c.firstItem,@"second":c.secondItem ?: NSNull.null,@"constant":@(c.constant)}];
         }
     }
@@ -500,9 +571,9 @@ static BOOL FPCompactNativeObserved(UICollectionViewCell *cell, BOOL compact) {
         if(!changed) [witnesses addObject:entry];
     }
     NSArray *accessories=[cell isKindOfClass:UICollectionViewListCell.class] ? [(UICollectionViewListCell *)cell accessories] : @[];
-    NSDictionary *state=@{@"pendingViews":pending,@"textPending":@(pending.count>0),@"trailing":@(textEdges),@"watch":witnesses,@"accessories":[accessories copy],@"identity":identity,@"row":row,@"slot":slot,@"spacing":@([row customSpacingAfterView:slot]),@"geometry":@(geometry),
+    NSMutableDictionary *state=[@{@"quality":geometry && textEdges ? @"exact" : @"partial",@"pendingViews":pending,@"textPending":@(pending.count>0),@"trailing":@(textEdges),@"watch":witnesses,@"accessories":[accessories copy],@"identity":identity,@"row":row,@"slot":slot,@"spacing":@([row customSpacingAfterView:slot]),@"geometry":@(geometry),
         @"constraints":constraints,@"labels":labels,@"size":[NSValue valueWithCGSize:cell.bounds.size],@"font":font,@"detailFont":detail,
-        @"leadingMargin":@(root.directionalLayoutMargins.leading),@"trailingMargin":@(root.directionalLayoutMargins.trailing)};
+        @"leadingMargin":@(root.directionalLayoutMargins.leading),@"trailingMargin":@(root.directionalLayoutMargins.trailing)} mutableCopy];
     // Commit the entire plan BEFORE any native layout setter can reenter configuration.
     objc_setAssociatedObject(cell,&FPNativeStyleKey,state,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     for(NSDictionary *entry in constraints) {
@@ -510,6 +581,10 @@ static BOOL FPCompactNativeObserved(UICollectionViewCell *cell, BOOL compact) {
         if([entry[@"disabled"] boolValue]) { if(c.active) c.active=NO; }
         else if([entry[@"added"] boolValue]) { c.priority=999; c.active=YES; }
         else if(c.constant!=[entry[@"value"] doubleValue]) c.constant=[entry[@"value"] doubleValue];
+    }
+    for(NSDictionary *entry in witnesses) if(entry[@"spacingStack"]) {
+        UIStackView *stack=entry[@"spacingStack"];
+        if([stack customSpacingAfterView:entry[@"after"]]!=[entry[@"value"] doubleValue]) [stack setCustomSpacing:[entry[@"value"] doubleValue] afterView:entry[@"after"]];
     }
     if(geometry && [row customSpacingAfterView:slot]!=6) [row setCustomSpacing:6 afterView:slot];
     for(NSDictionary *entry in labels) {
@@ -519,6 +594,7 @@ static BOOL FPCompactNativeObserved(UICollectionViewCell *cell, BOOL compact) {
         if(label.lineBreakMode!=NSLineBreakByTruncatingTail) label.lineBreakMode=NSLineBreakByTruncatingTail;
         if(!label.adjustsFontForContentSizeCategory) label.adjustsFontForContentSizeCategory=YES;
     }
+    state[@"configuration"]=FPNativeConfiguration(cell,row,slot);
     return YES;
 }
 

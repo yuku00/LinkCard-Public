@@ -17,6 +17,7 @@ for v in f['objects']:
  if i in (1,2,12): continue
  if v['detail']=='guide':
   if v.get('role')=='layoutMargins': g.append(f'o[@{i}]=[(UIView *)o[@{v["owner"]}] layoutMarginsGuide];')
+  elif v.get('role')=='safeArea': g.append(f'o[@{i}]=[(UIView *)o[@{v["owner"]}] safeAreaLayoutGuide];')
   else: g.append(f'o[@{i}]=[UILayoutGuide new]; [(UILayoutGuide *)o[@{i}] setOwningView:o[@{v["owner"]}]];')
  else:
   cls='UIStackView' if i in (4,5) else 'UILabel' if i in (3,6,7,8,20) else 'UIView'
