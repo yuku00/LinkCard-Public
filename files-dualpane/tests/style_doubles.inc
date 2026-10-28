@@ -4,6 +4,7 @@
 #import <objc/runtime.h>
 #include <assert.h>
 #include <string.h>
+#include <math.h>
 typedef struct { CGFloat top, leading, bottom, trailing; } NSDirectionalEdgeInsets;
 typedef NSInteger NSLayoutAttribute;
 enum { NSLayoutAttributeNotAnAttribute=0, NSLayoutAttributeLeft=1, NSLayoutAttributeRight=2, NSLayoutAttributeLeading=5, NSLayoutAttributeTrailing=6, NSLayoutAttributeWidth=7, NSLayoutAttributeHeight=8 };
@@ -256,5 +257,7 @@ static void RegisterHostClasses(void) {
     NamedClass(@"Files.DOCSidebarViewController",HostController.class);
     NamedClass(@"Files.DOCItemCollectionListCell",HookChild.class);
     NamedClass(@"Files.DOCItemCollectionCell",UICollectionViewCell.class);
-    NamedClass(@"DOCThumbnailFittingImageView",UIImageView.class);
+    NamedClass(@"DOCFittingImageView",UIImageView.class);
+    NamedClass(@"DOCBorderedFittingImageView",NSClassFromString(@"DOCFittingImageView"));
+    NamedClass(@"DOCThumbnailFittingImageView",NSClassFromString(@"DOCBorderedFittingImageView"));
 }

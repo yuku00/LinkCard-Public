@@ -14,5 +14,7 @@ if '--mutate-native-size' in sys.argv:
     production=production.replace('@"value":@20','@"value":@40')
 prefix=(r/'tests/style_doubles.inc').read_text()
 cases=(r/'tests/style_public_cases.inc').read_text()+(r/'tests/style_native_cases.inc').read_text()
+cases=cases.replace('int main(void)',(r/'tests/style_document_cases.inc').read_text()+'\nint main(void)')
+cases=cases.replace('PublicCases(); NativeCases();','PublicCases(); DocumentCases(); NativeCases();')
 assert '#include "NativeCompact.inc"' not in production
 Path(sys.argv[1]).write_text(prefix+abi+scope+production+cases)
