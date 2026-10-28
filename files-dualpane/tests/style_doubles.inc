@@ -74,7 +74,7 @@ static NSString *const UIFontTextStyleBody=@"body", *const UIFontTextStyleCaptio
 - (BOOL)isDescendantOfView:(UIView *)view;
 @end
 @implementation UIView
-- (instancetype)init { if((self=[super init])) { _subviews=[NSMutableArray new]; _constraints=[NSMutableArray new]; _bounds=CGRectMake(0,0,320,72); _layoutMarginsGuide=[NSObject new]; } return self; }
+- (instancetype)init { if((self=[super init])) { _subviews=[NSMutableArray new]; _constraints=[NSMutableArray new]; _bounds=CGRectMake(0,0,320,72); _layoutMarginsGuide=[UILayoutGuide new]; [(UILayoutGuide *)_layoutMarginsGuide setOwningView:self]; } return self; }
 - (void)addSubview:(UIView *)view { [view.superview.subviews removeObjectIdenticalTo:view]; view.superview=self; view.nextResponder=self; [_subviews addObject:view]; }
 - (BOOL)isDescendantOfView:(UIView *)view { for(UIView *v=self;v;v=v.superview) if(v==view) return YES; return NO; }
 @end

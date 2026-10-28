@@ -220,6 +220,8 @@ static BOOL FPPlanEdges(UIStackView *row, UIView *root, NSMutableArray *changes)
             // A fixed/foreign horizontal link may conflict with the new insets. Do not guess.
             if(edge==NSLayoutAttributeWidth || edge==NSLayoutAttributeLeft || edge==NSLayoutAttributeRight) return NO;
             if(edge!=NSLayoutAttributeLeading && edge!=NSLayoutAttributeTrailing) continue;
+            // Stack-to-arranged-child edges are internal, not competing outer insets.
+            if(owner==row && [other isKindOfClass:UIView.class] && [(UIView *)other isDescendantOfView:row]) continue;
             if(edge!=otherEdge || c.relation!=NSLayoutRelationEqual || c.multiplier!=1 ||
                (other!=root && other!=root.layoutMarginsGuide)) return NO;
             CGFloat inset=10;

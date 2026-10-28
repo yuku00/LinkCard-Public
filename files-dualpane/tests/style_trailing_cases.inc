@@ -62,6 +62,10 @@ static void TrailingCases(void) {
         assert(fabs(TextWidth(f.detail,f)-(expected-70))<0.00001);
         assert(TextWidth(f.title,f)>before && TextWidth(f.detail,f)>detailBefore);
         assert(f.cell.accessories.count==(NSUInteger)provider && nested==0);
+        if(folder) {
+            for(NSLayoutConstraint *size in f.sizes) assert(size.constant==20);
+            assert([f.row customSpacingAfterView:f.slot]==6);
+        }
         if(!folder) { assert(f.sizes[1].constant==44); assert(f.edges[0].constant==(provider ? -36 : -28)); }
         int n=nativeWrites,a=accessoryWrites,b=backgroundWrites,w=writes;
         for(int i=0;i<1000;i++) FPStyleVisibleCell(f.cell);
