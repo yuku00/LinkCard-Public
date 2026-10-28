@@ -26,7 +26,7 @@ jobs:
           ASAN_OPTIONS=detect_leaks=0 "$RUNNER_TEMP/mail-readonly-host"
       - name: Prepare RootHide Theos
         run: |
-          brew install make ldid dpkg
+          brew install make ldid dpkg ripgrep
           git clone --depth 1 --recursive --shallow-submodules https://github.com/roothide/theos.git "$THEOS"
           xcodebuild -version
           git -C "$THEOS" rev-parse HEAD
@@ -50,7 +50,14 @@ jobs:
           lipo "$binary" -verify_arch arm64 arm64e
           python3 tests/check_readonly_binary.py "$binary"
           nm -m "$binary" > "$RUNNER_TEMP/mail-readonly-symbols.txt"
-          ! rg 'MR5|MRD|MRState|MRTheme|MRNative|MRRule|MRTrace' "$RUNNER_TEMP/mail-readonly-symbols.txt"
+          command -v rg
+          test -s "$RUNNER_TEMP/mail-readonly-symbols.txt"
+          set +e
+          rg 'MR5|MRD|MRState|MRTheme|MRNative|MRRule|MRTrace' "$RUNNER_TEMP/mail-readonly-symbols.txt"
+          scan_status=$?
+          set -e
+          test "$scan_status" -eq 1
+          echo 'PASS: nm symbol scan executed; legacy rule/theme symbols absent'
           lipo -info "$binary"
           dpkg-deb -I "$deb"
           dpkg-deb -c "$deb"
