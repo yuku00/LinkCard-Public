@@ -18,7 +18,7 @@ done
 revision=${GITHUB_SHA:-local}
 file="MailLoadCheck-0.1.0-trollfools-arm64-arm64e-${revision:0:12}.dylib"
 xcrun lipo -create build/arm64.dylib build/arm64e.dylib -output "dist/$file"
-ldid -S "dist/$file"
+ldid -S -Cadhoc "dist/$file"
 xcrun lipo "dist/$file" -verify_arch arm64 arm64e
 for arch in arm64 arm64e; do
   xcrun otool -arch "$arch" -L "dist/$file"
