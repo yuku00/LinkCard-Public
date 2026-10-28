@@ -29,6 +29,12 @@ jobs:
           python3 tests/check_077.py
           python3 tests/check_078.py
           python3 tests/check_079.py
+          python3 tests/check_0710.py
+      - name: Execute read-only production layout snapshot schema
+        run: |
+          python3 tests/layout_host.py "$RUNNER_TEMP/layout-host.m"
+          clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -framework Foundation -framework CoreGraphics "$RUNNER_TEMP/layout-host.m" -o "$RUNNER_TEMP/layout-host"
+          "$RUNNER_TEMP/layout-host"
       - name: Execute native current location fixture
         run: |
           python3 tests/location_host.py "$RUNNER_TEMP/location-host.m"
@@ -109,7 +115,7 @@ jobs:
           deb="${packages[0]}"
           test "$(dpkg-deb -f "$deb" Package)" = dev.filesdualpane.nativeprobe
           test "$(dpkg-deb -f "$deb" Architecture)" = iphoneos-arm64e
-          test "$(dpkg-deb -f "$deb" Version)" = 0.7.9
+          test "$(dpkg-deb -f "$deb" Version)" = 0.7.10
           dpkg-deb -x "$deb" "$RUNNER_TEMP/files-package"
           binary=$(python3 -c 'import os,pathlib; print(next(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("files-package").rglob("FilesNativeProbe.dylib")))')
           test -n "$binary"

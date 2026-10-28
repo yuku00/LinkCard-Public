@@ -2,7 +2,7 @@ from pathlib import Path
 import subprocess,sys,tempfile
 r=Path(__file__).resolve().parents[1]
 n=(r/'NativeCompact.inc').read_text()
-assert 'Version: 0.7.9' in (r/'control').read_text()
+assert 'Version: 0.7.10' in (r/'control').read_text()
 with tempfile.TemporaryDirectory() as d:
     p=Path(d)/'host.m'
     subprocess.run([sys.executable,str(r/'tests/style_host.py'),str(p)],check=True); host=p.read_text()
@@ -15,5 +15,5 @@ with tempfile.TemporaryDirectory() as d:
 for bad in ('valueForKey:', 'ivar_getOffset', 'layoutSubviews', '.frame=', 'CGAffineTransform'):
     assert bad not in n
 assert 'BOOL textEdges=FPPlanTrailing(' in n
-assert 'if(!documentAspect && !textEdges) return NO;' in n
+assert 'if(!documentAspect && !textEdges) return FPLayoutReject(' in n
 print('PASS 0.7.9 production text-edge expansion and non-noop native trailing mutation; runtime equations are checked by macOS fixture')

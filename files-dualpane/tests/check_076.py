@@ -2,7 +2,7 @@ from pathlib import Path
 import subprocess,sys,tempfile
 r=Path(__file__).resolve().parents[1]
 a=(r/'NativeActions.inc').read_text(); c=(r/'CompactCells.inc').read_text(); n=(r/'NativeCompact.inc').read_text()
-assert 'Version: 0.7.9' in (r/'control').read_text()
+assert 'Version: 0.7.10' in (r/'control').read_text()
 for bad in ('layoutSubviews','viewDidLayoutSubviews','object_getIvar','ivar_getOffset','valueForKey:', '.frame=', 'CGAffineTransform', 'NSLog('):
     assert bad not in a+c+n,bad
 assert 'object_getClass(cell)' in a and 'FPHookDisplay(classes[i])' in a

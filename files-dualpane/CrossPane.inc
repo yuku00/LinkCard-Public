@@ -74,9 +74,13 @@ static void FPTransfer(FPDualContainer *container, NSUInteger index, BOOL move) 
         });
     });
 }
+static void FPOfferLayoutCapture(FPDualContainer *container, NSUInteger index);
+static void FPReopenLayoutReport(FPDualContainer *container);
 static UIMenu *FPPaneMenu(FPDualContainer *container, NSUInteger index) {
     __weak FPDualContainer *weak=container;
     UIAction *copy=[UIAction actionWithTitle:@"复制所选 → 另一栏当前目录" image:[UIImage systemImageNamed:@"doc.on.doc"] identifier:nil handler:^(UIAction *a){ FPTransfer(weak,index,NO); }];
     UIAction *move=[UIAction actionWithTitle:@"移动所选 → 另一栏当前目录" image:[UIImage systemImageNamed:@"folder"] identifier:nil handler:^(UIAction *a){ FPTransfer(weak,index,YES); }];
-    return [UIMenu menuWithTitle:index==0 ? @"左栏" : @"右栏" children:@[copy,move]];
+    UIAction *capture=[UIAction actionWithTitle:@"采集当前列表布局" image:[UIImage systemImageNamed:@"ruler"] identifier:nil handler:^(UIAction *a){ FPOfferLayoutCapture(weak,index); }];
+    UIAction *reopen=[UIAction actionWithTitle:@"重开最近布局报告" image:[UIImage systemImageNamed:@"doc.text"] identifier:nil handler:^(UIAction *a){ FPReopenLayoutReport(weak); }];
+    return [UIMenu menuWithTitle:index==0 ? @"左栏" : @"右栏" children:@[copy,move,capture,reopen]];
 }

@@ -4,7 +4,7 @@ r=Path(__file__).resolve().parents[1]
 n=(r/'NativeCompact.inc').read_text()
 wpath=r/'workflow/files-native-probe-roothide.yml'
 w=(wpath if wpath.exists() else r.parent/'.github/workflows/files-native-probe-roothide.yml').read_text()
-assert 'Version: 0.7.9' in (r/'control').read_text() and 'Version)" = 0.7.9' in w
+assert 'Version: 0.7.10' in (r/'control').read_text() and 'Version)" = 0.7.10' in w
 assert '# Files DualPane 0.7.9' in (r/'README-0.7.9.md').read_text()
 for token in ('FPTextWidthPlan', 'NSLayoutRelationLessThanOrEqual', '@"disabled":@YES', 'if(restore && !c.active', 'row.arrangedSubviews.lastObject!=textSlot && !reservation', 'sibling && !tail && c.constant!=0'):
     assert token in n,token

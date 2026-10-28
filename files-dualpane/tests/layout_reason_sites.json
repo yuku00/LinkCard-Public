@@ -1,0 +1,217 @@
+{
+  "FPNativeStateMatches_01": {
+    "stage": "cacheMiss",
+    "line": 97,
+    "meaning": "identity_size_margins_or_font_changed"
+  },
+  "FPNativeStateMatches_02": {
+    "stage": "cacheMiss",
+    "line": 98,
+    "meaning": "pending_view_became_ready"
+  },
+  "FPNativeStateMatches_03": {
+    "stage": "cacheMiss",
+    "line": 100,
+    "meaning": "layout_direction_changed"
+  },
+  "FPNativeStateMatches_04": {
+    "stage": "cacheMiss",
+    "line": 102,
+    "meaning": "accessories_changed"
+  },
+  "FPNativeStateMatches_05": {
+    "stage": "cacheMiss",
+    "line": 105,
+    "meaning": "watched_stack_changed"
+  },
+  "FPNativeStateMatches_06": {
+    "stage": "cacheMiss",
+    "line": 107,
+    "meaning": "watched_constraint_changed"
+  },
+  "FPNativeStateMatches_07": {
+    "stage": "cacheMiss",
+    "line": 111,
+    "meaning": "thumbnail_spacing_changed"
+  },
+  "FPNativeStateMatches_08": {
+    "stage": "cacheMiss",
+    "line": 114,
+    "meaning": "applied_constraint_changed"
+  },
+  "FPNativeStateMatches_09": {
+    "stage": "cacheMiss",
+    "line": 122,
+    "meaning": "label_geometry_font_or_lines_changed"
+  },
+  "FPPlanDimension_01": {
+    "stage": "geometryReject",
+    "line": 128,
+    "meaning": "autoresizing_mask"
+  },
+  "FPPlanDimension_02": {
+    "stage": "geometryReject",
+    "line": 139,
+    "meaning": "unsupported_dimension_link"
+  },
+  "FPPlanDocumentDimensions_01": {
+    "stage": "geometryReject",
+    "line": 175,
+    "meaning": "aspect_or_autoresizing_unsupported"
+  },
+  "FPPlanDocumentDimensions_02": {
+    "stage": "geometryReject",
+    "line": 203,
+    "meaning": "dimension_relation_or_multiplier_unsupported"
+  },
+  "FPPlanDocumentDimensions_03": {
+    "stage": "geometryReject",
+    "line": 210,
+    "meaning": "dimension_equation_not_proved"
+  },
+  "FPPlanEdges_01": {
+    "stage": "geometryReject",
+    "line": 232,
+    "meaning": "row_width_or_physical_edge_constraint"
+  },
+  "FPPlanEdges_02": {
+    "stage": "geometryReject",
+    "line": 237,
+    "meaning": "root_edge_equation_not_proved"
+  },
+  "FPPlanEdges_missing_edge": {
+    "stage": "geometryReject",
+    "line": 246,
+    "meaning": "root_leading_or_trailing_missing"
+  },
+  "FPTextWidthPlan_01": {
+    "stage": "trailingReject",
+    "line": 261,
+    "meaning": "width_not_known_fixed_or_max_constant"
+  },
+  "FPTrailingPath_01": {
+    "stage": "trailingReject",
+    "line": 281,
+    "meaning": "path_depth_budget"
+  },
+  "FPTrailingPath_02": {
+    "stage": "trailingReject",
+    "line": 283,
+    "meaning": "outside_content_root"
+  },
+  "FPTrailingPath_03": {
+    "stage": "trailingReject",
+    "line": 284,
+    "meaning": "width_plan_rejected"
+  },
+  "FPTrailingPath_04": {
+    "stage": "trailingReject",
+    "line": 306,
+    "meaning": "edge_relation_or_boundary_not_proved"
+  },
+  "FPTrailingPath_05": {
+    "stage": "trailingReject",
+    "line": 307,
+    "meaning": "sibling_nonzero_offset"
+  },
+  "FPTrailingPath_06": {
+    "stage": "trailingReject",
+    "line": 309,
+    "meaning": "multiple_trailing_edges"
+  },
+  "FPTrailingPath_07": {
+    "stage": "trailingReject",
+    "line": 318,
+    "meaning": "no_edge_or_vertical_fill_witness"
+  },
+  "FPTrailingPath_08": {
+    "stage": "trailingReject",
+    "line": 330,
+    "meaning": "provider_width_ambiguous_or_nonconstant"
+  },
+  "FPTrailingPath_09": {
+    "stage": "trailingReject",
+    "line": 335,
+    "meaning": "provider_width_missing"
+  },
+  "FPTrailingPath_10": {
+    "stage": "trailingReject",
+    "line": 339,
+    "meaning": "provider_tail_not_proved"
+  },
+  "FPTrailingPath_11": {
+    "stage": "trailingReject",
+    "line": 343,
+    "meaning": "ancestor_path_rejected"
+  },
+  "FPPlanTrailing_01": {
+    "stage": "trailingReject",
+    "line": 355,
+    "meaning": "not_left_to_right"
+  },
+  "FPPlanTrailing_02": {
+    "stage": "trailingReject",
+    "line": 368,
+    "meaning": "row_or_text_slot_path_rejected"
+  },
+  "FPPlanTrailing_03": {
+    "stage": "trailingReject",
+    "line": 372,
+    "meaning": "unproved_trailing_arranged_provider"
+  },
+  "FPCompactNative_01": {
+    "stage": "nativeGate",
+    "line": 412,
+    "meaning": "outside_compact_scope"
+  },
+  "FPCompactNative_02": {
+    "stage": "nativeGate",
+    "line": 417,
+    "meaning": "not_item_controller_or_sidebar"
+  },
+  "FPCompactNative_03": {
+    "stage": "nativeGate",
+    "line": 419,
+    "meaning": "unsupported_cell_class"
+  },
+  "FPCompactNative_04": {
+    "stage": "nativeGate",
+    "line": 423,
+    "meaning": "renaming_or_renaming_abi_mismatch"
+  },
+  "FPCompactNative_05": {
+    "stage": "nativeGate",
+    "line": 434,
+    "meaning": "identity_getter_missing_or_abi_or_type"
+  },
+  "FPCompactNative_06": {
+    "stage": "nativeGate",
+    "line": 437,
+    "meaning": "title_or_image_outside_content"
+  },
+  "FPCompactNative_07": {
+    "stage": "nativeGate",
+    "line": 443,
+    "meaning": "row_slot_distribution_height_or_margins"
+  },
+  "FPCompactNative_08": {
+    "stage": "nativeGate",
+    "line": 461,
+    "meaning": "label_height_insufficient"
+  },
+  "FPCompactNative_09": {
+    "stage": "nativeGate",
+    "line": 469,
+    "meaning": "no_ready_labels_or_document_aspect"
+  },
+  "FPCompactNative_10": {
+    "stage": "nativeGate",
+    "line": 484,
+    "meaning": "geometry_and_trailing_both_rejected"
+  },
+  "FPCompactNative_11": {
+    "stage": "nativeGate",
+    "line": 490,
+    "meaning": "no_image_only_fallback_or_labels"
+  }
+}

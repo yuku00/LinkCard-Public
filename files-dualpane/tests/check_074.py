@@ -1,7 +1,7 @@
 from pathlib import Path
 r=Path(__file__).resolve().parents[1]
 s=(r/'DualPane.m').read_text(); a=(r/'NativeActions.inc').read_text(); c=(r/'CompactCells.inc').read_text(); n=(r/'NativeLocation.inc').read_text()
-assert 'Version: 0.7.9' in (r/'control').read_text()
+assert 'Version: 0.7.10' in (r/'control').read_text()
 for bad in ('FPNativeInitialState','dev.filesdualpane.home','HomePolicy','HomeRestore','paneSide','mostRecentlyVisitedLocation'):
     assert bad not in s, bad
 assert 'NSUUID.UUID.UUIDString' in s and 'InstallStateIsolation()' in s

@@ -182,6 +182,7 @@ static BOOL InExperiment(id v) {
 - (void)close { for(UIViewController *p=self.parentViewController;p;p=p.parentViewController) if([p isKindOfClass:FPDualContainer.class]) { [(FPDualContainer *)p close]; return; } }
 @end
 #include "NativeActions.inc"
+#include "LayoutSnapshot.inc"
 static NSString *Preflight(UIViewController *host, FPBrowserPane *adapter, id *outConfig, id *outObserver, UIViewController **outOriginal) {
     char build[64]={0}; size_t length=sizeof(build); sysctlbyname("kern.osversion",build,&length,NULL,0);
     if(strcmp(build,"20G75") || !NSThread.isMainThread) return @"requires main thread and iOS build 20G75";

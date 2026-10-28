@@ -1,0 +1,197 @@
+{
+  "baselineSHA256": "9967eaff745f0c8fb5d09d7fe4b129ffb12b4576a529c37e18171b0cef746ad4",
+  "operations": [
+    {
+      "old": "static char FPNativeStyleKey, FPNativeReadyKey;\n",
+      "new": "static char FPNativeStyleKey, FPNativeReadyKey, FPLayoutDecisionKey;\nstatic NSMutableDictionary *FPLayoutDecision;\nstatic BOOL FPLayoutReject(NSString *stage, NSString *reason) {\n    if(FPLayoutDecision && !FPLayoutDecision[stage]) FPLayoutDecision[stage]=reason;\n    return NO;\n}\n"
+    },
+    {
+      "old": "       ![state[@\"font\"] isEqual:FPCompactFont(cell,NO)] || ![state[@\"detailFont\"] isEqual:FPCompactFont(cell,YES)]) return NO;\n    for(UIView *view in state[@\"pendingViews\"]) if(view.bounds.size.width>0 && view.bounds.size.height>0) return NO;\n",
+      "new": "       ![state[@\"font\"] isEqual:FPCompactFont(cell,NO)] || ![state[@\"detailFont\"] isEqual:FPCompactFont(cell,YES)]) return FPLayoutReject(@\"cacheMiss\",@\"FPNativeStateMatches_01\");\n    for(UIView *view in state[@\"pendingViews\"]) if(view.bounds.size.width>0 && view.bounds.size.height>0) return FPLayoutReject(@\"cacheMiss\",@\"FPNativeStateMatches_02\");\n"
+    },
+    {
+      "old": "        if(cell.contentView.effectiveUserInterfaceLayoutDirection!=UIUserInterfaceLayoutDirectionLeftToRight) return NO;\n",
+      "new": "        if(cell.contentView.effectiveUserInterfaceLayoutDirection!=UIUserInterfaceLayoutDirectionLeftToRight) return FPLayoutReject(@\"cacheMiss\",@\"FPNativeStateMatches_03\");\n"
+    },
+    {
+      "old": "        if(![state[@\"accessories\"] isEqual:accessories]) return NO;\n",
+      "new": "        if(![state[@\"accessories\"] isEqual:accessories]) return FPLayoutReject(@\"cacheMiss\",@\"FPNativeStateMatches_04\");\n"
+    },
+    {
+      "old": "            if(stack) { if(stack.axis!=UILayoutConstraintAxisVertical || stack.alignment!=UIStackViewAlignmentFill || stack.layoutMarginsRelativeArrangement) return NO; continue; }\n",
+      "new": "            if(stack) { if(stack.axis!=UILayoutConstraintAxisVertical || stack.alignment!=UIStackViewAlignmentFill || stack.layoutMarginsRelativeArrangement) return FPLayoutReject(@\"cacheMiss\",@\"FPNativeStateMatches_05\"); continue; }\n"
+    },
+    {
+      "old": "            if(!c.active || c.firstItem!=entry[@\"first\"] || (c.secondItem ?: NSNull.null)!=entry[@\"second\"] || c.constant!=[entry[@\"constant\"] doubleValue] || c.multiplier!=1 || c.relation!=NSLayoutRelationEqual) return NO;\n",
+      "new": "            if(!c.active || c.firstItem!=entry[@\"first\"] || (c.secondItem ?: NSNull.null)!=entry[@\"second\"] || c.constant!=[entry[@\"constant\"] doubleValue] || c.multiplier!=1 || c.relation!=NSLayoutRelationEqual) return FPLayoutReject(@\"cacheMiss\",@\"FPNativeStateMatches_06\");\n"
+    },
+    {
+      "old": "    if([state[@\"geometry\"] boolValue] && [row customSpacingAfterView:state[@\"slot\"]]!=6) return NO;\n",
+      "new": "    if([state[@\"geometry\"] boolValue] && [row customSpacingAfterView:state[@\"slot\"]]!=6) return FPLayoutReject(@\"cacheMiss\",@\"FPNativeStateMatches_07\");\n"
+    },
+    {
+      "old": "        if(c.active==[entry[@\"disabled\"] boolValue] || c.constant!=[entry[@\"value\"] doubleValue]) return NO;\n",
+      "new": "        if(c.active==[entry[@\"disabled\"] boolValue] || c.constant!=[entry[@\"value\"] doubleValue]) return FPLayoutReject(@\"cacheMiss\",@\"FPNativeStateMatches_08\");\n"
+    },
+    {
+      "old": "           label.lineBreakMode!=NSLineBreakByTruncatingTail || !label.adjustsFontForContentSizeCategory) return NO;\n",
+      "new": "           label.lineBreakMode!=NSLineBreakByTruncatingTail || !label.adjustsFontForContentSizeCategory) return FPLayoutReject(@\"cacheMiss\",@\"FPNativeStateMatches_09\");\n"
+    },
+    {
+      "old": "    if(view.translatesAutoresizingMaskIntoConstraints) return NO;\n",
+      "new": "    if(view.translatesAutoresizingMaskIntoConstraints) return FPLayoutReject(@\"geometryReject\",@\"FPPlanDimension_01\");\n"
+    },
+    {
+      "old": "            if(!first || c.secondItem || c.relation!=NSLayoutRelationEqual || c.multiplier!=1) return NO;\n",
+      "new": "            if(!first || c.secondItem || c.relation!=NSLayoutRelationEqual || c.multiplier!=1) return FPLayoutReject(@\"geometryReject\",@\"FPPlanDimension_02\");\n"
+    },
+    {
+      "old": "    if(!ratio || slot.translatesAutoresizingMaskIntoConstraints || image.translatesAutoresizingMaskIntoConstraints) return NO;\n",
+      "new": "    if(!ratio || slot.translatesAutoresizingMaskIntoConstraints || image.translatesAutoresizingMaskIntoConstraints) return FPLayoutReject(@\"geometryReject\",@\"FPPlanDocumentDimensions_01\");\n"
+    },
+    {
+      "old": "        if(c.relation!=NSLayoutRelationEqual || !isfinite(c.multiplier) || c.multiplier<=0) return NO;\n",
+      "new": "        if(c.relation!=NSLayoutRelationEqual || !isfinite(c.multiplier) || c.multiplier<=0) return FPLayoutReject(@\"geometryReject\",@\"FPPlanDocumentDimensions_02\");\n"
+    },
+    {
+      "old": "        } else return NO;\n",
+      "new": "        } else return FPLayoutReject(@\"geometryReject\",@\"FPPlanDocumentDimensions_03\");\n"
+    },
+    {
+      "old": "            if(edge==NSLayoutAttributeWidth || edge==NSLayoutAttributeLeft || edge==NSLayoutAttributeRight) return NO;\n",
+      "new": "            if(edge==NSLayoutAttributeWidth || edge==NSLayoutAttributeLeft || edge==NSLayoutAttributeRight) return FPLayoutReject(@\"geometryReject\",@\"FPPlanEdges_01\");\n"
+    },
+    {
+      "old": "               (other!=root && other!=root.layoutMarginsGuide)) return NO;\n",
+      "new": "               (other!=root && other!=root.layoutMarginsGuide)) return FPLayoutReject(@\"geometryReject\",@\"FPPlanEdges_02\");\n"
+    },
+    {
+      "old": "    return leading && trailing;\n",
+      "new": "    if(!leading || !trailing) return FPLayoutReject(@\"geometryReject\",@\"FPPlanEdges_missing_edge\");\n    return YES;\n"
+    },
+    {
+      "old": "               (c.relation!=NSLayoutRelationEqual && c.relation!=NSLayoutRelationLessThanOrEqual) || !isfinite(c.constant)) return NO;\n",
+      "new": "               (c.relation!=NSLayoutRelationEqual && c.relation!=NSLayoutRelationLessThanOrEqual) || !isfinite(c.constant)) return FPLayoutReject(@\"trailingReject\",@\"FPTextWidthPlan_01\");\n"
+    },
+    {
+      "old": "    if(!depth) return NO;\n",
+      "new": "    if(!depth) return FPLayoutReject(@\"trailingReject\",@\"FPTrailingPath_01\");\n"
+    },
+    {
+      "old": "    if(![view isKindOfClass:UIView.class] || (view!=root && ![view isDescendantOfView:root])) return NO;\n    if(item==view && !FPTextWidthPlan(view,root,known,changes)) return NO;\n",
+      "new": "    if(![view isKindOfClass:UIView.class] || (view!=root && ![view isDescendantOfView:root])) return FPLayoutReject(@\"trailingReject\",@\"FPTrailingPath_02\");\n    if(item==view && !FPTextWidthPlan(view,root,known,changes)) return FPLayoutReject(@\"trailingReject\",@\"FPTrailingPath_03\");\n"
+    },
+    {
+      "old": "               (!FPTrailingAttribute(otherEdge) && !tail) || c.relation!=NSLayoutRelationEqual || c.multiplier!=1) return NO;\n            if(sibling && !tail && c.constant!=0) return NO;\n",
+      "new": "               (!FPTrailingAttribute(otherEdge) && !tail) || c.relation!=NSLayoutRelationEqual || c.multiplier!=1) return FPLayoutReject(@\"trailingReject\",@\"FPTrailingPath_04\");\n            if(sibling && !tail && c.constant!=0) return FPLayoutReject(@\"trailingReject\",@\"FPTrailingPath_05\");\n"
+    },
+    {
+      "old": "            if(edge && !(siblingEdge && !sibling)) return NO;\n",
+      "new": "            if(edge && !(siblingEdge && !sibling)) return FPLayoutReject(@\"trailingReject\",@\"FPTrailingPath_06\");\n"
+    },
+    {
+      "old": "           ![stack.arrangedSubviews containsObject:view] || stack.layoutMarginsRelativeArrangement) return NO;\n",
+      "new": "           ![stack.arrangedSubviews containsObject:view] || stack.layoutMarginsRelativeArrangement) return FPLayoutReject(@\"trailingReject\",@\"FPTrailingPath_07\");\n"
+    },
+    {
+      "old": "                if(width || c.secondItem || c.relation!=NSLayoutRelationEqual || c.multiplier!=1 || !isfinite(c.constant) || c.constant<=0) return NO;\n",
+      "new": "                if(width || c.secondItem || c.relation!=NSLayoutRelationEqual || c.multiplier!=1 || !isfinite(c.constant) || c.constant<=0) return FPLayoutReject(@\"trailingReject\",@\"FPTrailingPath_08\");\n"
+    },
+    {
+      "old": "        if(!width) return NO;\n",
+      "new": "        if(!width) return FPLayoutReject(@\"trailingReject\",@\"FPTrailingPath_09\");\n"
+    },
+    {
+      "old": "        if(!FPTrailingPath(next,stop,root,providerKnown,unused,providerPath,&rest,&reserve,depth-1) || reserve) return NO;\n",
+      "new": "        if(!FPTrailingPath(next,stop,root,providerKnown,unused,providerPath,&rest,&reserve,depth-1) || reserve) return FPLayoutReject(@\"trailingReject\",@\"FPTrailingPath_10\");\n"
+    },
+    {
+      "old": "    } else if(!FPTrailingPath(next,stop,root,known,changes,path,&rest,reservation,depth-1)) return NO;\n",
+      "new": "    } else if(!FPTrailingPath(next,stop,root,known,changes,path,&rest,reservation,depth-1)) return FPLayoutReject(@\"trailingReject\",@\"FPTrailingPath_11\");\n"
+    },
+    {
+      "old": "    if(root.effectiveUserInterfaceLayoutDirection!=UIUserInterfaceLayoutDirectionLeftToRight) return NO;\n",
+      "new": "    if(root.effectiveUserInterfaceLayoutDirection!=UIUserInterfaceLayoutDirectionLeftToRight) return FPLayoutReject(@\"trailingReject\",@\"FPPlanTrailing_01\");\n"
+    },
+    {
+      "old": "            if(item==row || item==textSlot) return NO;\n",
+      "new": "            if(item==row || item==textSlot) return FPLayoutReject(@\"trailingReject\",@\"FPPlanTrailing_02\");\n"
+    },
+    {
+      "old": "        if(item==textSlot && row.arrangedSubviews.lastObject!=textSlot && !reservation) return NO;\n",
+      "new": "        if(item==textSlot && row.arrangedSubviews.lastObject!=textSlot && !reservation) return FPLayoutReject(@\"trailingReject\",@\"FPPlanTrailing_03\");\n"
+    },
+    {
+      "old": "static BOOL FPCompactNative(UICollectionViewCell *cell, BOOL compact) {\n",
+      "new": "static BOOL FPCompactNativeObserved(UICollectionViewCell *cell, BOOL compact) {\n"
+    },
+    {
+      "old": "    if(!compact) { objc_setAssociatedObject(cell,&FPNativeReadyKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); FPRestoreNative(cell,YES); return NO; }\n",
+      "new": "    if(!compact) { objc_setAssociatedObject(cell,&FPNativeReadyKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); FPRestoreNative(cell,YES); return FPLayoutReject(@\"nativeGate\",@\"FPCompactNative_01\"); }\n"
+    },
+    {
+      "old": "        FPRestoreNative(cell,YES); return NO;\n",
+      "new": "        FPRestoreNative(cell,YES); return FPLayoutReject(@\"nativeGate\",@\"FPCompactNative_02\");\n"
+    },
+    {
+      "old": "    if(!FPClassInChain(cell,@\"Files.DOCItemCollectionListCell\") && !FPClassInChain(cell,@\"Files.DOCItemCollectionCell\")) return NO;\n",
+      "new": "    if(!FPClassInChain(cell,@\"Files.DOCItemCollectionListCell\") && !FPClassInChain(cell,@\"Files.DOCItemCollectionCell\")) return FPLayoutReject(@\"nativeGate\",@\"FPCompactNative_03\");\n"
+    },
+    {
+      "old": "        FPRestoreNative(cell,YES); return NO;\n",
+      "new": "        FPRestoreNative(cell,YES); return FPLayoutReject(@\"nativeGate\",@\"FPCompactNative_04\");\n"
+    },
+    {
+      "old": "    if(saved && FPNativeStateMatches(saved,cell,identity)) return YES;\n",
+      "new": "    if(FPLayoutDecision) FPLayoutDecision[@\"cache\"] = saved ? @\"miss\" : @\"absent\";\n    if(saved && FPNativeStateMatches(saved,cell,identity)) {\n        if(FPLayoutDecision) { FPLayoutDecision[@\"cache\"]=@\"hit_identity_size_margins_fonts_pending_watch_constraints_labels\";\n            FPLayoutDecision[@\"trailing\"]=@\"cached_not_replanned\"; FPLayoutDecision[@\"geometry\"]=@\"cached_not_replanned\";\n            FPLayoutDecision[@\"pending\"]= [saved[@\"textPending\"] boolValue] ? @\"cached_zero_bounds\" : @\"ready\"; }\n        return YES;\n    }\n"
+    },
+    {
+      "old": "    if(!identity) return NO;\n",
+      "new": "    if(!identity) return FPLayoutReject(@\"nativeGate\",@\"FPCompactNative_05\");\n"
+    },
+    {
+      "old": "    if(!image || ![image isDescendantOfView:root] || ![title isDescendantOfView:root]) return NO;\n",
+      "new": "    if(!image || ![image isDescendantOfView:root] || ![title isDescendantOfView:root]) return FPLayoutReject(@\"nativeGate\",@\"FPCompactNative_06\");\n"
+    },
+    {
+      "old": "       (row.layoutMarginsRelativeArrangement && (row.directionalLayoutMargins.leading!=0 || row.directionalLayoutMargins.trailing!=0))) return NO;\n",
+      "new": "       (row.layoutMarginsRelativeArrangement && (row.directionalLayoutMargins.leading!=0 || row.directionalLayoutMargins.trailing!=0))) return FPLayoutReject(@\"nativeGate\",@\"FPCompactNative_07\");\n"
+    },
+    {
+      "old": "            return NO;\n",
+      "new": "            return FPLayoutReject(@\"nativeGate\",@\"FPCompactNative_08\");\n"
+    },
+    {
+      "old": "",
+      "new": "    if(FPLayoutDecision) FPLayoutDecision[@\"pending\"]=pending.count ? @\"zero_bounds\" : @\"ready\";\n"
+    },
+    {
+      "old": "    if(!labels.count && !documentAspect) return NO;\n",
+      "new": "    if(!labels.count && !documentAspect) return FPLayoutReject(@\"nativeGate\",@\"FPCompactNative_09\");\n"
+    },
+    {
+      "old": "",
+      "new": "    if(FPLayoutDecision) FPLayoutDecision[@\"trailing\"]=textEdges ? @\"accepted\" : pending.count ? @\"rejected_pending\" : @\"rejected_proof\";\n"
+    },
+    {
+      "old": "",
+      "new": "    if(FPLayoutDecision) FPLayoutDecision[@\"geometry\"]=geometry ? @\"accepted\" : @\"rejected_proof\";\n"
+    },
+    {
+      "old": "        if(!documentAspect && !textEdges) return NO;\n",
+      "new": "        if(!documentAspect && !textEdges) return FPLayoutReject(@\"nativeGate\",@\"FPCompactNative_10\");\n"
+    },
+    {
+      "old": "",
+      "new": "        if(FPLayoutDecision) FPLayoutDecision[@\"imageOnly\"]=imageOnly ? @\"accepted\" : @\"not_applied\";\n"
+    },
+    {
+      "old": "        if(!imageOnly && !labels.count) return NO;\n",
+      "new": "        if(!imageOnly && !labels.count) return FPLayoutReject(@\"nativeGate\",@\"FPCompactNative_11\");\n"
+    },
+    {
+      "old": "",
+      "new": "\n// One bounded last-decision record per live cell; no history, strings or I/O.\nstatic BOOL FPCompactNative(UICollectionViewCell *cell, BOOL compact) {\n    NSMutableDictionary *previous=FPLayoutDecision;\n    NSMutableDictionary *decision=[@{@\"cache\":@\"not_reached\",@\"trailing\":@\"not_reached\",@\"geometry\":@\"not_reached\",@\"pending\":@\"not_reached\"} mutableCopy];\n    FPLayoutDecision=decision;\n    @try { BOOL applied=FPCompactNativeObserved(cell,compact); decision[@\"nativeApplied\"]=@(applied); return applied; }\n    @finally {\n        if([decision[@\"cache\"] hasPrefix:@\"hit_\"]) {\n            NSDictionary *old=objc_getAssociatedObject(cell,&FPLayoutDecisionKey);\n            decision[@\"planDecision\"]=old[@\"planDecision\"] ?: old ?: @{@\"status\":@\"not_observed\"};\n        }\n        objc_setAssociatedObject(cell,&FPLayoutDecisionKey,[decision copy],OBJC_ASSOCIATION_RETAIN_NONATOMIC); FPLayoutDecision=previous;\n    }\n}\n"
+    }
+  ]
+}
