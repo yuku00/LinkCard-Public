@@ -14,6 +14,8 @@ if '--mutate-native-size' in sys.argv:
     production=production.replace('@"value":@20','@"value":@40')
 if '--mutate-document-square' in sys.argv:
     production=production.replace('CGSizeMake(20*MIN(1,ratio),20*MIN(1,1/ratio))','CGSizeMake(20,20)')
+if '--mutate-native-trailing' in sys.argv:
+    production=production.replace('CGFloat target=i==paths.count-1 ? -10 : 0;', 'CGFloat target=i==paths.count-1 ? -28 : -8;')
 prefix=(r/'tests/style_doubles.inc').read_text()
 cases=(r/'tests/style_public_cases.inc').read_text()+(r/'tests/style_native_cases.inc').read_text()
 cases=cases.replace('int main(void)',(r/'tests/style_document_cases.inc').read_text()+'\nint main(void)')

@@ -4,9 +4,9 @@ r=Path(__file__).resolve().parents[1]
 n=(r/'NativeCompact.inc').read_text()
 c=(r/'CompactCells.inc').read_text()
 w=(r/'workflow/files-native-probe-roothide.yml').read_text() if (r/'workflow/files-native-probe-roothide.yml').exists() else (r.parent/'.github/workflows/files-native-probe-roothide.yml').read_text()
-assert 'Version: 0.7.7' in (r/'control').read_text()
+assert 'Version: 0.7.8' in (r/'control').read_text()
 assert '# Files DualPane 0.7.7' in (r/'README-0.7.7.md').read_text()
-assert 'Version)" = 0.7.7' in w
+assert 'Version)" = 0.7.8' in w
 assert 'CGSizeMake(20*MIN(1,ratio),20*MIN(1,1/ratio))' in n
 assert 'FPDocumentAspect(image,root)' in n
 assert 'c.firstItem!=image || c.secondItem!=image' in n
