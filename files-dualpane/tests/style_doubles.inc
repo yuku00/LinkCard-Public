@@ -56,6 +56,11 @@ static NSString *const UIFontTextStyleBody=@"body", *const UIFontTextStyleCaptio
 @property(nonatomic,weak) UIResponder *nextResponder;
 @end
 @implementation UIResponder @end
+@class UIView;
+@interface UILayoutGuide : NSObject
+@property(nonatomic,weak) UIView *owningView;
+@end
+@implementation UILayoutGuide @end
 @interface UIView : UIResponder
 @property(nonatomic,weak) UIView *superview;
 @property NSMutableArray<UIView *> *subviews;
