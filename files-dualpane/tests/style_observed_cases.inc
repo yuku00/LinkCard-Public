@@ -19,6 +19,14 @@ static void ObservedStable(NativeFixture *f) {
     assert(nativeWrites==n && accessoryWrites==a && backgroundWrites==b && nested==0);
     assert(objc_getAssociatedObject(f.cell,&FPNativeStyleKey)==state);
 }
+// Replay UIKit replacing a native equation without retaining the old object.
+static NSLayoutConstraint *ObservedRebuild(UIView *owner, NSMutableArray *cs, NSUInteger index, CGFloat constant) {
+    NSLayoutConstraint *old=cs[index];
+    NSLayoutConstraint *replacement=[NSLayoutConstraint constraintWithItem:old.firstItem attribute:old.firstAttribute relatedBy:old.relation toItem:old.secondItem attribute:old.secondAttribute multiplier:old.multiplier constant:constant];
+    replacement.priority=old.priority; old.active=NO; [owner.constraints removeObject:old];
+    [owner.constraints insertObject:replacement atIndex:0]; replacement.active=YES; cs[index]=replacement;
+    return replacement;
+}
 static void ObservedCases(void) {
     NSMutableDictionary *o; NSMutableArray *cs; NativeFixture *f=Observed(&o,&cs);
     assert(cs.count==119 && f.cell.accessories.count==1);
@@ -37,6 +45,15 @@ static void ObservedCases(void) {
     assert(fabs(textWidth-109.33333333333334)<1e-6);
     assert([(NSLayoutConstraint *)cs[1] constant]==27 && [(NSLayoutConstraint *)cs[10] constant]==39);
     ObservedStable(f);
+    // Equivalent UISV regeneration and ordering changes must not restore/reapply.
+    nativeReentry=nil;
+    ObservedRebuild(f.row,cs,52,0);
+    ObservedRebuild(f.row,cs,56,6);
+    ObservedRebuild(f.row,cs,57,0);
+    nativeReentry=f.cell;
+    ObservedStable(f);
+    assert(objc_getAssociatedObject(f.cell,&FPNativeStyleKey)==state);
+    assert(fabs(ObservedTextWidth(f,cs)-109.33333333333334)<1e-6);
     // Visible tags recover their exact original stack spacing, not a guessed 10pt.
     UIView *tags=o[@19]; tags.bounds=CGRectMake(0,0,24,12);
     [(NSLayoutConstraint *)cs[102] setConstant:24]; [(NSLayoutConstraint *)cs[103] setConstant:12];
@@ -69,6 +86,12 @@ static void ObservedCases(void) {
     f.cell.cellContent=[NSObject new]; f.title.text=@"recycled anonymous fixture";
     FPStyleVisibleCell(f.cell); assert(fabs(ObservedTextWidth(f,cs)-94.33333333333334)<1e-6); ObservedStable(f);
     nativeReentry=nil;
+    // New native inset value is compacted once, then restored to the NEW value.
+    f=Observed(&o,&cs); FPStyleVisibleCell(f.cell);
+    NSLayoutConstraint *newInset=ObservedRebuild(f.cell.contentView,cs,25,3);
+    FPStyleVisibleCell(f.cell); assert(newInset.active && newInset.constant==-6); ObservedStable(f);
+    [f.cell prepareForReuse]; assert(newInset.active && newInset.constant==3);
+    assert([(NSLayoutConstraint *)cs[88] active] && [(NSLayoutConstraint *)cs[29] constant]==-16);
     // Nonzero internal-guide equations remain unsupported; they are not aliases.
     f=Observed(&o,&cs); [(NSLayoutConstraint *)cs[70] setConstant:1]; FPStyleVisibleCell(f.cell);
     state=objc_getAssociatedObject(f.cell,&FPNativeStyleKey); assert(![state[@"geometry"] boolValue] && ![state[@"trailing"] boolValue]); ObservedStable(f);
