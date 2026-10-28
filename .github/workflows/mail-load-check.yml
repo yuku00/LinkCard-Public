@@ -1,0 +1,31 @@
+name: Mail Load Check Native
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+        working-directory: mail-rules/load-check
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: mail-rules/load-check
+      - name: Prepare dylib-only signer
+        run: |
+          if ! command -v ldid >/dev/null; then brew install ldid; fi
+      - name: Build and audit native load-only control
+        run: bash build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mail-load-check-0.1.0-${{ github.run_id }}
+          path: mail-rules/load-check/dist/*
+          if-no-files-found: error
+          retention-days: 30
