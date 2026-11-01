@@ -40,6 +40,12 @@ final class StorageAndRuntimeTests: XCTestCase {
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: base.deletingLastPathComponent())
         XCTAssertFalse(AppPaths.isOwnedPath(link.appendingPathComponent("secret"), root: base))
     }
+    func testRuntimeProbeEmitsJSONBooleanNotInteger() throws {
+        struct Flag: Decodable { let noReportSymbolAvailable: Bool }
+        // JSONDecoder rejects 0/1 for Bool: ObjC comparison boxing must use @YES/@NO.
+        let report = try XCTUnwrap(RuntimePermissions.capture(), "Runtime probe must decode its Boolean flag")
+        _ = try JSONDecoder().decode(Flag.self, from: JSONEncoder().encode(report))
+    }
     func testRuntimeUsesActualSelfAndOnlyWhitelistedValues() throws {
         let report = try XCTUnwrap(RuntimePermissions.capture())
         XCTAssertTrue(["available", "unknown"].contains(report.entitlementAPI))

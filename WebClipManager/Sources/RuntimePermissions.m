@@ -73,7 +73,7 @@ NSString *WCMRuntimeJSON(void) {
     NSDictionary *report = @{@"entitlementAPI": task ? @"available" : @"unknown",
         @"entitlements": values, @"expectedComparison": matches,
         @"sandboxAPI": check ? @"available" : @"unknown", @"sandboxChecks": checks,
-        @"sandboxFilterType": @(filterType), @"noReportSymbolAvailable": @(noReport != NULL)};
+        @"sandboxFilterType": @(filterType), @"noReportSymbolAvailable": noReport ? @YES : @NO};
     if (sandbox) dlclose(sandbox);
     NSData *data = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingSortedKeys error:nil];
     return data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"{}";
