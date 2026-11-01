@@ -11,7 +11,17 @@ with tempfile.TemporaryDirectory() as temp:
  fn.argtypes=[ctypes.c_char_p,ctypes.c_char_p,ctypes.c_uint,ctypes.POINTER(ctypes.c_void_p),ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_int)]
  def run(body, expected, command=b'webclip-list', timeout=250):
   child=p/'child'
-  child.write_text('#!/usr/bin/env python3\n'+body+'\n');child.chmod(0o755)
+  fixture = {
+   'print("{}",end="")': 'write(1,"{}",2);',
+   'raise SystemExit(7)': 'return 7;',
+   'import os,signal;os.kill(os.getpid(),signal.SIGKILL)': 'kill(getpid(),SIGKILL);',
+   'import time;time.sleep(3)': 'sleep(3);',
+   'import os;os.write(1,b"a"*(9*1024*1024))': 'char data[4096]={0}; for(int i=0;i<2304;i++) write(1,data,sizeof(data));',
+   'print("not-json")': 'write(1,"not-json",8);',
+   'print("no")': 'return 0;'
+  }[body]
+  (p/'fixture.c').write_text('#include <unistd.h>\n#include <signal.h>\nint main(void){'+fixture+'return 0;}')
+  subprocess.run(['cc',str(p/'fixture.c'),'-o',str(child)],check=True,timeout=30)
   out=ctypes.c_void_p();size=ctypes.c_size_t();status=ctypes.c_int()
   start=time.monotonic();error=fn(os.fsencode(child),command,timeout,ctypes.byref(out),ctypes.byref(size),ctypes.byref(status))
   assert error==expected,(error,expected,status.value)

@@ -42,7 +42,17 @@ int wcm_helper_run(const char *path, const char *command, unsigned timeout_ms,
         char *argv[] = {(char *)path, (char *)command, NULL};
         // No inherited secrets, HOME rebinding, persona or UID changes.
         char *env[] = {"LANG=C", NULL};
+#ifdef __APPLE__
+        posix_spawnattr_t attr;
+        error = posix_spawnattr_init(&attr);
+        if (!error) {
+            error = posix_spawnattr_setflags(&attr, POSIX_SPAWN_CLOEXEC_DEFAULT);
+            if (!error) error = posix_spawn(&pid, path, &actions, &attr, argv, env);
+            posix_spawnattr_destroy(&attr);
+        }
+#else
         error = posix_spawn(&pid, path, &actions, NULL, argv, env);
+#endif
     }
 actions_done:
     posix_spawn_file_actions_destroy(&actions);

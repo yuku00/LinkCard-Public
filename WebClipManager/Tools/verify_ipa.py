@@ -18,7 +18,9 @@ def inspect(path, require_icon=True, helper=False):
         assert info['CFBundleSupportedPlatforms'] == ['iPhoneOS']
         assert info['MinimumOSVersion'] == '16.0'
         executable = prefix + ('WebClipReadHelper' if helper else info['CFBundleExecutable'])
-        assert (archive.getinfo(executable).external_attr >> 16) & 0o111
+        mode = archive.getinfo(executable).external_attr >> 16
+        assert mode & 0o111 and not mode & 0o6000, 'Executable must not be setuid/setgid'
+        if helper: assert mode & 0o777 == 0o755
         binary = archive.read(executable)
         magic, cpu, subtype, kind, count, size, flags, reserved = struct.unpack_from('<8I', binary)
         assert (magic, cpu, kind) == (0xfeedfacf, 0x100000c, 2), 'Expected arm64 device executable'
