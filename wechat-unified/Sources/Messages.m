@@ -625,6 +625,7 @@ static void OpenVoicePacks(UIViewController *owner) {
     };
     b.current=current;
     b.capture=^NSDictionary *{
+        @try {
         if(!current()) return nil;
         id selected=Obj(weak,@"getSelectedMsgs");
         if(![selected isKindOfClass:NSArray.class] || [selected count]!=1) return nil;
@@ -634,7 +635,11 @@ static void OpenVoicePacks(UIViewController *owner) {
         // SelectedData validated the uint32 getter and actual format == 4; retain the observed value, not an inferred codec mapping.
         unsigned format=((unsigned(*)(id,SEL))objc_msgSend)(wrap,NSSelectorFromString(@"m_uiVoiceFormat"));
         return format==4?@{@"data":data,@"format":@(format),@"version":version}:nil;
+        } @catch(NSException *e) { return nil; }
     };
+    // Freeze before modal presentation: host disappearance may clear multi-selection.
+    NSDictionary *selectedSnapshot=b.capture();
+    b.capture=^NSDictionary *{ return current()?selectedSnapshot:nil; };
     b.send=^NSString *(WUVoiceForwardOperation *operation){
         if(!current()) return @"失败：账号/会话/代次已失效，未提交";
         return [operation submitWithManager:Service(@"CMessageMgr") audioSender:Service(@"AudioSender") messageClass:NSClassFromString(@"CMessageWrap") current:current];

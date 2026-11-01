@@ -223,7 +223,7 @@ class Guardrails(unittest.TestCase):
             self.assertIn(marker,ui)
         for marker in ['WUDraftMediaReadSource', 'NSDataWritingWithoutOverwriting', 'rename(tmp.path.fileSystemRepresentation', 'st.st_nlink!=1', 'current()', '@synchronized(Leases())', 'selected-type34', 'WUVoiceMeasuredMS', '32*1024*1024']:
             self.assertIn(marker,logic)
-        for marker in ['OpenVoicePacks(owner)', 'WUVoiceSelectedData(wrap)', 'CFBundleVersion', 'WUIsVoicePacksController(presented)']:
+        for marker in ['OpenVoicePacks(owner)', 'WUVoiceSelectedData(wrap)', 'CFBundleVersion', 'NSDictionary *selectedSnapshot=b.capture()', 'WUIsVoicePacksController(presented)']:
             self.assertIn(marker,messages)
         for forbidden in ['AddLocalMsg:', 'ResendVoiceMsg:', 'NSURLSession', 'AVSpeechSynthesizer']:
             self.assertNotIn(forbidden,ui+logic)
