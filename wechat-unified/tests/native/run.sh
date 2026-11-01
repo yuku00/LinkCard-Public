@@ -15,9 +15,9 @@ if command -v xcrun >/dev/null 2>&1; then
   build() {
     name=$1; shift
     xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter \
-      -I "$TESTDIR/stubs" -I "$MAIN/Sources" -I "$ROOT/Sources" -I "$WORK" -include "$TESTDIR/clock.h" "$@" \
+      -I "$TESTDIR" -I "$TESTDIR/stubs" -I "$MAIN/Sources" -I "$ROOT/Sources" -I "$WORK" -include "$TESTDIR/clock.h" "$@" \
       "$TESTDIR/UIKitMock.m" "$TESTDIR/TestHost.m" \
-      "$ROOT/Sources/WUNative.m" "$ROOT/Sources/WUNativeAction.m" "$ROOT/Sources/WUNativeRecovery.m" \
+      "$ROOT/Sources/WUNative.m" "$ROOT/Sources/WUNativeEntries.m" "$ROOT/Sources/WUNativeAction.m" "$ROOT/Sources/WUNativeRecovery.m" \
       "$ROOT/Sources/WUNativeInteractions.m" "$ROOT/Sources/WUNativeGames.m" "$ROOT/Sources/WUNativeGameLogic.m" \
       "$ROOT/Sources/WUNativeSettings.m" "$MAIN/Sources/MessageConstruction.m" "$WORK/boot.o" \
       -framework Foundation -framework CoreGraphics -o "$WORK/$name"
@@ -31,6 +31,9 @@ if command -v xcrun >/dev/null 2>&1; then
   build actions64_bad -DWU_TEST_64=1 -DWU_TEST_BAD_ABI=1 "$TESTDIR/native_interactions_games.m"
   "$WORK/actions64_bad" bad-abi
   build hooks "$TESTDIR/native_hooks.m"; "$WORK/hooks"
+  build entries "$ROOT/tests/native-gaps/native_entries.m"; "$WORK/entries"
+  build entries_bad -DWU_TEST_ENTRY_BAD_ABI=1 "$ROOT/tests/native-gaps/native_entries.m"; "$WORK/entries_bad"
+  build boundary -DWU_NATIVE_BOUNDARY_TEST=1 "$ROOT/tests/native-gaps/native_boundary.m"; "$WORK/boundary"
   build guard "$TESTDIR/native_guard.m"
   "$WORK/guard" fresh; "$WORK/guard" saved; "$WORK/guard" blocked; "$WORK/guard" late
   xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter \

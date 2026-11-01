@@ -1,4 +1,5 @@
 #import "WUStats.h"
+#import "WUStatsHostProfile.h"
 #import <objc/runtime.h>
 #import <limits.h>
 #import <math.h>
@@ -198,6 +199,10 @@ static NSArray *WUReadPage(WUStatsBinding *b,NSDictionary *cursor,uint32_t *left
 @property(nonatomic) NSUInteger readCount;
 @property(nonatomic) NSUInteger generation;
 @property(nonatomic) BOOL finishing;
+@property(nonatomic,copy) NSDictionary *profileSnapshot;
+@property(nonatomic,copy) NSString *profileIssue;
+@property(nonatomic) BOOL waitingForProfile;
+- (void)acceptProfile:(NSDictionary *)snapshot issue:(NSString *)issue;
 @end
 @implementation WUStatsJob
 - (instancetype)initWithBinding:(WUStatsBinding *)b {
@@ -205,12 +210,13 @@ static NSArray *WUReadPage(WUStatsBinding *b,NSDictionary *cursor,uint32_t *left
         // Freeze identity, callbacks and manager. Do not retain mutable external context.
         _binding=[WUStatsBinding new]; _binding.account=[b.account copy]; _binding.session=[b.session copy]; _binding.group=b.group; _binding.messageManager=b.messageManager;
         _binding.verifiedEncoding=[b.verifiedEncoding copy]; _binding.stillCurrent=[b.stillCurrent copy]; _binding.decodePage=[b.decodePage copy]; _binding.initialCursor=[b.initialCursor copy];
+        _binding.readProfile=[b.readProfile copy];
         _cursor=_binding.initialCursor; _cursors=[NSMutableSet set];
         _binding.dateRange=[b.dateRange copy]; _binding.pageLimit=MAX(1,MIN(100,b.pageLimit)); _binding.timeZone=[b.timeZone copy]; _binding.descendingTimeVerified=b.descendingTimeVerified;
         _accumulator=[[WUStatsAccumulator alloc] initWithTimeZone:_binding.timeZone group:b.group]; _accumulator.dateRange=_binding.dateRange;
     } return self;
 }
-- (void)cancel { NSAssert(NSThread.isMainThread,@"main thread required"); self.cancelled=YES; self.generation++; self.accumulator=nil; self.update=nil; self.binding=nil; [self.cursors removeAllObjects]; }
+- (void)cancel { NSAssert(NSThread.isMainThread,@"main thread required"); self.cancelled=YES; self.generation++; self.accumulator=nil; self.profileSnapshot=nil; self.profileIssue=nil; self.waitingForProfile=NO; self.update=nil; self.binding=nil; [self.cursors removeAllObjects]; }
 - (BOOL)valid {
     if(self.cancelled) return NO;
     @try { return self.binding.account.length && self.binding.session.length && self.binding.stillCurrent && self.binding.stillCurrent(); }
@@ -223,6 +229,7 @@ static NSArray *WUReadPage(WUStatsBinding *b,NSDictionary *cursor,uint32_t *left
     NSTimeZone *zone=[self.accumulator.calendar.timeZone copy]; BOOL group=self.accumulator.group;
     NSString *account=[self.binding.account copy], *peer=[self.binding.session copy];
     NSUInteger duplicates=self.accumulator.duplicates, pages=self.pages, scanned=self.readCount, generation=self.generation;
+    NSDictionary *profile=self.profileSnapshot; NSString *profileIssue=[self.profileIssue copy]; self.profileSnapshot=nil;
     self.accumulator=nil;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
         @autoreleasepool {
@@ -230,6 +237,8 @@ static NSArray *WUReadPage(WUStatsBinding *b,NSDictionary *cursor,uint32_t *left
             snapshot.records=[records mutableCopy]; snapshot.duplicates=duplicates;
             NSMutableDictionary *result=[[snapshot result] mutableCopy];
             result[@"details"]=WUStatsDetails(records,account,peer,group,zone);
+            if(profile) result[@"profile"]=WUStatsProfileSummary(profile);
+            if(profileIssue.length) result[@"profileIssue"]=profileIssue;
             result[@"complete"]=@(complete); result[@"pages"]=@(pages); result[@"scanned"]=@(scanned); result[@"scope"]=@"当前会话；仅经核验分页接口可见的本地记录";
             dispatch_async(dispatch_get_main_queue(),^{
                 if(self.cancelled || generation!=self.generation) return;
@@ -244,6 +253,30 @@ static NSArray *WUReadPage(WUStatsBinding *b,NSDictionary *cursor,uint32_t *left
 - (void)start:(void (^)(NSDictionary *,NSString *))update {
     NSAssert(NSThread.isMainThread,@"main thread required"); if(self.started || self.cancelled) return; self.started=YES; self.update=[update copy];
     if (![self valid] || !self.binding.decodePage) { void (^notify)(NSDictionary *,NSString *)=self.update; [self cancel]; if(notify) notify(nil,@"尚未接入：缺少稳定账号/会话校验或宿主页解码器"); return; }
+    if(self.binding.readProfile) {
+        self.waitingForProfile=YES; __weak WUStatsJob *weak=self;
+        // Profile is optional. A failed or non-calling provider must not freeze local-message scanning.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,5ull*NSEC_PER_SEC),dispatch_get_main_queue(),^{
+            [weak acceptProfile:nil issue:@"本地资料读取超时，画像保持未知；消息统计继续。"];
+        });
+        @try {
+            self.binding.readProfile(^BOOL{ return [weak valid] && weak.waitingForProfile; },^(NSDictionary *snapshot) {
+                [weak acceptProfile:snapshot issue:nil];
+            });
+        } @catch(__unused NSException *e) {
+            [self acceptProfile:nil issue:@"本地资料适配异常，画像保持未知；消息统计继续。"];
+        }
+    } else [self step];
+}
+- (void)acceptProfile:(NSDictionary *)snapshot issue:(NSString *)issue {
+    if(!NSThread.isMainThread) { __weak WUStatsJob *weak=self; dispatch_async(dispatch_get_main_queue(),^{ [weak acceptProfile:snapshot issue:issue]; }); return; }
+    if(!self.waitingForProfile) return;
+    if(![self valid]) { [self cancel]; return; }
+    self.waitingForProfile=NO;
+    BOOL shape=[snapshot isKindOfClass:NSDictionary.class] && [snapshot[@"peer"] isKindOfClass:NSDictionary.class] &&
+        [snapshot[@"members"] isKindOfClass:NSArray.class] && [snapshot[@"commonGroups"] isKindOfClass:NSArray.class] && [snapshot[@"scope"] isKindOfClass:NSString.class];
+    self.profileSnapshot=shape?[snapshot copy]:nil;
+    self.profileIssue=shape?nil:(issue?:@"没有可用的本地资料快照；画像未知，消息统计继续。");
     [self step];
 }
 - (void)step {
@@ -393,6 +426,8 @@ static char WUStatsOwnerKey;
         for(NSDictionary *row in self.binding.sessions) { NSString *kind=row[@"kind"]; counts[kind]=@([counts[kind] unsignedIntegerValue]+([kind isEqual:@"unknown"]?[row[@"count"] unsignedIntegerValue]:1)); }
         [sections addObject:@{@"title":@"宿主已加载会话总览（非好友画像）",@"rows":@[[NSString stringWithFormat:@"私聊 %@ · 群聊 %@ · 其他 %@ · 未知条目 %@",counts[@"private"]?:@0,counts[@"chatroom"]?:@0,counts[@"other"]?:@0,counts[@"unknown"]?:@0],@"来自 MainSessionMgr 三数组的未过滤快照，已知会话去重；不保证全部历史/已删除会话。未知条目可能跨数组重复。"]}];
     }
+    if(r[@"profile"]) [sections addObject:@{@"title":@"本地联系人 / 群成员画像",@"rows":WUStatsProfileLines(r[@"profile"],self.binding.timeZone)}];
+    else if([r[@"profileIssue"] isKindOfClass:NSString.class]) [sections addObject:@{@"title":@"本地资料读取状态",@"rows":@[r[@"profileIssue"]]}];
     NSMutableDictionary *names=[NSMutableDictionary dictionary];
     NSArray *visitRanking=WUStatsVisitRanking(self.visits[@"events"]?:@[],self.binding.dateRange);
     for(NSDictionary *row in self.binding.sessions) if([row[@"username"] length]) names[WUStatsVisitID(WUStatsVisitID(self.binding.account,@""),row[@"username"])]=row[@"username"];
@@ -453,7 +488,7 @@ static char WUStatsOwnerKey;
         if(![r[@"myGroups"] count]) [rows addObject:@"无群聊样本"];
         [sections addObject:@{@"title":@"我的发言最多的群",@"rows":rows}];
     }
-    [sections addObject:@{@"title":@"尚未实现 / 不伪造",@"rows":@[@"未加载/未知分类/非私聊群聊会话不进入消息数榜；访问榜不冒充最常聊。日期扫描复用ID游标，缺时间单调性证据，当前不会仅凭某页时间越界提前停止。",@"画像、共同群、年龄/性别/地域/入群日期：没有可靠接口，保持未知。",@"支付交易去重、App 专用补页、加好友/入群等宿主事件历程：尚未接入；已见消息历程已单独展示。红包/转账仅接受经核验解码器的互斥分类，不猜 XML。",@"热词使用系统本地词边界，过滤短词、数字、少量停用词；跳过 URL/XML 正文。不保留正文样本，不作 AI 分析。"]}];
+    [sections addObject:@{@"title":@"尚未实现 / 不伪造",@"rows":@[@"未加载/未知分类/非私聊群聊会话不进入消息数榜；访问榜不冒充最常聊。日期扫描复用ID游标，缺时间单调性证据，当前不会仅凭某页时间越界提前停止。",@"全好友名册画像尚未接入；当前联系人/群成员资料、共同群下界和本地关系日期已单独显示。缺失资料仍未知，不刷新或猜测。",@"支付交易去重、App 专用补页、加好友/入群等宿主事件历程：尚未接入；已见消息历程已单独展示。红包/转账仅接受经核验解码器的互斥分类，不猜 XML。",@"热词使用系统本地词边界，过滤短词、数字、少量停用词；跳过 URL/XML 正文。不保留正文样本，不作 AI 分析。"]}];
     NSDictionary *sectionKeys=@{@"宿主已加载会话总览（非好友画像）":@"sessions",@"会话访问次数榜":@"visits",@"概览":@"overview",@"我与对方汇总":@"selfPeer",@"关系历程（已见消息）":@"journey",@"消息主类型":@"types",@"日历分布":@"days",@"小时分布":@"hours",@"发言榜":@"speakers",@"回复对数":@"replies",@"开场者":@"openers",@"收尾者":@"closers",@"破冰":@"icebreakers",@"连发":@"bursts",@"本地热词（前100）":@"words",@"最常聊 · 本地消息数（所选日期）":@"rank",@"私聊消息数榜（非好友关系证明）":@"private",@"群会话消息数榜":@"chatroom",@"我的发言最多的群":@"myGroups"};
     NSMutableArray *ordered=[NSMutableArray array];
     for(NSDictionary *s in sections) if(!sectionKeys[s[@"title"]]) [ordered addObject:s];

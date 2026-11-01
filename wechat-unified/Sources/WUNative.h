@@ -5,6 +5,8 @@ BOOL WUNativeEnabled(NSString *key);
 BOOL WUNativeSave(NSString *key, BOOL on);
 BOOL WUNativeAvailable(NSString *key);
 void WUInstallNative(void);
+void WUInstallNativeEntries(void);
+BOOL WUNativeEntryAvailable(NSString *key);
 void WUShowNativeSettings(UIViewController *owner);
 /* Core calls this once before ANY plugin hooks, with its own config-directory fd. */
 BOOL WUNativeStartGuard(int configDirectory);

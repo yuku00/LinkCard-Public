@@ -20,6 +20,9 @@ FOUNDATION_EXPORT BOOL WUStatsTimeInRange(NSNumber *time, NSDictionary * _Nullab
 @property(nonatomic) BOOL descendingTimeVerified;
 @property(nonatomic) NSUInteger pageLimit; // 1..100, shared budget for overview
 @property(nonatomic, copy, nullable) WUStatsBinding * _Nullable (^bindingForSession)(NSString *);
+// Snapshot callback receives the job cancellation gate; nil means unavailable.
+// Exceptions/missing callbacks cannot block message scanning; late results are ignored.
+@property(nonatomic, copy, nullable) void (^readProfile)(BOOL (^)(void), void (^)(NSDictionary * _Nullable));
 @property(nonatomic, copy) NSArray<NSDictionary *> *sessions;
 @property(nonatomic, copy, nullable) void (^visitSnapshot)(void (^)(NSDictionary *));
 @property(nonatomic, copy, nullable) void (^clearVisits)(void (^)(BOOL));

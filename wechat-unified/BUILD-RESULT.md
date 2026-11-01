@@ -1,40 +1,38 @@
 # 当前统一构建结果
 
-**这是当前工程检查点，不是全部需求最终交付。未执行真实微信/真机验收。**
+**当前工程检查点，不是全部需求最终交付；没有真实微信/真机验收。**
 
-## 实际成功版本
-- 仓库：`yuku00/LinkCard-Public`；分支：`wechat-unified/initial-20261101`。
-- commit：`ecaa450336a4c4277b528a57557bdc962efc23fa`。
-- [Actions 41326249974](https://github.com/yuku00/LinkCard-Public/actions/runs/41326249974)，job124906685225，completed/success。
-- 发布与补记之间核对412/412白名单文件与远端Git blob一致。只发布自主工程、许可依赖与合成测试；未上传原插件/私有反编译输出/用户数据。
+## 已验证版本
+- 仓库 `yuku00/LinkCard-Public`，分支 `wechat-unified/initial-20261101`。
+- commit `2ee2d042db7e206de1e5200bd072c102e6eabee6`。
+- [CI41332322097](https://github.com/yuku00/LinkCard-Public/actions/runs/41332322097)，job124924826521，completed/success；本次首次CI通过。
+- 428项发布路径与该提交一致；源码包只含自主实现、许可依赖、合成测试与构建脚本，没有原插件、反编译转储或真实用户数据。
 
-## 真实执行的验证
-- iOS arm64全部生产源SDK语法检查、完整编译链接、严格ad-hoc codesign验证通过；最低iOS16.6，SDK18.5。
-- 主题目录/追加/资源规则/字面色表/ZIP和原子目录事务原生测试通过。
-- 生产拍前确认、游戏选择、局部保持键盘、真实Core Hook、异常/取消/重入/克隆身份，以及独立启动守卫的原生UIKit mock测试通过；32/64位正常与真正错误ABI分别编译验证。
-- 配置生产保存/重载45检查；单一i/I/q/Q消息构造器复读与语音/包共存回归；既有解码、消息、广告、草稿、分组、回收等旧回归保留通过。
-- 新媒体/视频恢复工厂、语音文件交换和评论规范化存储的生产mock/文件事务测试通过。
-- 统计XCTest实际37项（原31+新增6），0失败。
-- **真实iOS模拟器UIKit XCTest 4/4通过**，从xcresult逐方法验证，没有把本机自检、跳过或编译通过当UIKit运行。覆盖真实属性应用/禁用恢复、宿主新值不被覆盖、主题色与显式样式优先级、重复布局基线不丢失。不是微信真机测试。
-- 原生mock不是宿主业务协议证明；完整功能范围见唯一当前`STATUS.md`，不以断言数代替场景覆盖。
+## 本次新增与实际测试
+在上一统一基线ecaa450上合入所选消息链接、复读图标/Files导出、缓存静图→宿主原生表情编辑入口；保留此前主题、统计/媒体、原生行为、收纳和分组等所有代码与测试。
 
-## 下载与版本核验
-- Artifact13091996177，`artifacts/WeChatUnified-41326249974.zip`，584844字节。
-- ZIP SHA256：`542763b30c84d442dcdb3de0b5ea996f2b75b4de47f952ecf091f4bce37fe064`，与GitHub digest一致；ZIP CRC通过。
-- dylib：`artifacts/run-41326249974/WeChatUnified.dylib`，1138976字节。
-- dylib SHA256：`fc761cb30b21317059ed0f7c391ff50f7f4d994398dc434582504edae31f4bc3`，匹配包内清单；本地解析arm64 MH_DYLIB。
-- 对应源码检查点：`artifacts/WeChatUnified-current-source-ecaa450.zip`；SHA256 `fcefe4dee9afd8d73b2bfd13dacad157aeccb42b4372e55068f2384b14777577`。包含412个准确发布路径和SOURCE-MANIFEST，不得称完整需求源码。
-- 证据：`artifacts/verification-41326249974.json`、`source-manifest-ecaa450.json`、`completion-ci-41326249974.log`；包内`uikit-verified-tests.json`记录实际四方法成功。
+- 29项原结构回归；链接/复读6项接线回归；图片入口8项接线回归。
+- 新Foundation生产链接解析/风险包装拒绝/配置与工具动作测试实际执行通过。
+- 完整图片入口生产模块使用真实Foundation/ImageIO、UIKit桩，六模式实际通过：normal324断言，missing15、wrong-class16、bad-init17、bad-setter17、missing-setter16。断言数量不等于独立场景数。
+- 主会话合并时保留两组工具动作，修复旧结构断言错误地要求messageLinks必须排最后；没有删除断言覆盖。图片导航后允许宿主清空多选，但确认前仍严格检查；新增实际mock覆盖清空选择及确认前失效。用户图标存储/读取只规范化系统提供的根别名，自有子目录仍拒绝链接。
+- 37统计XCTest与此前全部原生/文件事务/codec/ABI/P0/启动恢复回归通过。
+- iOS arm64/min16.6/SDK18.5真实编译链接，严格ad-hoc签名验证成功。
+- 真实iOS模拟器4项SurfaceStyle UIKit XCTest通过，xcresult逐方法核验；这是样式应用与恢复测试，不是新Safari/Files路径或微信宿主测试。
 
-## 本批真实失败及根因修复
-1. ThemeCatalog的id.pathExtension编译类型错误，改为已验证NSString键。
-2. SurfaceStyle的font选择子与CoreText CFTypeRef歧义，改为类型明确的UIKit文本协议。
-3. 评论生产/测试函数名与macOS Carbon Comment类型冲突，改为带前缀名称。
-4. NativeSettings中断留下重复尾部、未使用weakAlert，修复语法并用弱引用避免捕获循环。
-5. 启动守卫C源码的严格POSIX宏隐藏Darwin O_NOFOLLOW/mkdtemp，显式启用Darwin声明，未删文件安全校验。
-6. 错误ABI夹具误以为class_replaceMethod能改已有类型编码；改为独立编译真正错误声明，先断言其编码确实不同，再执行原拒绝测试。未放宽生产门控。
+## 已取回
+- Artifact13093638069；`artifacts/WeChatUnified-41332322097.zip`，621760字节。
+- ZIP SHA256 `3ee55b7b0bafc819b54a5026d7a9652e2d2a9823a8ebc36ac87efefa2cc2d74e`，与GitHub digest一致；CRC通过。
+- `artifacts/run-41332322097/WeChatUnified.dylib`，1223696字节。
+- dylib SHA256 `b1c64ed43ea5472d699f27c6ed2a48916a60ba4ba2b0e759883fa724231df474`，与包内清单一致；本地解析arm64 MH_DYLIB。
+- 当前源码包 `artifacts/WeChatUnified-current-source-2ee2d04.zip`；SHA256 `0d3ca222f3a85a07be75383cf6e0d43f81faae5a7bf969b6824a8ef210b04bc3`，428项文件及SOURCE-MANIFEST固定为该远端提交，仍非全部需求源码。
+- 详细证据：`artifacts/verification-41332322097.json`、`artifacts/entries-ci-41332322097.log`。
 
-## 开发工具与历史
-浏览器进程暂停阻塞发布后，已实际验证Python系统TLS直接认证200；`tools/github_native.py`现在用严格证书/主机校验，限制目标仓库，Authorization不随重定向转发，HTTPS-only跳转有无网络回归。不再要求常驻浏览器，不打印token。不触碰Ghidra工作流，Ghidra仍仅手动、仅已授权自制样本。
+## 实际范围与待办
+- 链接是用户选中消息的手动入口，未自动改写全部气泡/文章点击；风险包装只有唯一明确HTTP(S)目标时才提取。内置Safari与系统默认浏览器明确区分。
+- 复读常规发送保持原唯一提交器；本批补图标/子设置/标签长按Files下载，不扩未开启的菜单/文件类型。
+- 图片仅选中的已缓存静态PNG/JPEG，可能非原图。用户确认后进入宿主原生编辑器；没有调用上传后端或宣称已入库。公众号入口、动画图入库仍未实现。
+- 评论/画像及剩余native准确语义仍在独立批次推进，当前CI不能覆盖未合入代码。所有真实宿主兼容性仍需目标版本验证。
 
-旧长篇状态/构建历史已存本地`artifacts/history/`，不再混入当前完成度。本文件和STATUS属于成功后本地补记，未为文档重复构建；相应已发布源码包保留构建时文案。当前尚有三组独立补齐任务，未完项不能冒充最终验收。
+## 历史与工具
+上一统一版本ecaa450 / CI41326249974及其真实失败根因修复记录已保存`artifacts/history/BUILD-ecaa450.md`；更早历史也保留，不再混作当前完成度。
+发布/下载采用已验证的Python系统严格TLS；Authorization不随重定向转发，HTTPS-only及仓库范围有无网络测试。没有再启动Ghidra、上传原样本或改变main工具工作流。此次结果补记只在本地，不为文档再触发CI，源码包保留构建时文案。

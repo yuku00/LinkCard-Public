@@ -28,12 +28,14 @@ def upload():
     allowed += ['Sources/PluginHub.h','Sources/PluginHub.m','Sources/PluginHubLogic.h','Sources/PluginHubLogic.m','tests/plugin_hub_logic.m']
     allowed += ['Sources/ThemeCatalog.h','Sources/ThemeCatalog.m','Sources/ThemeColors.m','Sources/ThemePrimitives.h','Sources/ThemeLibrary.h','Sources/ThemeLibrary.m','Sources/ThemeRendering.h','Sources/ThemeRendering.m','Sources/SurfaceStyle.m','Sources/SurfaceSettings.m','tests/theme_primitives.c','tests/theme_catalog.m','tests/surface_style_ios.m','tests/run_ui_tests.sh','tests/make_theme_fixtures.py','tests/fixtures/themes/README.md']
     allowed += ['Sources/WUStatsDetails.m','Sources/DraftVideoRestore.m','Sources/LocalVideoContainer.h','Sources/MomentsCacheComments.h','tests/WUStatsCompletionTests.m','tests/voice_pack_files.m','tests/moments_data_completion.m','tests/draft_video_restore.m','tests/local_video_container.c','tools/test_data_completion.sh']
+    allowed += ['Sources/WUHostRead.h','Sources/WUHostRead.m','Sources/MomentsHostComments.m','Sources/WUStatsHostProfile.h','Sources/WUStatsHostProfile.m','tests/host_data.m','tools/test_host_data.sh']
     allowed += ['tools/ui-harness/generate.py','tools/ui-harness/run.py','tools/ui-harness/self_check.py','tools/ui-harness/Host.m','tools/ui-harness/SurfaceHarness.xcscheme.in']
     allowed += ['Sources/WUNative.h','Sources/WUNativeLogic.h','Sources/WUNative.m','Sources/WUNativeAction.h','Sources/WUNativeAction.m','Sources/WUNativeInteractions.m','Sources/WUNativeGameLogic.m','Sources/WUNativeGames.m','Sources/WUNativeSettings.m','Sources/WUNativeBoot.h','Sources/WUNativeBoot.c','Sources/WUNativeRecovery.m']
     allowed += ['tests/native/native_policy.c','tests/native/native_boot.c','tests/native/native_hooks.m','tests/native/native_games.m','tests/native/native_interactions_games.m','tests/native/native_guard.m','tests/native/TestHost.h','tests/native/TestHost.m','tests/native/UIKitMock.m','tests/native/stubs/UIKit/UIKit.h','tests/native/clock.h','tests/native/extract_core.py','tests/native/run.sh']
-    allowed += ['tools/github_native.py','tools/download.py','tests/test_github_transport.py']
+    allowed += ['tools/github_native.py','tools/download.py','tools/verify_build.py','tests/test_github_transport.py']
     allowed += ['Sources/LinkLogic.h', 'Sources/LinkLogic.m', 'Sources/MessageEntries.h', 'Sources/MessageEntries.m', 'Sources/MessageEntryBindings.inc', 'Sources/RepeatOptions.h', 'Sources/RepeatSettings.m', 'tests/message_entry_logic.m', 'tests/test_message_entries.py', 'tools/test_message_entries.sh']
     allowed += ['Sources/WUImageEntry.h','Sources/WUImageEntry.m','tests/image-entry-stubs/UIKit/UIKit.h','tests/image_entry_native.m','tests/test_image_entry_native.py','tests/test_image_entry_contract.py']
+    allowed += ['Sources/WUNativeEntries.m','tests/native-gaps/native_entries.m','tests/native-gaps/native_boundary.m','tests/native-gaps/run.sh']
     # Exact manifest closure only: no SDK repository/history, binaries or private media.
     vendor=json.loads((ROOT/'Vendor/manifest.json').read_text())
     for name,digest in vendor['sha256'].items():

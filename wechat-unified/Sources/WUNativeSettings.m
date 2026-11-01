@@ -3,7 +3,7 @@
 @implementation WUNativeSettings
 - (NSArray *)rows { return @[
  @[@"hotDisable",@"禁用微信热更新",@"拦截已匹配补丁加载入口；不删补丁文件。已加载补丁需重启。"],
- @[@"hotCompat",@"强兼热更新 · 暂未开放",@"泛恢复会遗留旧original或抢占第三方链。缺可验证的补丁写入适配，本场景关闭；不影响禁用热更新。"],
+ @[@"hotCompat",@"强兼热更新 · 未开放",@"已限定评估加载前让位、加载后原槽重接；真实加载器仍缺同步独占与新IMP来源证明，无法排除第三方／JIT绕回，因此不启用。禁用热更新独立可用。"],
  @[@"jailbreak",@"禁用越狱检测",@"仅已匹配的JailBreakHelper返回；不修改系统版本或支付鉴权。"],
  @[@"clientReport",@"禁用加好友检测报告",@"阻止已匹配本地客户端检查/报告入口；不替代好友验证，不保证服务器接受。"],
  @[@"liveEnvironment",@"禁用录屏 / 通话 / VPN检测",@"仅SecDataReportUtil的三个检测；不全局伪造录屏、通话或网络状态。"],
@@ -11,8 +11,8 @@
  @[@"keepKeyboard",@"播放语音保持键盘",@"只保护语音气泡触摸处理的同步收起动作。不抢回焦点，主动收起、切会话与停用照常。"],
  @[@"patConfirm",@"拍一拍前确认",@"头像双击发送前确认；取消不发送，切号、复用、切会话后确认失效。不覆盖未证明的其他入口。"],
  @[@"gameChoice",@"骰子 / 猜拳选择",@"当前聊天发出前选择，取消不发送；只用于非金钱娱乐，不保证对端最终效果。"],
- @[@"homeFinder",@"禁用首页视频号",@"未开放：已有线索属于个人资料入口，不能替代真实首页入口。"],
- @[@"rewardFast",@"快速观看激励广告",@"未开放：只恢复到激励MBAD实验开关，缺播放与奖励完成契约；不会伪报已发奖。"]]; }
+ @[@"homeFinder",@"禁用首页的视频号 · 原开关",@"按原设置移除WXProfile（我／个人主页表格）的视频号行；不是发现页总开关。只改精确匹配的行数据，关闭恢复；宿主重建的数据不回填旧行。"],
+ @[@"rewardFast",@"快速观看激励广告 · 本地实验",@"在小程序看广告获取资源场景，仅将原MBAD motivating两项布尔实验置YES；关闭透传原值。播放与奖励依赖宿主和服务端，不伪造完成、不自动领取，也不是通用播放器加速。"]]; }
 - (void)viewDidLoad {
     [super viewDidLoad]; self.title=@"宿主行为 / 版本控制";
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"启动保护复位" style:UIBarButtonItemStylePlain target:self action:@selector(resetGuard)];

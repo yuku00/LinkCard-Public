@@ -217,7 +217,7 @@ class Guardrails(unittest.TestCase):
     def test_moments_cache_real_host_safe_local_only(self):
         ui=(ROOT/'Sources/MomentsCache.m').read_text()
         logic=(ROOT/'Sources/MomentsCacheLogic.m').read_text()
-        for required in ['getHomepageData', 'onDataUpdated:maxItemID:minItemID:reqFirstPageMd5:', 'Bound(o)', 'WUContextGeneration()', 'UIApplicationStateActive', 'pathForExistData', 'WUMCacheStore', 'WUDraftMediaURLs', 'pending.count>=32', 'isPrivate', 'exceedsVisibleTimeRange', '曾见内容', '评论宿主解码器尚未接入', 'lastErrorAccount isEqual:self.account', 'enabled.boolValue && !Available()', '退出重开联系人朋友圈']:
+        for required in ['getHomepageData', 'onDataUpdated:maxItemID:minItemID:reqFirstPageMd5:', 'Bound(o)', 'WUContextGeneration()', 'UIApplicationStateActive', 'pathForExistData', 'WUMCacheStore', 'WUDraftMediaURLs', 'pending.count>=32', 'isPrivate', 'exceedsVisibleTimeRange', '曾见内容', 'WUMomentsDecodeDisplayedComments(item,displayed)', 'WUMomentsCacheObserveNormalizedComments(item,snapshot', 'view.viewIfLoaded.window', 'lastErrorAccount isEqual:self.account', 'enabled.boolValue && !Available()', '退出重开联系人朋友圈']:
             self.assertIn(required,ui)
         # The detail-only timer cancels playback on account changes; it never fetches content.
         self.assertIn('if(!v || ![v.browser current])',ui)

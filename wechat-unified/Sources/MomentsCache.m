@@ -100,7 +100,39 @@ static id HomepageData(id o, SEL s) {
     @try { if(Bound(o)) ObserveItems(result); } @catch(NSException *e) { }
     return result;
 }
+static IMP commentAppeared,commentReload;
+static void ObserveDisplayedComments(UIViewController *view) {
+    if(!NSThread.isMainThread || ![view isKindOfClass:NSClassFromString(@"WCCommentDetailViewControllerFB")] || !view.viewIfLoaded.window || !Bound(view)) return;
+    NSArray *b=objc_getAssociatedObject(view,&bindingKey);
+    if(![WUValue(@"enabled") boolValue] || ![Options(b[0])[@"enabled"] boolValue]) return;
+    id item=Object(view,@"dataItem");
+    if(!item) item=Object(view,@"m_dataItem");
+    if(![item isKindOfClass:NSClassFromString(@"WCDataItem")] || !PublicItem(item)) return;
+    NSString *user=Object(item,@"username");
+    if(![user isKindOfClass:NSString.class] || !Allowed(b[0],user,[b[1] unsignedIntegerValue])) return;
+    id displayed=Object(view,@"arrCommentList");
+    NSArray *snapshot=WUMomentsDecodeDisplayedComments(item,displayed);
+    if(snapshot.count) {
+        // This parent is itself visible in the opened detail controller. Capture that
+        // actual host object first; the serial IO queue commits it before comments.
+        // Comment payloads alone still cannot create an unseen parent record.
+        WUMomentsCacheObserveHost(item);
+        WUMomentsCacheObserveNormalizedComments(item,snapshot,b[0],[b[1] unsignedIntegerValue]);
+    }
+}
+static void CommentAppeared(UIViewController *o, SEL s, BOOL animated) {
+    // Bind before the original, never rebind an old controller to a new account.
+    if(NSThread.isMainThread && !objc_getAssociatedObject(o,&bindingKey)) { NSString *a=WUCurrentAccount(); if(a.length) objc_setAssociatedObject(o,&bindingKey,@[a,@(WUContextGeneration())],OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+    ((void(*)(id,SEL,BOOL))commentAppeared)(o,s,animated);
+    @try { ObserveDisplayedComments(o); } @catch(__unused NSException *e) { }
+}
+static void CommentReload(UIViewController *o, SEL s, id item) {
+    ((void(*)(id,SEL,id))commentReload)(o,s,item);
+    @try { ObserveDisplayedComments(o); } @catch(__unused NSException *e) { }
+}
 void WUInstallMomentsCache(void) {
+    WUHook(@"WCCommentDetailViewControllerFB",@"viewDidAppear:",NO,"v",@[@"B"],(IMP)CommentAppeared,&commentAppeared);
+    WUHook(@"WCCommentDetailViewControllerFB",@"reloadData:",NO,"v",@[@"@"],(IMP)CommentReload,&commentReload);
     WUHook(@"WCHomepageMgr",@"getHomepageData",NO,"@",@[],(IMP)HomepageData,&homepageData);
     NSString *s=@"onDataUpdated:maxItemID:minItemID:reqFirstPageMd5:"; Method m=class_getInstanceMethod(NSClassFromString(@"WCHomepageMgr"),NSSelectorFromString(s));
     if(WUMatches(m,"v",@[@"@",@"@",@"@",@"@"])) WUHook(@"WCHomepageMgr",s,NO,"v",@[@"@",@"@",@"@",@"@"],(IMP)UpdatedObjects,&updatedObjects);
@@ -161,7 +193,7 @@ static char videoStatusKey;
     UIScrollView *scroll=[UIScrollView new]; scroll.frame=self.view.bounds; scroll.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight; [self.view addSubview:scroll];
     UIStackView *stack=[UIStackView new]; stack.axis=UILayoutConstraintAxisVertical; stack.spacing=12; stack.translatesAutoresizingMaskIntoConstraints=NO; [scroll addSubview:stack];
     [NSLayoutConstraint activateConstraints:@[[stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:16],[stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-16],[stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:16],[stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-16],[stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-32]]];
-    UILabel *text=[UILabel new]; text.numberOfLines=0; text.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; text.text=[NSString stringWithFormat:@"%@\n\n%@\n\n曾见内容，不证明真实删除；无法恢复未收到内容。评论宿主解码器尚未接入；已保存的规范化评论仅代表曾见快照。",self.row[@"username"],self.row[@"text"]]; [stack addArrangedSubview:text];
+    UILabel *text=[UILabel new]; text.numberOfLines=0; text.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; text.text=[NSString stringWithFormat:@"%@\n\n%@\n\n曾见内容，不证明真实删除；无法恢复未收到内容。仅保存已打开详情列表中归属、ID、作者和正文可核验的评论。创建时间未知；缺回复对象不推断。快照不证明删除。",self.row[@"username"],self.row[@"text"]]; [stack addArrangedSubview:text];
     for(NSDictionary *comment in self.row[@"comments"]) {
         UILabel *label=[UILabel new]; label.numberOfLines=0; label.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];
         label.text=[NSString stringWithFormat:@"%@%@\n%@",comment[@"author"],[comment[@"replyTo"] length]?[@" 回复 " stringByAppendingString:comment[@"replyTo"]]:@"",comment[@"text"]]; [stack addArrangedSubview:label];
@@ -232,7 +264,7 @@ static char videoStatusKey;
 }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 2; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?1:self.rows.count; }
-- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { if(s!=0) return nil; return [NSString stringWithFormat:@"仅缓存手动访问时宿主已提供的条目。曾见内容≠服务器当前内容，不判定真实删除。上限200条/正文索引1MiB；图片最多9张、每张8MiB；单条本地视频最多64MiB，账号媒体512MiB。视频可离线浏览；评论解码宿主入口仍未绑定。清理仅回收本模块无引用且无浏览租约的自有媒体；串行复制在途时不会清理。%@",[lastErrorAccount isEqual:self.account]?(lastError?:@""):@""]; }
+- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { if(s!=0) return nil; return [NSString stringWithFormat:@"仅缓存手动访问时宿主已提供的条目。曾见内容≠服务器当前内容，不判定真实删除。上限200条/正文索引1MiB；图片最多9张、每张8MiB；单条本地视频最多64MiB，账号媒体512MiB。视频可离线浏览；评论仅接已打开的详情列表，最多50条/6KiB，签名、字段或归属不明则跳过；不监听删除、不回插宿主。清理仅回收本模块无引用且无浏览租约的自有媒体；串行复制在途时不会清理。%@",[lastErrorAccount isEqual:self.account]?(lastError?:@""):@""]; }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.numberOfLines=2; c.detailTextLabel.numberOfLines=2;
     if(p.section==0) { c.textLabel.text=@"按保留天数安全清理（保留收藏）"; NSDictionary *o=Options(self.account); c.detailTextLabel.text=[NSString stringWithFormat:@"缓存%@ · 监控%lu人 · 保留%@天",[o[@"enabled"] boolValue]?@"开启":@"关闭",(unsigned long)[o[@"monitor"] count],o[@"days"]]; }

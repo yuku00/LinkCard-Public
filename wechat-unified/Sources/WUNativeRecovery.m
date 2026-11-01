@@ -33,7 +33,8 @@ static BOOL Recovery(void) {
     return YES;
 }
 static void TryRecovery(NSUInteger epoch, unsigned remaining) {
-    if(epoch!=foregroundEpoch || allowed || resetPending || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+    UIApplication *application=UIApplication.sharedApplication;
+    if(epoch!=foregroundEpoch || allowed || resetPending || !application || application.applicationState!=UIApplicationStateActive) return;
     if(Recovery() || !remaining) return;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,NSEC_PER_SEC),dispatch_get_main_queue(),^{ TryRecovery(epoch,remaining-1); });
 }
@@ -43,7 +44,8 @@ void WUNativeGuardLifecycle(BOOL active) {
     if(!allowed) { TryRecovery(epoch,5); return; }
     if(!state.pending) return;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW,30*NSEC_PER_SEC),dispatch_get_main_queue(),^{
-        if(epoch!=foregroundEpoch || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || !allowed) return;
+        UIApplication *application=UIApplication.sharedApplication;
+        if(epoch!=foregroundEpoch || !application || application.applicationState!=UIApplicationStateActive || !allowed) return;
         durable=WUNativeBootStableAt(directory,&state);
         // A failed stable commit immediately restores the host's safety decision.
         if(!durable) armed=NO;
@@ -60,7 +62,8 @@ BOOL WUNativeStartGuard(int fd) {
     dispatch_async(dispatch_get_main_queue(),^{
         for(NSString *name in @[UIApplicationWillResignActiveNotification,UIApplicationDidBecomeActiveNotification])
             [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ WUNativeGuardLifecycle([n.name isEqual:UIApplicationDidBecomeActiveNotification]); }];
-        WUNativeGuardLifecycle(UIApplication.sharedApplication.applicationState==UIApplicationStateActive);
+        UIApplication *application=UIApplication.sharedApplication;
+        WUNativeGuardLifecycle(application && application.applicationState==UIApplicationStateActive);
     });
     return allowed;
 }

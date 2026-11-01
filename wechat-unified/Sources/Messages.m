@@ -2,6 +2,7 @@
 #import "MessageLogic.h"
 #import "InteractionLogic.h"
 #import "WUStats.h"
+#import "WUStatsHostProfile.h"
 #import "GroupLogic.h"
 #import "Repository.h"
 #import "EmoticonLogic.h"
@@ -498,6 +499,11 @@ static void OpenStats(UIViewController *owner) {
         NSUInteger g=generation; __weak UIViewController *weak=owner;
         binding.stillCurrent=^BOOL{ return weak && UIApplication.sharedApplication.applicationState==UIApplicationStateActive && [WUValue(@"enabled") boolValue] && [account isEqual:Account()] && g==generation && [session isEqual:Session(weak)] && [WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:@"stats"]; };
         binding.sessions=WUStatsHostSessions()?:@[];
+        NSArray *profileSessions=[binding.sessions copy];
+        binding.readProfile=^(BOOL (^current)(void), void (^done)(NSDictionary *)) {
+            if(!current()) return;
+            WUStatsReadHostProfile(Service(@"CContactMgr"),account,session,profileSessions,current,done);
+        };
         binding.visitSnapshot=^(void (^done)(NSDictionary *)) { dispatch_async(StatsVisitQueue(),^{
             NSDictionary *snapshot=[StatsVisitStore(account) snapshot];
             dispatch_async(dispatch_get_main_queue(),^{ if(g==WUContextGeneration() && [account isEqual:Account()]) done(snapshot); });
