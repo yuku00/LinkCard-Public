@@ -3,7 +3,7 @@
 #import "WUHostRead.h"
 #include <string.h>
 static id Get(id o, NSString *s) { return WUHostObject(o,s,nil,NO); }
-static NSString *CommentID(id value, NSUInteger digits) {
+static NSString *WUCommentIdentifier(id value, NSUInteger digits) {
     if([value isKindOfClass:NSNumber.class]) {
         const char *t=[value objCType];
         if(strlen(t)!=1 || !strchr("iIqQ",t[0]) || [value compare:@0]!=NSOrderedDescending) return nil;
@@ -24,10 +24,10 @@ NSArray<NSDictionary *> *WUMomentsDecodeDisplayedComments(id item, NSArray *disp
     for(id comment in displayed) {
         // Identity membership, not matching nicknames/IDs across parents.
         if(!WUHostIs(comment,@"WCUserComment") || [source indexOfObjectIdenticalTo:comment]==NSNotFound) continue;
-        if([WUHostUInt32(comment,@"type") unsignedIntValue]!=2) continue; // 0x53c7f8..818
+        if([WUHostUInt32(comment,@"type") unsignedIntValue]!=2) continue; // Comment entries, not likes.
         NSNumber *local=WUHostBool(comment,@"isLocalAdded"); if(!local || local.boolValue) continue;
-        NSString *cid=CommentID(Get(comment,@"commentID"),10), *prefix=@"c32:";
-        if(!cid) { cid=CommentID(Get(comment,@"comment64ID"),20); prefix=@"c64:"; }
+        NSString *cid=WUCommentIdentifier(Get(comment,@"commentID"),10), *prefix=@"c32:";
+        if(!cid) { cid=WUCommentIdentifier(Get(comment,@"comment64ID"),20); prefix=@"c64:"; }
         NSString *author=WUHostString(Get(comment,@"username"),256), *text=WUHostString(Get(comment,@"content"),1000);
         if(!cid || !author.length || !text.length) continue;
         // These consumers prove content only. No time getter has a verified unit.
