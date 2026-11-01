@@ -38,5 +38,6 @@ BOOL WUIsMomentsSheet(UIViewController *controller);
 BOOL WUOpenMoments(UIViewController *owner);
 void WURefreshMomentsInput(UIViewController *owner);
 void WUCancelMoments(void);
+void WUMomentsDraftsAction(UINavigationController *nav, NSString *account, NSUInteger generation);
 void WUInstallMoments(void);
 FOUNDATION_EXPORT NSString *const WUChanged;

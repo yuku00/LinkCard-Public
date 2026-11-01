@@ -51,6 +51,9 @@ static NSHashTable<WUMomentsSheet *> *sheets;
     UIButton *close=[UIButton buttonWithType:UIButtonTypeSystem]; [close setTitle:@"关闭朋友圈" forState:UIControlStateNormal];
     close.accessibilityLabel=@"关闭半屏朋友圈并返回聊天"; [close addTarget:self action:@selector(closeTapped) forControlEvents:UIControlEventTouchUpInside];
     close.translatesAutoresizingMaskIntoConstraints=NO; [self.view addSubview:close];
+    UIButton *drafts=[UIButton buttonWithType:UIButtonTypeSystem]; [drafts setTitle:@"草稿/存文字" forState:UIControlStateNormal];
+    [drafts addTarget:self action:@selector(draftsTapped) forControlEvents:UIControlEventTouchUpInside]; drafts.translatesAutoresizingMaskIntoConstraints=NO; [self.view addSubview:drafts];
+    [NSLayoutConstraint activateConstraints:@[[drafts.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],[drafts.topAnchor constraintEqualToAnchor:self.view.topAnchor],[drafts.heightAnchor constraintEqualToConstant:44],[drafts.trailingAnchor constraintLessThanOrEqualToAnchor:close.leadingAnchor constant:-8]]];
     [self addChildViewController:self.content]; UIView *body=self.content.view; body.translatesAutoresizingMaskIntoConstraints=NO; [self.view addSubview:body];
     [NSLayoutConstraint activateConstraints:@[[close.topAnchor constraintEqualToAnchor:self.view.topAnchor],[close.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16],[close.heightAnchor constraintEqualToConstant:44],[body.topAnchor constraintEqualToAnchor:close.bottomAnchor],[body.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],[body.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],[body.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor]]];
     [self.content didMoveToParentViewController:self];
@@ -61,6 +64,7 @@ static NSHashTable<WUMomentsSheet *> *sheets;
 }
 - (void)viewDidDisappear:(BOOL)animated { [super viewDidDisappear:animated]; if(self.isBeingDismissed || !self.presentingViewController) { [self.watch invalidate]; self.watch=nil; } }
 - (void)dealloc { [_watch invalidate]; }
+- (void)draftsTapped { if(!self.closing && Current(self.chat,self.account,self.session,self.generation)) WUMomentsDraftsAction(self.content,self.account,self.generation); }
 - (void)closeTapped { [self closeRestoring:YES]; }
 - (void)closeRestoring:(BOOL)restore {
     if(self.closing) return; self.closing=YES; [self.watch invalidate]; self.watch=nil;
