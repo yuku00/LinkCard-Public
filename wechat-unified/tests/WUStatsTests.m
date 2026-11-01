@@ -54,7 +54,7 @@ static NSDictionary *R(NSString *sid,NSString *sender,int64_t time,NSString *typ
     XCTAssertEqualObjects(a.result[@"replyCount"],@0); XCTAssertEqualObjects(a.result[@"unknownTime"],@1);
 }
 - (void)testInvalidPageIsAtomic {
-    WUStatsAccumulator *a=[self acc:NO]; XCTAssertFalse([a addRecords:@[R(@"1",@"a",10,@"text"),@{@"time":@(-1)}]]); XCTAssertEqualObjects(a.result[@"total"],@0);
+    WUStatsAccumulator *a=[self acc:NO]; XCTAssertFalse(([a addRecords:@[R(@"1",@"a",10,@"text"),@{@"time":@(-1)}]])); XCTAssertEqualObjects(a.result[@"total"],@0);
 }
 - (void)testDSTCalendarDays {
     WUStatsAccumulator *a=[[WUStatsAccumulator alloc] initWithTimeZone:[NSTimeZone timeZoneWithName:@"America/New_York"] group:NO];
@@ -90,7 +90,9 @@ static NSDictionary *R(NSString *sid,NSString *sender,int64_t time,NSString *typ
 }
 - (void)testSignatureMismatchDoesNotInvokeHost {
     CMessageMgr *mgr=[CMessageMgr new]; mgr.pages=@[@[]]; WUStatsBinding *b=[self binding:mgr]; b.verifiedEncoding=@"invalid";
-    WUStatsJob *job=[[WUStatsJob alloc] initWithBinding:b]; [job start:^(NSDictionary *r,NSString *s){XCTAssertTrue([s containsString:@"不匹配"]); XCTAssertEqualObjects(r[@"complete"],@NO);}]; XCTAssertEqual(mgr.calls,0u);
+    WUStatsJob *job=[[WUStatsJob alloc] initWithBinding:b]; XCTestExpectation *done=[self expectationWithDescription:@"mismatch"];
+    [job start:^(NSDictionary *r,NSString *s){XCTAssertTrue([s containsString:@"不匹配"]); XCTAssertEqualObjects(r[@"complete"],@NO); [done fulfill];}]; XCTAssertEqual(mgr.calls,0u);
+    [self waitForExpectations:@[done] timeout:5];
 }
 - (void)testSameTimeCursorAdvancesByID {
     CMessageMgr *mgr=[CMessageMgr new]; mgr.pages=@[@[R(@"1",@"a",100,@"text")],@[R(@"2",@"b",100,@"text")]];
@@ -102,6 +104,8 @@ static NSDictionary *R(NSString *sid,NSString *sender,int64_t time,NSString *typ
 - (void)testStalledCursorTruncates {
     CMessageMgr *mgr=[CMessageMgr new]; mgr.pages=@[@[R(@"1",@"a",1,@"text")],@[]]; WUStatsBinding *b=[self binding:mgr];
     b.decodePage=^NSDictionary *(NSArray *p,uint32_t left,NSDictionary *c){return @{@"records":p,@"done":@NO,@"next":c};};
-    WUStatsJob *job=[[WUStatsJob alloc] initWithBinding:b]; [job start:^(NSDictionary *r,NSString *s){XCTAssertEqualObjects(r[@"complete"],@NO); XCTAssertTrue([s containsString:@"游标"]);}]; XCTAssertEqual(mgr.calls,1u);
+    WUStatsJob *job=[[WUStatsJob alloc] initWithBinding:b]; XCTestExpectation *done=[self expectationWithDescription:@"stalled"];
+    [job start:^(NSDictionary *r,NSString *s){XCTAssertEqualObjects(r[@"complete"],@NO); XCTAssertTrue([s containsString:@"游标"]); [done fulfill];}]; XCTAssertEqual(mgr.calls,1u);
+    [self waitForExpectations:@[done] timeout:5];
 }
 @end

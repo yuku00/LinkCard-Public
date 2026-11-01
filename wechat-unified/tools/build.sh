@@ -6,7 +6,6 @@ python3 tests/test_source.py
 xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/message_logic.m Sources/MessageLogic.m -framework Foundation -o build/message-logic-tests
 build/message-logic-tests | tee build/message-logic-tests.txt
 rm build/message-logic-tests
-bash tools/test_stats.sh
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" \
   -miphoneos-version-min=16.6 -fobjc-arc -fblocks -dynamiclib \
@@ -15,6 +14,7 @@ xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" \
   -install_name @rpath/WeChatUnified.dylib \
   Sources/*.m -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics \
   -o build/WeChatUnified.dylib
+bash tools/test_stats.sh
 xcrun strip -x build/WeChatUnified.dylib
 codesign --force --sign - --timestamp=none build/WeChatUnified.dylib
 codesign --verify --strict --verbose=2 build/WeChatUnified.dylib 2>&1 | tee build/signature.txt

@@ -8,6 +8,7 @@
 @end
 @implementation WURevokeParser
 - (void)parser:(NSXMLParser *)p didStartElement:(NSString *)n namespaceURI:(NSString *)u qualifiedName:(NSString *)q attributes:(NSDictionary *)a {
+    if(self.text) self.invalid=YES; // Identity fields must contain text/CDATA only.
     [self.path addObject:n];
     if(self.path.count>12) { self.invalid=YES; [p abortParsing]; }
     if(self.path.count==1 && (![n isEqual:@"sysmsg"] || ![a[@"type"] isEqual:@"revokemsg"])) self.invalid=YES;
