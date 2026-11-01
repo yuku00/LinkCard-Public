@@ -60,7 +60,12 @@ final class StartupIsolationTests: XCTestCase {
         startup.openButton.sendActions(for: .touchUpInside)
         let host = try XCTUnwrap(startup.presentedViewController as? UIHostingController<RootView>)
         host.view.layoutIfNeeded()
-        RunLoop.main.run(until: Date().addingTimeInterval(1.0))
+        // Simulator animation completion is asynchronous; wait for the actual
+        // presentation callback rather than assuming a one-second wall clock.
+        let presented = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            StartupLog.exportText.contains("S7_PRESENT_COMPLETED")
+        }, object: nil)
+        wait(for: [presented], timeout: 15)
         XCTAssertTrue(StartupLog.exportText.contains("S6_ROOT_ON_APPEAR"))
         XCTAssertTrue(StartupLog.exportText.contains("S6_MANAGER_ON_APPEAR_NO_SCAN"))
         XCTAssertTrue(StartupLog.exportText.contains("S7_PRESENT_COMPLETED"))
