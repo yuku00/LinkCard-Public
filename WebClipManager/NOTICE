@@ -21,3 +21,11 @@ The license and this notice are bundled in the app via project.yml resources.
 Bascter-Main/NotesExporter was investigated but NOT incorporated: no license
 was published at reviewed revision 2c539be3f2b725d4038a8a74460848e214b558ac.
 No code from GPL macOS exporters has been copied into this MIT project.
+
+Auxiliary executable architecture reference (not a copy of its root service):
+  NSAntoine/Santander revision 8ea2bec1a54b94517c65e3f44f70627481922813
+  Copyright (c) 2022 Serena; MIT, full text ThirdParty/Santander/LICENSE.txt.
+  Reviewed RootHelper/main.swift, Santander/Other/RootHelper.swift and Makefile.
+  This implementation uses newly written bounded C transport and Objective-C
+  fixed WebClips reader. It does NOT incorporate the Pogo-attributed spawn
+  implementation, persona escalation, setuid, generic paths or mutating commands.

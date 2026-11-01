@@ -1,0 +1,95 @@
+name: WebClipManager build11 container and readonly helper candidate (manual)
+on:
+  workflow_dispatch:
+    inputs:
+      sign_for_trollstore:
+        description: 'Install reviewed Homebrew ldid and create a fakesigned IPA (not device-verified)'
+        type: boolean
+        default: false
+        required: true
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: WebClipManager
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install project generator
+        run: brew install xcodegen
+      - name: Check source safety and synthetic Notes format
+        run: |
+          python3 -m venv /tmp/webclip-checks
+          /tmp/webclip-checks/bin/pip install PyYAML==6.0.2
+          /tmp/webclip-checks/bin/python Tools/static_check.py
+          /tmp/webclip-checks/bin/python Tools/test_entitlement_der.py
+          /tmp/webclip-checks/bin/python Tools/test_notes_format.py
+          /tmp/webclip-checks/bin/python Tools/test_webclips_access.py
+          /tmp/webclip-checks/bin/python Tools/test_build11_policy.py
+          python3 Tools/test_helper_transport.py
+      - name: Generate project
+        run: xcodegen generate
+      - name: Run synthetic unit tests
+        run: |
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for k,v in d["devices"].items() if "iOS" in k for x in v if "iPhone" in x["name"]))')
+          xcodebuild test -project WebClipManager.xcodeproj -scheme WebClipManager -destination "platform=iOS Simulator,id=$DEVICE" -resultBundlePath TestResults.xcresult CODE_SIGNING_ALLOWED=NO CODE_SIGN_ENTITLEMENTS=""
+      - name: Preserve synthetic XCTest results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-XCTest-results
+          path: WebClipManager/TestResults.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Build unsigned device app
+        run: |
+          xcodebuild -project WebClipManager.xcodeproj -scheme WebClipManager -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+          mkdir -p package/Payload
+          cp -R build/Build/Products/Release-iphoneos/WebClipManager.app package/Payload/
+          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.0 -fobjc-arc -framework Foundation Helper/main.m -o package/Payload/WebClipManager.app/WebClipReadHelper
+          chmod 755 package/Payload/WebClipManager.app/WebClipReadHelper
+          cp Config/TrollStore.entitlements package/
+          cd package && zip -qry ../WebClipManager-unsigned.zip Payload TrollStore.entitlements
+      - name: Optional explicit entitlement signing
+        if: ${{ inputs.sign_for_trollstore }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install ldid
+          brew info --json=v2 ldid > ldid-provenance.json
+          BIN=package/Payload/WebClipManager.app/WebClipManager
+          test -f "$BIN"
+          ldid -SConfig/Helper.entitlements package/Payload/WebClipManager.app/WebClipReadHelper
+          ldid -SConfig/TrollStore.entitlements "$BIN"
+          ldid -e "$BIN" > signed-entitlements.plist
+          python3 -c 'import plistlib; expected=plistlib.load(open("Config/TrollStore.entitlements","rb")); actual=plistlib.load(open("signed-entitlements.plist","rb")); assert actual == expected, "Signed entitlements mismatch"; print("Verified signed entitlements:", actual)'
+          (cd package && zip -qry ../WebClipManager-TrollStore.ipa Payload)
+          shasum -a 256 WebClipManager-TrollStore.ipa > WebClipManager-TrollStore.ipa.sha256
+          python3 Tools/verify_ipa.py WebClipManager-TrollStore.ipa > ipa-inspection.json
+          otool -l "$BIN" > macho-load-commands.txt
+          otool -L "$BIN" > macho-libraries.txt
+          xcodebuild -version > toolchain.txt
+          xcrun swiftc --version >> toolchain.txt
+          xcrun nm -m -u "$BIN" >> toolchain.txt
+          xcodebuild -project WebClipManager.xcodeproj -scheme WebClipManager -configuration Release -showBuildSettings | python3 -c 'import sys; print("".join(s for s in sys.stdin if any(k in s for k in ["SWIFT", "DEPLOYMENT_TARGET", "RUNPATH"])))' >> toolchain.txt
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.sign_for_trollstore }}
+        with:
+          name: WebClipManager-TrollStore-unverified
+          path: |
+            WebClipManager/WebClipManager-TrollStore.ipa
+            WebClipManager/WebClipManager-TrollStore.ipa.sha256
+            WebClipManager/signed-entitlements.plist
+            WebClipManager/ldid-provenance.json
+            WebClipManager/ipa-inspection.json
+            WebClipManager/macho-load-commands.txt
+            WebClipManager/macho-libraries.txt
+            WebClipManager/toolchain.txt
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WebClipManager-unsigned-not-installable
+          path: WebClipManager/WebClipManager-unsigned.zip
+          retention-days: 7

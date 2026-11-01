@@ -7,7 +7,7 @@ import sys
 import zipfile
 
 
-def inspect(path, require_icon=True):
+def inspect(path, require_icon=True, helper=False):
     with zipfile.ZipFile(path) as archive:
         assert archive.testzip() is None
         names = archive.namelist()
@@ -17,7 +17,9 @@ def inspect(path, require_icon=True):
         assert info['CFBundleIdentifier'] == 'org.example.WebClipManager'
         assert info['CFBundleSupportedPlatforms'] == ['iPhoneOS']
         assert info['MinimumOSVersion'] == '16.0'
-        binary = archive.read(prefix + info['CFBundleExecutable'])
+        executable = prefix + ('WebClipReadHelper' if helper else info['CFBundleExecutable'])
+        assert (archive.getinfo(executable).external_attr >> 16) & 0o111
+        binary = archive.read(executable)
         magic, cpu, subtype, kind, count, size, flags, reserved = struct.unpack_from('<8I', binary)
         assert (magic, cpu, kind) == (0xfeedfacf, 0x100000c, 2), 'Expected arm64 device executable'
         offset = 32
@@ -58,6 +60,10 @@ def inspect(path, require_icon=True):
         assert info['CFBundleVersion'] == BUILD
         assert info.get('UIFileSharingEnabled') is False
         assert info.get('LSSupportsOpeningDocumentsInPlace') is False
+        if helper:
+            def validate_entitlements(value):
+                expected = plistlib.load(open(__file__.replace("Tools/verify_ipa.py", "Config/Helper.entitlements"), "rb"))
+                assert value == expected and all(type(value[k]) is type(v) for k,v in expected.items())
         validate_entitlements(entitlements)
         assert struct.unpack_from('>I', blobs[7])[0] == 0xfade7172
         der_entitlements = decode_der(blobs[7][8:])
@@ -101,3 +107,4 @@ def inspect(path, require_icon=True):
 
 if __name__ == '__main__':
     inspect(sys.argv[1], require_icon='--allow-missing-icon' not in sys.argv[2:])
+    inspect(sys.argv[1], require_icon=False, helper=True)
