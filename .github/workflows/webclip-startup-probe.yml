@@ -1,0 +1,28 @@
+name: WebClip isolated Objective-C startup probes
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probes:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build both small probes and verify signing
+        run: |
+          brew install ldid
+          brew info --json=v2 ldid > WebClipManager/Diagnostics/StartupProbe/ldid-provenance.json
+          python3 WebClipManager/Diagnostics/StartupProbe/build.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WebClip-StartupProbes-AB-v1
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            WebClipManager/Diagnostics/StartupProbe/out/*.ipa
+            WebClipManager/Diagnostics/StartupProbe/out/*.sha256
+            WebClipManager/Diagnostics/StartupProbe/out/*.plist
+            WebClipManager/Diagnostics/StartupProbe/out/*.txt
+            WebClipManager/Diagnostics/StartupProbe/out/verification.json
+            WebClipManager/Diagnostics/StartupProbe/ldid-provenance.json
