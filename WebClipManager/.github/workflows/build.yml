@@ -1,4 +1,4 @@
-name: WebClipManager build9 OS-HOME noncontainer candidate (manual)
+name: WebClipManager build10 document UI isolation candidate (manual)
 on:
   workflow_dispatch:
     inputs:
@@ -24,7 +24,7 @@ jobs:
           /tmp/webclip-checks/bin/python Tools/test_entitlement_der.py
           /tmp/webclip-checks/bin/python Tools/test_notes_format.py
           /tmp/webclip-checks/bin/python Tools/test_webclips_access.py
-          /tmp/webclip-checks/bin/python Tools/test_build9_policy.py
+          /tmp/webclip-checks/bin/python Tools/test_build10_policy.py
       - name: Generate project
         run: xcodegen generate
       - name: Run synthetic unit tests

@@ -1,30 +1,10 @@
 import Foundation
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct ImportedNote: Identifiable, Sendable {
     let id = UUID()
     let title: String
     let text: String
-}
-
-struct NoteExportDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.plainText] }
-    static var writableContentTypes: [UTType] { [.plainText, UTType(filenameExtension: "md") ?? .plainText] }
-    var text: String
-    var filename: String
-    init(text: String, filename: String) { self.text = text; self.filename = filename }
-    init(configuration: ReadConfiguration) throws {
-        guard let data = configuration.file.regularFileContents,
-              let text = String(data: data, encoding: .utf8) else { throw CocoaError(.fileReadInapplicableStringEncoding) }
-        self.text = text
-        filename = configuration.file.preferredFilename ?? "备忘录.txt"
-    }
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        let wrapper = FileWrapper(regularFileWithContents: Data(text.utf8))
-        wrapper.preferredFilename = filename
-        return wrapper
-    }
 }
 
 enum NoteFiles {
@@ -109,13 +89,25 @@ final class NotesModel: ObservableObject {
 
 struct NotesView: View {
     @StateObject private var model = NotesModel()
-    @State private var importing = false
-    @State private var exporting = false
+    var body: some View {
+        if AppPaths.ready {
+            NotesFileView(model: model)
+        } else {
+            NotesContent(model: model, filesAvailable: false, importFiles: {}, exportNotes: { _ in }, clearDocuments: {})
+        }
+    }
+}
+
+struct NotesContent: View {
+    @ObservedObject var model: NotesModel
+    let filesAvailable: Bool
+    let importFiles: () -> Void
+    let exportNotes: (Bool) -> Void
+    let clearDocuments: () -> Void
     @State private var confirmExport = false
     @State private var confirmRead = false
     @State private var markdown = false
     @State private var query = ""
-    @State private var documents: [NoteExportDocument] = []
     private var visible: [ImportedNote] {
         model.notes.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.text.localizedCaseInsensitiveContains(query) }
     }
@@ -126,12 +118,13 @@ struct NotesView: View {
                     FeatureHeader(symbol: "note.text", title: "文字，妥善留存", detail: "直接读取 Apple Notes 未锁定正文，批量留存为 TXT / Markdown。")
                     Text(model.status).font(.footnote).foregroundStyle(.secondary)
                     Button { confirmRead = true } label: { Label("读取 Apple Notes", systemImage: "note.text.badge.plus") }
-                    Button { importing = true } label: { Label("或选择文本文件", systemImage: "folder.badge.plus") }
-                    if !model.notes.isEmpty { Button("清除内存中的当前批次", role: .destructive) { model.clear(); documents = [] } }
+                    Button(action: importFiles) { Label("或选择文本文件", systemImage: "folder.badge.plus") }.disabled(!filesAvailable)
+                    if !filesAvailable { FileUIUnavailableNotice() }
+                    if !model.notes.isEmpty { Button("清除内存中的当前批次", role: .destructive) { model.clear(); clearDocuments() } }
                     if model.busy { ProgressView("正在创建只读快照并解析…") }
                 }
                 Section("导出设置") {
-                    Picker("文件格式", selection: $markdown) { Text("TXT").tag(false); Text("Markdown").tag(true) }.pickerStyle(.segmented)
+                    Picker("文件格式", selection: $markdown) { Text("TXT").tag(false); Text("Markdown").tag(true) }.pickerStyle(.segmented).disabled(!filesAvailable)
                     Text("导出 UTF-8 原文；Markdown 不自动重建表格或富文本。每次选择文件会替换当前批次，不修改来源。")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
@@ -173,7 +166,7 @@ struct NotesView: View {
                 .searchable(text: $query, prompt: "搜索标题或正文")
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
-                        Button("导出 \(model.selected.count) 篇") { confirmExport = true }.disabled(model.selected.isEmpty || model.busy)
+                        Button("导出 \(model.selected.count) 篇") { confirmExport = true }.disabled(!filesAvailable || model.selected.isEmpty || model.busy)
                     }
                 }
                 .confirmationDialog("读取 Apple Notes？", isPresented: $confirmRead, titleVisibility: .visible) {
@@ -183,25 +176,9 @@ struct NotesView: View {
                 }
                 .confirmationDialog("导出所选文本？", isPresented: $confirmExport, titleVisibility: .visible) {
                     Button("选择保存位置") {
-                        documents = model.notes.filter { model.selected.contains($0.id) }.enumerated().map { index, note in
-                            NoteExportDocument(text: note.text, filename: NoteFiles.filename(note.title, index: index, markdown: markdown))
-                        }
-                        exporting = true
+                        exportNotes(markdown)
                     }
                 } message: { Text("共 \(model.selected.count) 篇（包括搜索隐藏项）。文本可能包含隐私；选择 iCloud 等位置可能由系统同步。") }
-                .fileImporter(isPresented: Binding(get: { importing && AppPaths.ready }, set: { importing = $0 }), allowedContentTypes: [.plainText, UTType(filenameExtension: "md") ?? .plainText], allowsMultipleSelection: true) { result in
-                    switch result {
-                    case .success(let urls): Task { await model.load(urls) }
-                    case .failure: model.status = "文件选择未完成；当前批次未改变"
-                    }
-                }
-                .fileExporter(isPresented: Binding(get: { exporting && AppPaths.ready }, set: { exporting = $0 }), documents: documents, contentType: markdown ? (UTType(filenameExtension: "md") ?? .plainText) : .plainText) { result in
-                    switch result {
-                    case .success(let urls): model.status = "系统导出器已保存 \(urls.count) 个文件；请到所选位置核对正文"
-                    case .failure: model.status = "导出未完成，原始文件与当前批次均未改变"
-                    }
-                    documents = []
-                }
         }
     }
 }

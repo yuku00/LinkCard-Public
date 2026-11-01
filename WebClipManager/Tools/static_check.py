@@ -48,7 +48,7 @@ assert (root / 'ThirdParty/AppleCloudNotesParser/LICENSE.txt').is_file()
 assert (root / 'NOTICE').is_file()
 assert 'startAccessingSecurityScopedResource' in notes and 'stopAccessingSecurityScopedResource' in notes
 assert 'fileLimit + 1' in notes and 'totalLimit' in notes
-assert 'documents: documents' in notes
+assert 'documents: files.documents' in (root / 'Sources/DocumentUI.swift').read_text()
 assert workflow['on']['workflow_dispatch']['inputs']['sign_for_trollstore']['default'] == 'false'
 steps = workflow['jobs']['build']['steps']
 assert any('ldid -SConfig/TrollStore.entitlements' in s.get('run', '') and 'sign_for_trollstore' in s.get('if', '') for s in steps)

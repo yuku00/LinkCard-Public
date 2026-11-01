@@ -14,7 +14,7 @@ enum StartupLog {
     static func record(_ stage: String) {
         guard stages.contains(stage) else { return }
         lock.lock(); defer { lock.unlock() }
-        let line = "[WCM-STARTUP] build=9 \(stage)"
+        let line = "[WCM-STARTUP] build=10 \(stage)"
         lines.append(line)
         if lines.count > 128 { lines.removeFirst() }
     }

@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 import ObjectiveC.runtime
 
 struct FeatureHeader: View {
@@ -85,10 +84,20 @@ struct DiagnosticReport: Codable {
 
 struct DiagnosticsView: View {
     @ObservedObject var model: Model
+    var body: some View {
+        if AppPaths.ready {
+            DiagnosticsFileView(model: model)
+        } else {
+            DiagnosticsContent(model: model, filesAvailable: false, exportReport: { _ in })
+        }
+    }
+}
+
+struct DiagnosticsContent: View {
+    @ObservedObject var model: Model
     @State private var report: DiagnosticReport?
-    @State private var exporting = false
-    @State private var document = BackupDocument()
-    @State private var feedback = ""
+    let filesAvailable: Bool
+    let exportReport: (DiagnosticReport) -> Void
     private func refresh() {
         report = DiagnosticReport.capture(readState: model.readState, osVersion: UIDevice.current.systemVersion,
             fileAccess: model.accessSnapshot, readFailure: model.accessFailure)
@@ -132,21 +141,14 @@ struct DiagnosticsView: View {
                     Text("删除执行：禁用")
                 }
                 Section {
-                    Button { do { document = BackupDocument(data: try report.encoded()); exporting = true } catch { feedback = "报告编码失败" } } label: {
+                    Button { exportReport(report) } label: {
                         Label("导出脱敏诊断 JSON", systemImage: "square.and.arrow.up")
-                    }
+                    }.disabled(!filesAvailable)
+                    if !filesAvailable { FileUIUnavailableNotice() }
                     Text("实际自身签名九项白名单及期望比较、固定路径 Seatbelt 检查、专属本地路径匹配状态、Notes 读取状态；另含状态、构建号、uid/euid/gid/egid、固定系统路径的打开结果/errno/属主/模式、NSError 域与代码。不含书签 URL、标题、目录标识、设备标识、数量或错误原文。错误码不能单独证明是 POSIX 或 MAC/sandbox；接口存在不等于删除可用。")
                         .font(.footnote).foregroundStyle(.secondary)
-                    if !feedback.isEmpty { Text(feedback).font(.footnote) }
                 }
             }
         }.listStyle(.insetGrouped).navigationTitle("诊断").task { refresh() }
-            .fileExporter(isPresented: Binding(get: { exporting && AppPaths.ready }, set: { exporting = $0 }), document: document, contentType: .json, defaultFilename: "WebClip-diagnostics.json") { result in
-                switch result {
-                case .success: feedback = "诊断已导出"
-                case .failure: feedback = "诊断导出未完成"
-                }
-                document = BackupDocument()
-            }
     }
 }

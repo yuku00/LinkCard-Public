@@ -1,20 +1,5 @@
 import SwiftUI
-import UniformTypeIdentifiers
 import UIKit
-
-struct BackupDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.data] }
-    static var writableContentTypes: [UTType] { [.data, .json] }
-    var data: Data
-    init(data: Data = Data()) { self.data = data }
-    init(configuration: ReadConfiguration) throws {
-        guard let data = configuration.file.regularFileContents else { throw CocoaError(.fileReadCorruptFile) }
-        self.data = data
-    }
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: data)
-    }
-}
 
 @MainActor
 final class Model: ObservableObject {
@@ -27,8 +12,6 @@ final class Model: ObservableObject {
     @Published var accessFailure: AccessError?
     @Published var results: [ItemResult] = []
     @Published var showResults = false
-    @Published var export = false
-    @Published var document = BackupDocument()
     let repository = Repository()
 
     func refresh() async {
@@ -58,19 +41,19 @@ final class Model: ObservableObject {
         }
     }
 
-    func backup() async {
-        guard !busy, !selected.isEmpty else { return }
+    func backup() async -> Data? {
+        guard !busy, !selected.isEmpty else { return nil }
         busy = true
         defer { busy = false }
         do {
             let backup = try await repository.backup(ids: Array(selected))
-            document = BackupDocument(data: backup.data)
             results = backup.results
-            export = true
             status = "备份已准备，尚未保存；失败项目见逐项结果"
+            return backup.data
         } catch {
             results = [ItemResult(id: "备份", message: error.localizedDescription)]
             showResults = true
+            return nil
         }
     }
 
@@ -85,6 +68,19 @@ final class Model: ObservableObject {
 
 struct ManagerView: View {
     @ObservedObject var model: Model
+    var body: some View {
+        if AppPaths.ready {
+            ManagerFileView(model: model)
+        } else {
+            ManagerContent(model: model, filesAvailable: false, exportBackup: {})
+        }
+    }
+}
+
+struct ManagerContent: View {
+    @ObservedObject var model: Model
+    let filesAvailable: Bool
+    let exportBackup: () -> Void
     @State private var query = ""
     @State private var duplicatesOnly = false
     @State private var fullscreenOnly = false
@@ -107,6 +103,7 @@ struct ManagerView: View {
                 Section {
                     FeatureHeader(symbol: "square.grid.2x2", title: "主屏幕书签，一目了然", detail: "本地浏览与备份，不访问 Safari 数据。")
                     Text(model.status).font(.footnote).foregroundStyle(.secondary).textSelection(.enabled)
+                    if !filesAvailable { FileUIUnavailableNotice() }
                     DisclosureGroup("删除验证进度") {
                         Text("当前构建不执行删除。等待 iOS 16.6 真机接口与系统行为验证，不代表永久无法实现。")
                             .font(.footnote).foregroundStyle(.secondary)
@@ -161,7 +158,7 @@ struct ManagerView: View {
                 }
                 ToolbarItemGroup(placement: .bottomBar) {
                     Button("导出备份") { confirmBackup = true }
-                        .disabled(model.busy || model.selected.isEmpty)
+                        .disabled(!filesAvailable || model.busy || model.selected.isEmpty)
                     Spacer()
                     Button("删除（不可用）", role: .destructive) { confirmDelete = true }
                         .disabled(model.busy || model.selected.isEmpty)
@@ -170,7 +167,7 @@ struct ManagerView: View {
             }
             .onAppear { StartupLog.record("S6_MANAGER_ON_APPEAR_NO_SCAN") }
             .confirmationDialog("导出所选 \(model.selected.count) 项？", isPresented: $confirmBackup, titleVisibility: .visible) {
-                Button("生成本地备份") { Task { await model.backup() } }
+                Button("生成本地备份", action: exportBackup)
             } message: {
                 Text("备份包含原始 URL、图标和目录文件，可能包含敏感信息。部分失败会逐项列明；请保存到可信位置。此版本不提供恢复。")
             }
@@ -178,15 +175,6 @@ struct ManagerView: View {
                 Button("查看所选项目的拒绝原因") { Task { await model.delete() } }
             } message: {
                 Text("不会执行删除，也不会仅移除目录冒充系统删除。请从主屏幕手动删除；受管理项目可能需联系管理员。")
-            }
-            .fileExporter(isPresented: Binding(get: { model.export && AppPaths.ready }, set: { model.export = $0 }), document: model.document, contentType: .data,
-                          defaultFilename: "WebClips-\(Int(Date().timeIntervalSince1970)).webclipbackup") { result in
-                switch result {
-                case .success: model.status = "系统文件导出完成；请查看逐项结果确认覆盖范围"
-                case .failure(let error): model.status = "导出未完成：\(error.localizedDescription)"
-                }
-                model.document = BackupDocument()
-                model.showResults = true
             }
             .sheet(isPresented: $model.showResults) {
                 NavigationStack {

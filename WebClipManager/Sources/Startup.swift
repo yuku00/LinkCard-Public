@@ -74,7 +74,7 @@ final class StartupViewController: UIViewController {
             let localPaths: LocalPathDiagnostics
             let storageStatus: String
         }
-        let report = Report(build: 9, scope: "current-process-only; no directory enumeration or file contents",
+        let report = Report(build: 10, scope: "current-process-only; no directory enumeration or file contents",
                             runtime: RuntimePermissions.capture(), fixedPaths: ReadAccess.diagnostics(),
                             localPaths: LocalPathDiagnostics.capture(), storageStatus: AppPaths.preparationStatus)
         let encoder = JSONEncoder()
