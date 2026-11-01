@@ -26,6 +26,7 @@ jobs:
           /tmp/webclip-checks/bin/python Tools/static_check.py
           /tmp/webclip-checks/bin/python Tools/test_entitlement_der.py
           /tmp/webclip-checks/bin/python Tools/test_notes_format.py
+          /tmp/webclip-checks/bin/python Tools/test_webclips_access.py
       - name: Generate project
         run: xcodegen generate
       - name: Run synthetic unit tests

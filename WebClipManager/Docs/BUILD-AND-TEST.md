@@ -1,5 +1,7 @@
 # 手动构建、签名与首次测试
 
+> 以下构建环境状态及首次验收清单保留为初始开发记录。当前授权、六项权限、目录保护与单次启动验证步骤以 [build5 候选说明](BUILD5-CANDIDATE.md) 为准，不再要求重复权限批准或执行整套真机验收。
+
 已获得开始编译授权，但本机缺少 Swift、Xcode、XcodeGen、clang、gh。实际调用 `xcodebuild -project WebClipManager.xcodeproj -scheme WebClipManager -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` 返回 `/bin/sh: xcodebuild: not found`（退出码 127），并未进入编译。工程尚需 XcodeGen 生成。目录没有 .git/remote，未发现 gh hosts 配置及 GH_TOKEN/GITHUB_TOKEN 环境变量，无法确认远程认证或触发 Actions。没有安装依赖、创建仓库、上传、发布或安装应用。
 
 本机 `python3 Tools/static_check.py` 与 `python3 Tools/test_notes_format.py` 均 PASS；后者只运行合成 gzip/protobuf、从 Swift 源码提取的 SELECT 和只读 WAL backup，不能代替 Swift/XCTest。新增 XCTest 未运行，尚无 IPA。
@@ -20,7 +22,7 @@
 
 当前 Homebrew 配方指向 saurik ldid v2.1.5，固定源码 revision `a23f0faadd29ec00a6b7fb2498c3d15af15a7100` 并列有 bottle SHA-256；并非 opa334 fork，不能混称。本工作流使用 Homebrew 的校验与分发链，不从第三方网盘获取签名工具。Homebrew 配方和 Actions 的 major tags 会变化，不是完全可复现供应链；公开发布前需审核当时配方，按需求固定 Actions commit、Xcode/XcodeGen 及 ldid 来源版本。runner 若无适合的 bottle 可能从源构建，耗时/大小未承诺。本地大工具安装仍需用户确认；这里不执行。
 
-TrollStore README 说明可以用 `ldid -S<entitlements> <binary>` 伪签并在安装时保留 entitlement；`com.apple.private.security.no-sandbox=true` 列为解除沙盒的候选权限之一。项目仅保留这一项，不申请 root/platform/keychain 等无关权限。签名回读成功不等于系统授予目录访问权，也不等于安装成功。普通开发者签名无法代替 TrollStore 权限路径。
+TrollStore README 说明可以用 `ldid -S<entitlements> <binary>` 伪签并在安装时保留 entitlement。旧版仅 no-sandbox 的方案已被 build5 的明确身份/容器及有限存储清单取代，来源见 [build5 候选说明](BUILD5-CANDIDATE.md)。签名 XML/DER 回读成功不等于系统授予目录访问权，也不等于安装后能启动。普通开发者签名无法代替 TrollStore 权限路径。
 
 ## 首次测试清单（先只读，再逐步验证）
 

@@ -20,7 +20,7 @@ final class StartupViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         let title = UILabel()
-        title.text = "UIKit 启动成功 · build 5（候选修复）"
+        title.text = "UIKit 启动成功 · build 6（只读权限调试）"
         title.font = .preferredFont(forTextStyle: .title2)
         title.numberOfLines = 0
         let detail = UILabel()

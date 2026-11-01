@@ -1,4 +1,6 @@
-# WebClip Manager — 本地源码预览
+# WebClip Manager — build5 候选修复
+
+> 当前状态与权限以 [build5 候选说明](Docs/BUILD5-CANDIDATE.md) 为准。已获授权在 `yuku00/LinkCard-Public` 独立构建；下文初始开发阶段的“未上传/未编译”等叙述是历史记录，不代表当前状态。当前只要求一次验证：启动首页 → 手动主界面 → 手动刷新。没有真机通过结论，删除仍不可用。
 
 面向 iOS 16.6 / TrollStore 的 SwiftUI 原生工具，最低部署 iOS 16。**没有编译、签名、安装或真机验证；删除功能明确不可用。** 本次仅写入源码，不创建公开仓库、不上传、不发布、不运行 Actions。
 
@@ -39,7 +41,7 @@ project.yml                        XcodeGen 工程定义
 
 ## TrollStore 签名与权限（未验证）
 
-`Config/TrollStore.entitlements` 仅声明 `com.apple.private.security.no-sandbox = true`，作为跨沙盒读取的候选权限；不声明 root/platform-application/task_for_pid/任意 keychain 权限。**声明权限不保证它会生效**，实际由签名、TrollStore/CoreTrust 安装路径、系统版本与进程身份决定。常规 App Store/开发者签名沙盒应用预期无法读取该目录。TrollStore 也不自动代表 root 或拥有所有私有服务权限。
+build5 使用 `Tools/entitlement_policy.py` 中六项有限清单：platform-application、本应用 application-identifier、字符串形式的本应用 container-required、no-sandbox，以及 AppDataContainers/Notes 两项存储权限。选择明确容器而非非容器 HOME；来源、必要性假设和限制见 [build5 候选说明](Docs/BUILD5-CANDIDATE.md)。不申请 root/persona/JIT/debugger/keychain 等额外能力。**声明权限不保证它会生效**；平台身份不等于 root，静态签名通过不等于 TrollStore 安装后启动通过。
 
 工作流始终使用 CODE_SIGNING_ALLOWED=NO 构建，默认仅产出 unsigned ZIP，**不是可直接安装的 IPA**。以后经用户授权手动运行并显式勾选 `sign_for_trollstore`，才安装 Homebrew ldid，将 entitlement 实际写入可执行文件、回读严格核验后打包 IPA；同时保留来源记录及 SHA-256。此路径尚未执行，安装和权限效果未知。不能把 entitlement 文件放进包里就认为已经签名。来源核查、可复现性限制及测试步骤见 [构建与首次测试](Docs/BUILD-AND-TEST.md)。
 

@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 struct Clip: Identifiable, Sendable {
     let id: String
@@ -17,6 +18,7 @@ struct ItemResult: Identifiable, Sendable {
 struct Scan: Sendable {
     var clips: [Clip] = []
     var issues: [ItemResult] = []
+    var firstFailure: AccessError?
 }
 
 struct Backup: Sendable {
@@ -41,10 +43,11 @@ actor Repository {
     init(root: URL = Repository.deviceRoot) { self.root = root }
 
     private func check(_ url: URL, directory: Bool) throws {
-        let values = try url.resourceValues(forKeys: [.isSymbolicLinkKey, .isDirectoryKey, .isRegularFileKey])
-        guard values.isSymbolicLink != true,
-              directory ? values.isDirectory == true : values.isRegularFile == true else {
-            throw ClipError.invalid("拒绝符号链接或不支持的文件类型：\(url.lastPathComponent)")
+        var value = stat()
+        guard lstat(url.path, &value) == 0 else { throw ReadAccess.failure("lstat", errno) }
+        let kind = value.st_mode & S_IFMT
+        guard kind == (directory ? S_IFDIR : S_IFREG) else {
+            throw ReadAccess.failure("fileType", kind == S_IFLNK ? ELOOP : (directory ? ENOTDIR : EINVAL))
         }
     }
 
@@ -61,10 +64,14 @@ actor Repository {
 
     private func read(_ url: URL, limit: Int) throws -> Data {
         try check(url, directory: false)
-        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size <= limit else { throw ClipError.invalid("文件超过读取上限") }
-        let handle = try FileHandle(forReadingFrom: url)
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { throw ReadAccess.failure("openFile", errno) }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         defer { try? handle.close() }
+        var value = stat()
+        guard fstat(fd, &value) == 0 else { throw ReadAccess.failure("fstat", errno) }
+        guard value.st_mode & S_IFMT == S_IFREG else { throw ReadAccess.failure("fileType", EINVAL) }
+        guard value.st_size <= limit else { throw ClipError.invalid("文件超过读取上限") }
         var data = Data()
         while let chunk = try handle.read(upToCount: min(1024 * 1024, limit + 1 - data.count)), !chunk.isEmpty {
             data.append(chunk)
@@ -73,10 +80,12 @@ actor Repository {
         return data
     }
 
+    func accessDiagnostics() -> AccessSnapshot { ReadAccess.diagnostics() }
+
     func scan() throws -> Scan {
         StartupLog.record("S10_REPOSITORY_SCAN_ENTERED")
         try check(root, directory: true)
-        let entries = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+        let entries = try ReadAccess.entries(root)
         var result = Scan()
         for entry in entries.filter({ $0.pathExtension == "webclip" }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
             let id = entry.lastPathComponent
@@ -91,7 +100,10 @@ actor Repository {
                     let path = dir.appendingPathComponent(name)
                     if fm.fileExists(atPath: path.path) {
                         do { icon = try read(path, limit: 8 * 1024 * 1024) }
-                        catch { result.issues.append(ItemResult(id: id + "/" + name, message: error.localizedDescription)) }
+                        catch {
+                            if result.firstFailure == nil { result.firstFailure = AccessError.capture(error) }
+                            result.issues.append(ItemResult(id: id + "/" + name, message: AccessError.capture(error).summary))
+                        }
                         break
                     }
                 }
@@ -100,7 +112,10 @@ actor Repository {
                                          fullScreen: plist["FullScreen"] as? Bool ?? false,
                                          removalDisallowed: plist["RemovalDisallowed"] as? Bool ?? false,
                                          icon: icon))
-            } catch { result.issues.append(ItemResult(id: id, message: error.localizedDescription)) }
+            } catch {
+                if result.firstFailure == nil { result.firstFailure = AccessError.capture(error) }
+                result.issues.append(ItemResult(id: id, message: AccessError.capture(error).summary))
+            }
         }
         return result
     }

@@ -1,6 +1,6 @@
-"""Reviewed build5 profile. No wildcard permissions; identity is our bundle ID."""
+"""Build6: preserve build5 identity/container; add only Safari storage candidate."""
 BUNDLE_ID = 'org.example.WebClipManager'
-BUILD = '5'
+BUILD = '6'
 ALLOWED_ENTITLEMENTS = {
     'platform-application': True,
     'application-identifier': BUNDLE_ID,
@@ -8,6 +8,7 @@ ALLOWED_ENTITLEMENTS = {
     'com.apple.private.security.no-sandbox': True,
     'com.apple.private.security.storage.AppDataContainers': True,
     'com.apple.private.security.storage.Notes': True,
+    'com.apple.private.security.storage.Safari': True,
 }
 
 def validate_entitlements(value):

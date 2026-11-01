@@ -23,6 +23,8 @@ final class Model: ObservableObject {
     @Published var busy = false
     @Published var status = "尚未读取设备目录"
     @Published var readState = "notRead"
+    @Published var accessSnapshot: AccessSnapshot?
+    @Published var accessFailure: AccessError?
     @Published var results: [ItemResult] = []
     @Published var showResults = false
     @Published var export = false
@@ -35,8 +37,11 @@ final class Model: ObservableObject {
         busy = true
         readState = "reading"
         defer { busy = false }
+        accessFailure = nil
+        accessSnapshot = await repository.accessDiagnostics()
         do {
             scan = try await repository.scan()
+            accessFailure = scan.firstFailure
             StartupLog.record("S11_SCAN_RETURNED")
             readState = scan.issues.isEmpty ? "readable" : "partial"
             selected.formIntersection(Set(scan.clips.map(\.id)))
@@ -47,7 +52,9 @@ final class Model: ObservableObject {
             readState = "failed"
             scan = Scan()
             selected.removeAll()
-            status = "读取失败：\(error.localizedDescription)。请检查 TrollStore 权限；这不代表设备没有 WebClip。"
+            let failure = AccessError.capture(error)
+            accessFailure = failure
+            status = "读取失败：\(failure.summary)。请导出诊断定位；错误码本身不能区分 POSIX 与 MAC/sandbox 拒绝，不代表目录为空。"
         }
     }
 
