@@ -172,6 +172,19 @@ class Guardrails(unittest.TestCase):
         self.assertIn('本次只请求系统添加照片权限',ui)
         self.assertNotIn('requestAuthorizationForAccessLevel',ui.split('[save startData:')[1])
         self.assertIn('-framework Photos',(ROOT/'tools/build.sh').read_text())
+    def test_moments_cache_real_host_safe_local_only(self):
+        ui=(ROOT/'Sources/MomentsCache.m').read_text()
+        logic=(ROOT/'Sources/MomentsCacheLogic.m').read_text()
+        for required in ['getHomepageData', 'onDataUpdated:maxItemID:minItemID:reqFirstPageMd5:', 'Bound(o)', 'WUContextGeneration()', 'UIApplicationStateActive', 'pathForExistData', 'WUDraftMediaPut', 'WUDraftMediaURLs', 'pending.count>=32', 'isPrivate', 'exceedsVisibleTimeRange', '曾见内容', '评论保存/合并未实现']:
+            self.assertIn(required,ui)
+        for forbidden in ['NSTimer', 'setM_cache', 'setValue:', 'deleteDataItem:', 'removeItemAt', 'unlink(', 'NSKeyedArchiver', 'NSURLSession']:
+            self.assertNotIn(forbidden,ui+logic)
+        self.assertIn('WUShowMomentsCache(self)',(ROOT/'Sources/Settings.m').read_text())
+        self.assertIn('WUInstallMomentsCache();',(ROOT/'Sources/Core.m').read_text())
+        self.assertIn('tests/moments_cache_logic.m',(ROOT/'tools/build.sh').read_text())
+        self.assertIn('WURepositorySave',logic)
+        self.assertIn('if(!old) return NO',logic)
+        self.assertIn('rows.count>=200',logic)
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()
         for word in ['未实现','无伪开关','便捷朋友圈','ActionBar','全部 AI','未执行']:

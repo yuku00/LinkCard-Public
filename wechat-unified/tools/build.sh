@@ -3,6 +3,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build
 python3 tests/test_source.py
+xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/moments_cache_logic.m Sources/MomentsCacheLogic.m Sources/RepositoryLogic.m Sources/DraftMediaLogic.m Sources/GroupLogic.m Sources/HomeLogic.m -framework Foundation -o build/moments-cache-tests
+build/moments-cache-tests | tee build/moments-cache-tests.txt
+rm build/moments-cache-tests
 xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/emoticon_logic.m Sources/EmoticonLogic.m -framework Foundation -framework ImageIO -framework CoreGraphics -lz -o build/emoticon-tests
 build/emoticon-tests | tee build/emoticon-tests.txt
 rm build/emoticon-tests

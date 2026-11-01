@@ -1,10 +1,27 @@
-# 2026-11-01 所选原表情保存Photos增量（CI待运行）
+# 2026-11-01 朋友圈曾见缓存与本地浏览（生产代码已接，待本轮CI）
+
+新增真实 WCHomepageMgr getHomepageData 返回数组及 onDataUpdated 回调→WCDataItem tid/username/contentDesc 规范化→账号独立正文索引→设置/本地工具/朋友圈缓存浏览、收藏、保留天数和安全清理。getHomepageData 对象返回ABI已有旧库0x54f5ac证据；tid/username只定点补核0x552a28/0x554080，未全量逆向。回调只接精确对象或Q型ID签名；先执行原IMP、原样返回，不写m_cache、不拦删除、不从缺页或隐私变化判真实删除。仅记录“曾见内容”，明确非服务器当前内容，不声称恢复未收到内容。
+
+本账号配置默认关闭；监控列表必填、排除优先，只观察用户访问时已有主页数据，不发请求、不自动抓联系人、不永久轮询。管理器首次观察固定account/generation，旧代次不重绑定；后台/切号及关闭使排队任务失效。旧管理器失效需退出重开主页。可见性isPrivate/exceedsVisibleTimeRange或字段接口不匹配就跳过，不猜字段。UI未跑真机，接口门控不等于宿主验收。
+
+正文复用Repository原子保存，媒体复用DraftMedia不可变UUID、复制后SHA256/尺寸核验和最后提交索引。仅复制pathForExistData可靠获得的现存图片，最多9张、单张8MiB（非必须原图/无损规格），不要求下载；视频和全部评论保存/合并未实现，无伪开关。正文成功而媒体失败仍保留正文并显示媒体缺失；两个索引不是跨文件原子事务。200条/正文封装索引1MiB/单记录JSON10000字符，账号媒体512MiB，待处理32项，超限拒绝新缓存，不淘汰收藏。媒体现存索引不覆盖，因此首批不完整图片后续补齐未实现。
+
+按保留天数手动确认清理，收藏保留，先验证正文和媒体索引；坏索引禁止清理。仅清理自有正文/媒体索引，绝不unlink宿主源、共享或自有不可变文件；失败保留文件，空间不会回收。单页有界主线程图片复制/校验可能卡顿，后台退出浏览页，尚需隔离宿主性能和UI生命周期验证。新增直接生产规范化/去重/分页不误判/账号隔离/收藏保留/坏索引/复制失败/保存失败测试，全部旧测试保留。未执行真实微信、真实朋友圈或服务、未发布删除用户数据；图片转表情/公众号入库继续已有精确阻塞，不扩大原图要求，排除范围不变。
+
+# 2026-11-01 聊天图片转表情定向核对（未接通，无新构建）
+
+未新增生产代码/工具开关，未重跑图库校验或CI；最后成功仍为 dfb4879e037aa4508ecd6e5e038c22f2df9bcebb / 41291640930，旧产物保留。新增精确接口记录 IMAGE-TO-EMOTICON-GAP.md。本轮补实静图控制器使用alloc/init，GIF setFileType: 接收NSNumber(2)而非整数，delegate实际设为来源控制器，不能任意用聊天页面冒充协议实现。新提取旧 originalImageDataFromImageMessageWrap: 发现HD/普通路径及HDThumb/Middle回退，不能据函数名保证原图。剩余集中为目标宿主“所选原图交付及确认生命周期”契约：原图就绪/身份、静图确认取消动作、GIF字段编码与委托入库结果；没有这些不能用mock或打开编辑器冒充已入库。公众号菜单和所选原字节归属仍未闭合。未执行真实宿主/Photos写入/发送，未改旧HEAD或发布文档触发构建。
+
+# 2026-11-01 所选原表情保存Photos增量（实际CI已通过，未真机验收）
+
+最终CI `41291640930` completed/success，commit `dfb4879e037aa4508ecd6e5e038c22f2df9bcebb`；EmoticonLogic生产格式/读取/权限与写入mock共71断言、22项结构检查及全部旧回归通过，iOS arm64/min16.6/SDK18.5含Photos编译链接成功。artifact `13076584417` 已下载独立核验；ZIP303318字节，dylib578944字节，SHA256/Mach-O/136页嵌入ad-hoc签名均通过。本轮仅12条白名单工程路径、4次快进（2次失败定位合成夹具、2次成功包含权限代次收尾）；补记前317/317白名单一致。详见BUILD-RESULT。本段为成功后本地补记，不为文档重跑CI。
+
 
 新增EmoticonLogic生产格式/文件验证和Messages真实选中消息入口。账号工具栏手动勾选“所选原表情保存图库”，在微信长按进入多选后只选一个47类表情，经工具菜单再次确认执行；不加全局菜单Hook，不遮挡原菜单，不读未选择聊天，不用设置页文件导入替代。复用既有账号/session/generation/总开关/前台及Hook所有权。需getSelectedMsgs、m_nsEmoticonMD5（或扩展对象）、EmoticonUtil类方法pathOfEmoticonForMd5:needUpdateTime:ignoreWxAM:精确对象/BOOL/BOOL ABI；原证据0xb8514/0xb8760–68的NO/NO参数，不改访问时间、不强制下载。签名不符/原资源缺失明确不可用。
 
 原文件只读描述符、O_NOFOLLOW、前后size/mtime及EOF核验，上限20MiB。仅接受完整GIF/PNG/JPEG；PNG逐块CRC、GIF块边界/终止符、ImageIO完整状态与逐帧解码，最多500帧/单帧1600万像素/合计6400万像素。直接传原始NSData给PHAssetCreationRequest addResource，不经UIImage重编码，不把微信特殊WxAM容器当GIF。Photos AddOnly权限、缺隐私声明保护、performChanges完成回调；首次授权独立为仅权限动作（系统弹窗会触发共享generation失效），明确要求返回后再次手动确认，绝不跨代次自动续写。实际添加资源且success无error才显示成功。拒绝/取消/失效/失败不报成功。每次确认一次性状态机，权限/结果重复回调只处理一次；同页面同generation同消息防重，失败需退出再进核对后手动重试。提交后无法撤销且无跨启动持久防重，不声称恰好一次。
 
-macOS原生测试运行真实生产格式/读取/保存状态机，Photos权限和写入通过mock，不访问真实图库；iOS专属Photos/UI代码只由CI编译链接，仍缺真机验收。保留所有旧测试，增加22项结构检查中的原资源保护，以及GIF双帧/PNG/JPEG、损坏/CRC/截断/超限/链接/权限拒绝/重复点击与回调/会话失效断言。本轮CI完成前不宣称测试已通过。
+macOS原生测试运行真实生产格式/读取/保存状态机，Photos权限和写入通过mock，不访问真实图库；iOS专属Photos/UI代码只由CI编译链接，仍缺真机验收。保留所有旧测试，增加22项结构检查中的原资源保护，以及GIF双帧/PNG/JPEG、损坏/CRC/截断/超限/链接/权限拒绝/重复点击与回调/会话失效断言。本轮上述原生mock和结构测试实际通过；真实微信菜单/Photos权限弹窗/图库写入未执行，不能以CI代替真机验收。
 
 **精确未完：** 图片转表情、公众号图片入库仍未实现，不是宣称无法实现。0xfc6890的startOfficialGIFAddWithData:md5:fromViewController:与presentOfficialStaticEmoticonPick:fromViewController:属于旧WCRefineEmoticonToolsHelper，不能当微信宿主接口直接调用；尚需准确ABI与完成结果协议；本轮仅定向补核0xfc5e0c/0xfc65e8：GIF下游涉及AddEmoticonWrap/EmojiInfoObj/EmoticonUploadInfoObj、saveEmoticonToEmoticonDirForMd5:data:isCleanable:、EmoticonCustomManageAddLogic startAddEmoticonWithWrap:及delegate；静图是EmoticonPickViewController setM_image:与PushViewController:animated:。类/选择子已定位，但未验证初始化、字段整数宽度、委托方法与入库结果，不擅自调用或写宿主表情目录。聊天原图/公众号选中图片的原始NSData来源及宿主菜单注册仍缺闭环。0x27b738仅已有选择图片调用链线索，不读取或上传任意网页。不挂伪开关、不自动发送。WxAM解码、原长按菜单直接新增项、目标宿主多选菜单可见性、权限提示时序和真实图库动画保留均未验收。原图/原消息/系统Dock不修改；AI/红包详情/在线主题/视频解析排除保持。
 

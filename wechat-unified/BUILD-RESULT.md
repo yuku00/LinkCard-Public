@@ -1,3 +1,42 @@
+# 2026-11-01 朋友圈本地缓存增量构建中
+
+已加入实际宿主主页观察、账号缓存与本地浏览代码及生产逻辑回归；本轮CI尚待提交结果，下文41291640930为上轮成功，不冒称新代码已经验证。保留全部旧测试与旧产物。通过自身本地api.html/严格TLS/环境token，仅现有独立分支快进，未reset旧本地HEAD。不运行微信或真实用户数据。
+
+# 2026-11-01 图片转表情补核：无代码变更，无新增CI产物
+
+本轮没有接通聊天图片转表情，不新增伪开关。仅补静图alloc/init、GIF NSNumber字段与delegate接收者、原图获取含缩略/中图回退的定向证据，精确接口缺口见 IMAGE-TO-EMOTICON-GAP.md。未重复图库校验，未运行/发布新构建，未重新下载旧产物；下方41291640930及hash均为前次成功结果，不是本轮验收。未reset本地旧HEAD，未安装/操作微信/写Photos/发送用户数据。
+
+# 2026-11-01 原表情保存图库生产链交付（图片转表情/公众号入库仍未实现）
+
+- 最终CI：https://github.com/yuku00/LinkCard-Public/actions/runs/41291640930 ，completed/success；commit `dfb4879e037aa4508ecd6e5e038c22f2df9bcebb`。现有独立分支从指定 `b00cb1d502f1f7aa99b1e6c7f23b5269f81fcd09` 快进4次，仅12条工程白名单路径；未reset本地旧HEAD，未改workflow或其他项目。补记前317/317白名单blob与远端一致（artifacts/recovery-audit.json、emoticon-remote-diff.json）。
+- 实际新增：账号手动工具“所选表情保存图库”→宿主长按进入多选、仅一个47类表情→确认→证实的EmoticonUtil原路径（NO/NO，不更新时间）→只读20MiB有界原文件→GIF/PNG/JPEG结构与逐帧解码验证→Photos AddOnly→原NSData addResource→实际performChanges完成结果。没有UIImage重编码、没有全局菜单Hook或手动文件导入假入口，不自动发送、不修改原图/原消息/Dock。首次系统授权单独仅请求权限，返回后必须再次手动确认，不绕开共享generation失效规则。取消/拒绝/错误/失效不报成功，空事务和异步异常不算成功。
+- macOS实际执行生产EmoticonLogic格式/文件/事务mock **71断言**，22项结构检查及全部旧回归通过；分组35、媒体草稿51、仓库53、离线解码40057、语音5162、广告14及Hook fixture、消息21、朋友圈29、首页/主题、文字草稿与图片初始化ABI、WUStats18项0失败。iOS arm64/min16.6/SDK18.5含Photos/UI生产编译链接warnings-as-errors通过。macOS权限/写入为注入mock，未运行真实Photos或宿主UI；不能据此宣称微信可用已验。
+
+## CI失败与真实修复
+
+1. `41290966428` 的新原生测试拒绝“合法GIF”夹具，失败发生在格式断言，非编译错误。`41291057826` 保留断言增加合成数据诊断，证实CGImageDestination对两张完全相同图像生成了第二帧仅LZW码宽后直接终止的损坏流；ImageIO却容错只识别第一帧。生产完整块检查正确拒绝，没有放宽或删测试。
+2. 合成器改为不同像素的两帧并明确delay，原损坏base64保留为拒绝回归；`41291265768` 全量成功。收尾进一步核对结构帧数必须等于ImageIO帧数、增加真实超20MiB稀疏源拒绝、按页面/代次/消息集合阻止A→B→A重复点击、异步Photos异常保护。
+3. 共享WillResignActive会取消generation，因此首次权限改为独立授权动作，用户再次确认才保存；没有对权限弹窗开放失效豁免，也不自动重试。最终 `41291640930` 对最终代码全量通过，旧测试全部保留。未因文档补记重跑。
+
+## 已下载并独立核验
+
+- Artifact `13076584417`；ZIP `artifacts/WeChatUnified-41291640930.zip`，**303318字节**，SHA256 `d8cb5d3adeff0cac14c9d6bc172b5f2de3ba6bbfdbd780a7352d9e5693b0150f`，与GitHub digest相同。
+- dylib `artifacts/run-41291640930/WeChatUnified.dylib`，**578944字节**（较561296增加17648字节，约3.14%），SHA256 `69915ad70f57698a2ed8242bcd1b5e36d1bb090ebc0a96352b618c4b7fa00195`，与CI SHA256SUMS相同。
+- 本地验证arm64 MH_DYLIB；CI严格codesign通过，独立检查CodeDirectory **136页×4096**及特殊槽SHA256、ad-hoc标志。不是开发者分发证书。核验见 `verification-41291640930.json`，日志 `ci-41291640930.log`，元数据 `ci-artifacts-41291640930.json`。
+- ZIP远低于50MB；未安装任何新工具链/宿主或注入插件。只用独立本地api.html标签、严格TLS、环境token；未输出凭据、未上传原库/转储/用户媒体。
+
+## 精确未完与风险
+
+- 图片转表情、公众号图片添加表情未实现，不挂开关、不宣称不可实现。仅定向补核WCRefine 0xfc5e0c/0xfc65e8：GIF终点为EmoticonCustomManageAddLogic startAddEmoticonWithWrap:，需要AddEmoticonWrap/EmojiInfoObj/EmoticonUploadInfoObj及宿主资源目录写入；静图为EmoticonPickViewController setM_image:与PushViewController:animated:。类/选择子已定位，但初始化/整数ABI/委托完成方法、选中聊天原图和公众号图片原始NSData来源、宿主菜单动作注册仍待闭环。不能把旧WCRefine助手自身的方法误当宿主接口，不从任意网页抓取上传内容。
+- 保存链只支持可获得完整原始GIF/PNG/JPEG的单个表情，WxAM特殊容器和未就绪资源拒绝；最多20MiB、500帧、单帧1600万像素/合计6400万像素。严格拒绝链接路径可能不接受部分宿主合法别名路径，不能承诺所有表情。
+- 用户必须先手动选择工具，再在聊天宿主多选一个表情；原长按菜单直接增加按钮尚未做。多选模式工具菜单可见性、实际宿主ABI、系统权限提示和图库动画保留仍须真机验收，未读真实聊天/未写真实Photos。状态机mock不等于Messages完整宿主UI测试。
+- 保存已提交后无法撤销；防重仅页面/账号generation内，最多100次，不跨重启持久化。失败或结果未知需用户核对图库再退出重进手动重试，不承诺恰好一次。格式验证有界但未声称能抵御同宿主进程对源文件的任意恶意并发篡改。
+- AI、系统Dock/ActionBar、红包详情、在线主题、视频解析排除保持；原图、原消息、宿主资源不修改，无发送/删除用户数据。
+
+本节与STATUS为成功后本地补记，包内文档是构建时版本；未为补记重复发布。旧成功产物全部保留。
+
+---
+
 # 2026-11-01 媒体草稿中断恢复交付（图片有限恢复，视频仅备份）
 
 - 实际CI：https://github.com/yuku00/LinkCard-Public/actions/runs/41290054523 ，completed/success；commit `b00cb1d502f1f7aa99b1e6c7f23b5269f81fcd09`。基于实查远端文字草稿93b6c5a快进3次/13条工程白名单路径，未重提旧文字构建、未reset本地旧HEAD、未改其他项目或workflow。补记前314/314发布白名单blob一致；证据 artifacts/recovery-audit.json 与 media-remote-diff.json。

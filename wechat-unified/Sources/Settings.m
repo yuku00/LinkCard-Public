@@ -39,7 +39,7 @@
 - (void)refresh { [self.tableView reloadData]; [self.view setNeedsLayout]; }
 - (void)done { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 3; }
-- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?self.rows.count:(s==1?4:1); }
+- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?self.rows.count:(s==1?5:1); }
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return @[@"本期实现（默认关闭，先小范围测试）",@"本地工具",@"宿主适配状态"][s]; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
     if(s==0) return @"只显示有执行路径的开关；灰色表示当前宿主缺接口/签名。消息动作在聊天页，执行前确认并重验上下文。拍一拍同步BOOL协议尚未安全适配，没有伪开关。复读长按下载/主题图标及红包跨会话定位尚未完成。";
@@ -66,6 +66,7 @@
         if(!sw.enabled) cell.detailTextLabel.text=@"本宿主不可用；不会启用空开关";
         [sw addTarget:self action:@selector(change:) forControlEvents:UIControlEventValueChanged]; cell.accessoryView=sw; cell.selectionStyle=UITableViewCellSelectionStyleNone;
     } else { cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; cell.textLabel.text=p.section==2?@"查看接口检测（不含聊天数据）":(p.row==0?@"编辑朋友圈屏蔽词":(p.row==1?@"识别链接 / 外部浏览器打开":(p.row==2?@"导入和管理本地主题 / 气泡":@"账号表情分组 / 聊天工具栏"))); }
+    if(p.section==1 && p.row==4) cell.textLabel.text=@"朋友圈缓存 / 收藏 / 安全清理";
     return cell;
 }
 - (void)alert:(NSString *)message {
@@ -78,6 +79,7 @@
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p {
     [t deselectRowAtIndexPath:p animated:YES]; if(p.section==0) return;
     if(p.section==2) { [self alert:[WUHookStatus() componentsJoinedByString:@"\n"]]; return; }
+    if(p.row==4) { WUShowMomentsCache(self); return; }
     if(p.row==3) { WUShowGroups(self); return; }
     if(p.row==2) { WUShowThemes(self); return; }
     if(p.row==1) { WUShowLinks(self); return; }

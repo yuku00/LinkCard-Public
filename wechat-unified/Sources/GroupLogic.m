@@ -26,8 +26,13 @@ static BOOL ValidEmoji(id s) {
 BOOL WUValidAccountOptions(id v) {
     if(![v isKindOfClass:NSDictionary.class] || [v count]>24) return NO;
     for(id a in v) {
-        id s=v[a]; if(!Text(a,256) || ![s isKindOfClass:NSDictionary.class] || [s count]>3) return NO;
-        for(id key in s) if(![@[@"emoji",@"toolbar",@"home"] containsObject:key]) return NO;
+        id s=v[a]; if(!Text(a,256) || ![s isKindOfClass:NSDictionary.class] || [s count]>4) return NO;
+        for(id key in s) if(![@[@"emoji",@"toolbar",@"home",@"momentsCache"] containsObject:key]) return NO;
+        if(s[@"momentsCache"]) {
+            id m=s[@"momentsCache"];
+            if(![m isKindOfClass:NSDictionary.class] || [m count]!=4 || ![m[@"enabled"] isKindOfClass:NSNumber.class] || ![m[@"days"] isKindOfClass:NSNumber.class] || [m[@"days"] integerValue]<1 || [m[@"days"] integerValue]>3650 || [m[@"days"] doubleValue]!=[m[@"days"] integerValue]) return NO;
+            for(NSString *k in @[@"monitor",@"exclude"]) { if(![m[k] isKindOfClass:NSArray.class] || [m[k] count]>100) return NO; for(id u in m[k]) if(!Text(u,256)) return NO; }
+        }
         if(s[@"home"] && !WUValidHomeGroups(s[@"home"])) return NO;
         if(s[@"emoji"] && !ValidEmoji(s[@"emoji"])) return NO;
         if(s[@"toolbar"] && (![s[@"toolbar"] isKindOfClass:NSArray.class] || ![s[@"toolbar"] isEqual:WUToolbarActions(s[@"toolbar"])])) return NO;
