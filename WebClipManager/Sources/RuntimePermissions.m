@@ -78,5 +78,3 @@ NSString *WCMRuntimeJSON(void) {
     NSData *data = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingSortedKeys error:nil];
     return data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"{}";
 }
-@"{}";
-}
