@@ -1,0 +1,29 @@
+name: WeChat Unified dylib
+on:
+  push:
+    branches: ['wechat-unified/**']
+    paths:
+      - 'wechat-unified/**'
+      - '.github/workflows/wechat-unified.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: wechat-unified-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile standalone arm64 iOS dylib
+        working-directory: wechat-unified
+        run: bash tools/build.sh
+      - name: Upload build product and verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: WeChatUnified-arm64-iOS16.6-${{ github.sha }}
+          path: wechat-unified/build/
+          if-no-files-found: error
+          retention-days: 30

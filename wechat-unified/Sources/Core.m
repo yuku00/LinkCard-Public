@@ -1,0 +1,89 @@
+#import "WU.h"
+#import <fcntl.h>
+#import <unistd.h>
+#import <sys/stat.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+NSString *const WUChanged = @"org.wechatunified.changed";
+static NSDictionary *snapshot;
+static NSMutableDictionary<NSString *, NSString *> *hooks;
+static int configDir = -1;
+static NSDictionary *ReadConfig(NSString *name) {
+    int fd = openat(configDir, name.UTF8String, O_RDONLY | O_NOFOLLOW);
+    if (fd < 0) return nil;
+    struct stat st; if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size > 65536) { close(fd); return nil; }
+    NSMutableData *d = [NSMutableData dataWithLength:(NSUInteger)st.st_size];
+    size_t n = 0; while (n < d.length) { ssize_t r = read(fd, (char *)d.mutableBytes+n, d.length-n); if (r <= 0) break; n += r; } close(fd);
+    if (n != d.length) return nil;
+    id x = [NSJSONSerialization JSONObjectWithData:d options:0 error:NULL];
+    if (![x isKindOfClass:NSDictionary.class] || ![x[@"schema"] isEqual:@1]) return nil;
+    for (NSString *k in @[@"enabled", @"ads", @"keywords", @"inputBorder", @"noticeBorder", @"separators"])
+        if (x[k] && ![x[k] isKindOfClass:NSNumber.class]) return nil;
+    if (x[@"words"] && (![x[@"words"] isKindOfClass:NSString.class] || [x[@"words"] length] > 2048)) return nil;
+    return x;
+}
+static BOOL WriteConfig(NSData *d, NSString *name) {
+    NSString *tmp = [@"pending-" stringByAppendingString:NSUUID.UUID.UUIDString];
+    int fd = openat(configDir, tmp.UTF8String, O_WRONLY|O_CREAT|O_EXCL|O_NOFOLLOW, 0600);
+    if (fd < 0) return NO;
+    size_t n=0; while(n<d.length) { ssize_t w=write(fd, (const char *)d.bytes+n, d.length-n); if(w<=0) break; n+=w; }
+    BOOL ok = n==d.length && fsync(fd)==0; if(close(fd)!=0) ok=NO;
+    if(ok) ok=renameat(configDir,tmp.UTF8String,configDir,name.UTF8String)==0;
+    if(!ok) unlinkat(configDir,tmp.UTF8String,0);
+    // The committed file is never overwritten non-atomically. Directory fsync is best effort on iOS.
+    if(ok) fsync(configDir);
+    return ok;
+}
+id WUValue(NSString *key) { @synchronized(NSProcessInfo.processInfo) { return snapshot[key]; } }
+BOOL WUEnabled(NSString *key) { return [WUValue(@"enabled") boolValue] && [WUValue(key) boolValue]; }
+BOOL WUSave(NSString *key, id value) {
+    NSCAssert(NSThread.isMainThread, @"UI configuration is main-thread owned");
+    if(![@[@"enabled",@"ads",@"keywords",@"words",@"inputBorder",@"noticeBorder",@"separators"] containsObject:key]) return NO;
+    if([key isEqual:@"words"] ? (![value isKindOfClass:NSString.class] || [value length]>2048) : ![value isKindOfClass:NSNumber.class]) return NO;
+    if(configDir<0) return NO;
+    NSMutableDictionary *next=[snapshot mutableCopy]; next[key]=value;
+    NSData *data=[NSJSONSerialization dataWithJSONObject:next options:0 error:NULL];
+    NSData *old=[NSJSONSerialization dataWithJSONObject:snapshot options:0 error:NULL];
+    if(!data || !old || !WriteConfig(old,@"backup.json") || !WriteConfig(data,@"config.json")) return NO;
+    @synchronized(NSProcessInfo.processInfo) { snapshot=[next copy]; }
+    [NSNotificationCenter.defaultCenter postNotificationName:WUChanged object:nil]; return YES;
+}
+static const char *Unqualified(const char *t) { while(*t && strchr("rnNoORV",*t)) t++; return t; }
+BOOL WUMatches(Method m, const char *result, NSArray<NSString *> *args) {
+    if(!m || method_getNumberOfArguments(m)!=args.count+2) return NO;
+    char *r=method_copyReturnType(m); BOOL ok=strcmp(Unqualified(r),result)==0; free(r);
+    for(unsigned i=0; ok && i<args.count; i++) { char *a=method_copyArgumentType(m,i+2); ok=strcmp(Unqualified(a),args[i].UTF8String)==0; free(a); }
+    return ok;
+}
+BOOL WUHook(NSString *name, NSString *selector, BOOL meta, const char *ret, NSArray<NSString *> *args, IMP replacement, IMP *original) {
+    NSString *key=[NSString stringWithFormat:@"%@%@ %@",meta?@"+":@"-",name,selector];
+    if([hooks[key] isEqual:@"installed"]) return YES;
+    Class c=NSClassFromString(name); if(meta && c) c=object_getClass(c);
+    SEL s=NSSelectorFromString(selector); Method m=c?class_getInstanceMethod(c,s):NULL;
+    if(!WUMatches(m,ret,args)) { hooks[key]=@"missing/signature mismatch"; return NO; }
+    *original=method_getImplementation(m);
+    // Add an owned override when inherited; never replace a superclass method by accident.
+    if(!class_addMethod(c,s,replacement,method_getTypeEncoding(m))) method_setImplementation(class_getInstanceMethod(c,s),replacement);
+    hooks[key]=@"installed"; return YES;
+}
+NSArray *WUHookStatus(void) {
+    NSMutableArray *out=[NSMutableArray array];
+    for(NSString *k in [[hooks allKeys] sortedArrayUsingSelector:@selector(compare:)]) [out addObject:[NSString stringWithFormat:@"%@ — %@",k,hooks[k]]];
+    return out;
+}
+static void Install(void) { WUInstallAds(); WUInstallTimeline(); WUInstallAppearance(); WUInstallSettings(); }
+__attribute__((constructor)) static void Start(void) {
+    if(![NSBundle.mainBundle.bundleIdentifier isEqual:@"com.tencent.xin"]) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        hooks=[NSMutableDictionary dictionary];
+        NSString *base=NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory,NSUserDomainMask,YES).firstObject;
+        NSString *dir=[base stringByAppendingPathComponent:@"WeChatUnified"];
+        [NSFileManager.defaultManager createDirectoryAtPath:base withIntermediateDirectories:YES attributes:nil error:NULL];
+        mkdir(dir.fileSystemRepresentation,0700);
+        configDir=open(dir.fileSystemRepresentation,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
+        snapshot=ReadConfig(@"config.json") ?: ReadConfig(@"backup.json") ?: @{@"schema":@1,@"enabled":@NO,@"words":@""};
+        Install();
+        [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ Install(); }];
+    });
+}
