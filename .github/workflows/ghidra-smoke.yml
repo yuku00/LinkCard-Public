@@ -1,0 +1,29 @@
+name: Ghidra synthetic ARM64 smoke
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ghidra-synthetic-smoke
+  cancel-in-progress: false
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout only the public synthetic tool fixture
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+          sparse-checkout: reverse-tool-smoke
+      - name: Verify Ghidra on synthetic Mach-O only
+        working-directory: reverse-tool-smoke
+        run: bash run.sh
+      - name: Upload synthetic evidence only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ghidra-synthetic-${{ github.run_id }}
+          path: reverse-tool-smoke/out/
+          if-no-files-found: error
+          retention-days: 1
