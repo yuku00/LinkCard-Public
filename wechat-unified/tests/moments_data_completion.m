@@ -11,14 +11,14 @@ static NSData *VideoEnvelope(void) {
     NSData *body=Box("dref",[NSData dataWithBytes:dref length:20]); for(NSString *type in @[@"dinf",@"minf",@"mdia",@"trak",@"moov"]) body=Box(type.UTF8String,body);
     const char brand[8]={'i','s','o','m',0,0,0,0}; NSMutableData *out=[Box("ftyp",[NSData dataWithBytes:brand length:8]) mutableCopy]; [out appendData:body]; [out appendData:Box("mdat",[NSData dataWithBytes:"x" length:1])]; return out;
 }
-static NSDictionary *Comment(NSString *i,NSString *body,NSNumber *time) { return @{@"id":i,@"author":@"synthetic-author",@"text":body,@"time":time,@"replyTo":@""}; }
+static NSDictionary *WUTestComment(NSString *i,NSString *body,NSNumber *time) { return @{@"id":i,@"author":@"synthetic-author",@"text":body,@"time":time,@"replyTo":@""}; }
 int main(void) { @autoreleasepool {
     BOOL (^yes)(void)=^BOOL{ return YES; }; NSError *error=nil;
-    NSArray *one=@[Comment(@"1",@"first",@100)], *two=@[Comment(@"2",@"second",@0)];
+    NSArray *one=@[WUTestComment(@"1",@"first",@100)], *two=@[WUTestComment(@"2",@"second",@0)];
     NSArray *merged=WUMCacheMergeComments(one,two,&error); CHECK(merged.count==2); CHECK([merged[0][@"id"] isEqual:@"1"]);
     CHECK([WUMCacheMergeComments(merged,@[],NULL) isEqual:merged]); CHECK([WUMCacheMergeComments(merged,one,NULL) isEqual:merged]);
-    CHECK(!WUMCacheMergeComments(@[],@[Comment(@"1",@"conflict A",@1),Comment(@"1",@"conflict B",@1)],NULL));
-    CHECK(!WUMCacheMergeComments(@[],@[Comment(@"",@"bad",@1)],NULL)); CHECK(!WUMCacheMergeComments(@[],@[Comment(@"1",@"bad",@(-1))],NULL));
+    CHECK(!WUMCacheMergeComments(@[],@[WUTestComment(@"1",@"conflict A",@1),WUTestComment(@"1",@"conflict B",@1)],NULL));
+    CHECK(!WUMCacheMergeComments(@[],@[WUTestComment(@"",@"bad",@1)],NULL)); CHECK(!WUMCacheMergeComments(@[],@[WUTestComment(@"1",@"bad",@(-1))],NULL));
     NSURL *root=[NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString] isDirectory:YES].URLByResolvingSymlinksInPath;
     NSURL *base=[root URLByAppendingPathComponent:@"MomentsCache"], *text=[base URLByAppendingPathComponent:@"Text"],*media=[base URLByAppendingPathComponent:@"Media"], *source=[root URLByAppendingPathComponent:@"synthetic.mp4"];
     CHECK([NSFileManager.defaultManager createDirectoryAtURL:root withIntermediateDirectories:YES attributes:nil error:NULL]);
@@ -35,7 +35,7 @@ int main(void) { @autoreleasepool {
     CHECK([WUMCacheLoad(text,@"a",NULL)[0][@"comments"] count]==2);
     CHECK(WUMCacheSaveComments(text,@"a",@"synthetic-owner",@"123",@[],103,yes,NULL)); CHECK([WUMCacheLoad(text,@"a",NULL)[0][@"comments"] count]==2);
     NSURL *textIndex=[text URLByAppendingPathComponent:@"61.plist"]; NSData *before=[NSData dataWithContentsOfURL:textIndex];
-    CHECK(!WUMCacheSaveComments(text,@"a",@"synthetic-owner",@"123",@[Comment(@"3",@"cancelled",@2)],104,^BOOL{ return NO; },NULL)); CHECK([[NSData dataWithContentsOfURL:textIndex] isEqual:before]);
+    CHECK(!WUMCacheSaveComments(text,@"a",@"synthetic-owner",@"123",@[WUTestComment(@"3",@"cancelled",@2)],104,^BOOL{ return NO; },NULL)); CHECK([[NSData dataWithContentsOfURL:textIndex] isEqual:before]);
     CHECK(!WUMCacheStoreMedia(text,media,@"a",item,@"video-backup",@[[NSData dataWithBytes:"bad" length:3]],105,[NSSet set],yes,NULL)); CHECK([[NSData dataWithContentsOfURL:textIndex] isEqual:before]);
     NSDictionary *later=WUMCacheNormalize(@"124",@"synthetic-owner",@"later video");
     CHECK(WUMCacheStore(text,media,@"a",later,@[[NSData dataWithBytes:"img" length:3]],110,yes,NULL));
