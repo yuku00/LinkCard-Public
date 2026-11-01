@@ -1,4 +1,5 @@
 #import "WU.h"
+#import "GroupLogic.h"
 #import <fcntl.h>
 #import <unistd.h>
 #import <sys/stat.h>
@@ -22,6 +23,7 @@ static NSDictionary *ReadConfig(NSString *name) {
         if (x[k] && ![x[k] isKindOfClass:NSNumber.class]) return nil;
     if (x[@"words"] && (![x[@"words"] isKindOfClass:NSString.class] || [x[@"words"] length] > 2048)) return nil;
     for(NSString *k in @[@"themePack",@"bubblePack"]) if(x[k] && (![x[k] isKindOfClass:NSString.class] || ([x[k] length] && ![[NSUUID alloc] initWithUUIDString:x[k]]))) return nil;
+    if(x[@"accounts"] && !WUValidAccountOptions(x[@"accounts"])) return nil;
     return x;
 }
 static BOOL WriteConfig(NSData *d, NSString *name) {
@@ -40,15 +42,16 @@ id WUValue(NSString *key) { @synchronized(NSProcessInfo.processInfo) { return sn
 BOOL WUEnabled(NSString *key) { return [WUValue(@"enabled") boolValue] && [WUValue(key) boolValue]; }
 BOOL WUSave(NSString *key, id value) {
     NSCAssert(NSThread.isMainThread, @"UI configuration is main-thread owned");
-    if(![@[@"enabled",@"ads",@"keywords",@"words",@"inputBorder",@"noticeBorder",@"separators",@"chatSearch",@"callbackConfirm",@"antiRevoke",@"multiRevoke",@"repeatEmoticon",@"mergeGroup",@"mergePrivate",@"mergeBottom",@"redReminder",@"themes",@"sunMoon",@"themePack",@"bubblePack",@"searchSurface",@"referSurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface"] containsObject:key]) return NO;
+    if(![@[@"enabled",@"ads",@"keywords",@"words",@"inputBorder",@"noticeBorder",@"separators",@"chatSearch",@"callbackConfirm",@"antiRevoke",@"multiRevoke",@"repeatEmoticon",@"mergeGroup",@"mergePrivate",@"mergeBottom",@"redReminder",@"themes",@"sunMoon",@"themePack",@"bubblePack",@"searchSurface",@"referSurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"accounts"] containsObject:key]) return NO;
     BOOL pack=[@[@"themePack",@"bubblePack"] containsObject:key];
     if(pack) { if(![value isKindOfClass:NSString.class] || ([value length] && ![[NSUUID alloc] initWithUUIDString:value])) return NO; }
+    else if([key isEqual:@"accounts"]) { if(!WUValidAccountOptions(value)) return NO; }
     else if([key isEqual:@"words"] ? (![value isKindOfClass:NSString.class] || [value length]>2048) : ![value isKindOfClass:NSNumber.class]) return NO;
     if(configDir<0) return NO;
     NSMutableDictionary *next=[snapshot mutableCopy]; next[key]=value;
     NSData *data=[NSJSONSerialization dataWithJSONObject:next options:0 error:NULL];
     NSData *old=[NSJSONSerialization dataWithJSONObject:snapshot options:0 error:NULL];
-    if(!data || !old || !WriteConfig(old,@"backup.json") || !WriteConfig(data,@"config.json")) return NO;
+    if(!data || data.length>65536 || !old || !WriteConfig(old,@"backup.json") || !WriteConfig(data,@"config.json")) return NO;
     @synchronized(NSProcessInfo.processInfo) { snapshot=[next copy]; }
     [NSNotificationCenter.defaultCenter postNotificationName:WUChanged object:nil]; return YES;
 }
@@ -75,7 +78,7 @@ NSArray *WUHookStatus(void) {
     for(NSString *k in [[hooks allKeys] sortedArrayUsingSelector:@selector(compare:)]) [out addObject:[NSString stringWithFormat:@"%@ — %@",k,hooks[k]]];
     return out;
 }
-static void Install(void) { WUInstallAds(); WUInstallTimeline(); WUInstallAppearance(); WUInstallSurfaces(); WUInstallThemes(); WUInstallMessages(); WUInstallSettings(); }
+static void Install(void) { WUInstallAds(); WUInstallTimeline(); WUInstallAppearance(); WUInstallSurfaces(); WUInstallThemes(); WUInstallMessages(); WUInstallGroups(); WUInstallSettings(); }
 __attribute__((constructor)) static void Start(void) {
     if(![NSBundle.mainBundle.bundleIdentifier isEqual:@"com.tencent.xin"]) return;
     dispatch_async(dispatch_get_main_queue(), ^{

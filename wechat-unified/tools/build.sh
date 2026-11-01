@@ -9,6 +9,9 @@ rm build/message-logic-tests
 xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/theme_archive.m Sources/ThemeArchive.m -framework Foundation -lz -o build/theme-archive-tests
 build/theme-archive-tests | tee build/theme-archive-tests.txt
 rm build/theme-archive-tests
+xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/group_logic.m Sources/GroupLogic.m -framework Foundation -o build/group-logic-tests
+build/group-logic-tests | tee build/group-logic-tests.txt
+rm build/group-logic-tests
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" \
   -miphoneos-version-min=16.6 -fobjc-arc -fblocks -dynamiclib \

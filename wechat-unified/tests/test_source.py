@@ -62,6 +62,23 @@ class Guardrails(unittest.TestCase):
         self.assertIn('sw.on!=on',skin)
         self.assertIn('accessibilityElementsHidden=YES',skin)
         self.assertIn('removeTarget:skin',skin)
+    def test_group_lifecycle_and_original_list(self):
+        groups=(ROOT/'Sources/Groups.m').read_text()
+        for required in ['custom_emoticon_pid','if(!placeholder)', 'return original;', 'setSectionInfo:', 'prepareForReuse', 'p.invalidated=YES', 'p.identifiers=nil', 'UIEdgeInsetsEqualToEdgeInsets', 'gen!=WUContextGeneration()', 'WUMatches(class_getInstanceMethod', 'UIApplicationWillResignActiveNotification']:
+            self.assertIn(required, groups)
+        self.assertNotIn('setValue:', groups)
+        self.assertNotIn('object_setIvar', groups)
+        self.assertNotIn('removeObjectAtIndex', groups)
+        self.assertIn('tests/group_logic.m',(ROOT/'tools/build.sh').read_text())
+    def test_account_manual_toolbar_and_limits(self):
+        messages=(ROOT/'Sources/Messages.m').read_text()
+        core=(ROOT/'Sources/Core.m').read_text()
+        self.assertIn('WUAccountOptions(account)[@"toolbar"]',messages)
+        self.assertIn('gen!=generation',messages)
+        self.assertIn('StatsReady(Service(@"CMessageMgr"))',messages)
+        self.assertIn('if(self.tools) [items removeObject:self.tools]',messages)
+        self.assertIn('WUValidAccountOptions',core)
+        self.assertIn('data.length>65536',core)
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()
         for word in ['未实现','无伪开关','便捷朋友圈','ActionBar','全部 AI','未执行']:

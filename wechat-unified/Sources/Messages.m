@@ -1,6 +1,13 @@
 #import "WU.h"
 #import "MessageLogic.h"
 #import "WUStats.h"
+#import "GroupLogic.h"
+static BOOL StatsReady(id mgr) {
+    Method method=class_getInstanceMethod(object_getClass(mgr),NSSelectorFromString(@"GetMsgByCreateTime:FromID:FromCreateTime:Limit:LeftCount:"));
+    for(NSString *i in @[@"I",@"i"]) for(NSString *t in @[@"I",@"i"]) for(NSString *l in @[@"I",@"i"]) for(NSString *p in @[@"^I",@"^i"])
+        if(WUMatches(method,"@",@[@"@",i,t,l,p])) return YES;
+    return NO;
+}
 static void OpenStats(UIViewController *owner);
 #include <string.h>
 #include <stdatomic.h>
@@ -28,6 +35,8 @@ static NSString *Account(void) {
     @synchronized(NSProcessInfo.processInfo) { if(![a isEqual:lastAccount]) { generation++; lastAccount=[a copy]; } }
     return a;
 }
+NSString *WUCurrentAccount(void) { @try { return Account(); } @catch(NSException *e) { return nil; } }
+NSUInteger WUContextGeneration(void) { (void)WUCurrentAccount(); return generation; }
 static id Contact(id v) { return Obj(v,@"GetContact") ?: Obj(v,@"getChatContact"); }
 static NSString *Session(id v) { return Str(Contact(v),@"m_nsUsrName"); }
 static id Wrap(id cell) { return Obj(Obj(cell,@"viewModel"),@"messageWrap"); }
@@ -117,6 +126,7 @@ static void RequestRevoke(id mgr, NSString *s, NSString *session, id wrap, UIVie
 @property(nonatomic,strong) UIBarButtonItem *search;
 @property(nonatomic,strong) UIBarButtonItem *recall;
 @property(nonatomic,strong) UIBarButtonItem *stats;
+@property(nonatomic,strong) UIBarButtonItem *tools;
 @property(nonatomic,strong) NSMutableSet *requested;
 @property(nonatomic,copy) NSString *account;
 @property(nonatomic,copy) NSString *session;
@@ -128,10 +138,34 @@ static NSHashTable *chatActions;
 - (void)refresh {
     UIViewController *v=self.owner; if(!v) return;
     NSMutableArray *items=[v.navigationItem.rightBarButtonItems mutableCopy]?:[NSMutableArray array];
+    if(self.tools) [items removeObject:self.tools];
     if(self.search) [items removeObject:self.search]; if(self.recall) [items removeObject:self.recall]; if(self.stats) [items removeObject:self.stats];
     if([WUValue(@"enabled") boolValue]) { if(!self.stats) self.stats=[[UIBarButtonItem alloc] initWithTitle:@"统计" style:UIBarButtonItemStylePlain target:self action:@selector(openStats)]; [items addObject:self.stats]; }
     if(WUEnabled(@"chatSearch") && Has(v,@"onSearchItem","v",@[])) { if(!self.search) self.search=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"magnifyingglass"] style:UIBarButtonItemStylePlain target:self action:@selector(openSearch)]; self.search.accessibilityLabel=@"搜索当前会话聊天记录"; [items addObject:self.search]; }
     if(WUEnabled(@"multiRevoke") && Has(v,@"getSelectedMsgs","@",@[]) && RevokeSelector(Service(@"CMessageMgr"))) { if(!self.recall) self.recall=[[UIBarButtonItem alloc] initWithTitle:@"撤回所选" style:UIBarButtonItemStylePlain target:self action:@selector(recallSelected)]; [items addObject:self.recall]; }
+    NSString *account=Account(), *session=Session(v); NSUInteger gen=generation;
+    NSArray *selected=WUToolbarActions(WUAccountOptions(account)[@"toolbar"]);
+    NSMutableArray *menu=[NSMutableArray array]; __weak WUChatActions *weak=self;
+    if([WUValue(@"enabled") boolValue] && account.length && session.length) for(NSString *key in selected) {
+        if([key isEqual:@"search"] && !Has(v,@"onSearchItem","v",@[])) continue;
+        if([key isEqual:@"stats"] && !StatsReady(Service(@"CMessageMgr"))) continue;
+        NSString *title=@{@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置"}[key];
+        [menu addObject:[UIAction actionWithTitle:title image:nil identifier:nil handler:^(UIAction *action){
+            WUChatActions *target=weak; UIViewController *owner=target.owner;
+            @try {
+                if(!owner.viewIfLoaded.window || owner.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(owner)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:key]) return;
+                if([key isEqual:@"settings"]) WUShowSettings(owner);
+                else if([key isEqual:@"stats"]) OpenStats(owner);
+                else if([key isEqual:@"search"] && Has(owner,@"onSearchItem","v",@[])) ((void(*)(id,SEL))objc_msgSend)(owner,NSSelectorFromString(@"onSearchItem"));
+            } @catch(NSException *e) { Notice(owner,@"该工具当前不可用，未自动重试。"); }
+        }]];
+    }
+    if(menu.count) {
+        if(!self.tools) self.tools=[[UIBarButtonItem alloc] initWithTitle:@"工具" style:UIBarButtonItemStylePlain target:nil action:NULL];
+        self.tools.menu=[UIMenu menuWithTitle:@"手动工具" children:menu]; [items addObject:self.tools];
+        if([selected containsObject:@"stats"] && self.stats) [items removeObject:self.stats];
+        if([selected containsObject:@"search"] && self.search) [items removeObject:self.search];
+    } else self.tools.menu=nil;
     v.navigationItem.rightBarButtonItems=items;
 }
 - (void)openStats { if([WUValue(@"enabled") boolValue]) OpenStats(self.owner); }
@@ -375,9 +409,7 @@ static void OpenStats(UIViewController *owner) {
         Method method=class_getInstanceMethod(object_getClass(mgr),NSSelectorFromString(name));
         // Independently checked semantic contract: object session, 3 32-bit values,
         // pointer to 32-bit remaining count, object return (static PC 0x1599b44..68).
-        BOOL checked=NO;
-        for(NSString *i in @[@"I",@"i"]) for(NSString *t in @[@"I",@"i"]) for(NSString *l in @[@"I",@"i"]) for(NSString *p in @[@"^I",@"^i"])
-            if(WUMatches(method,"@",@[@"@",i,t,l,p])) checked=YES;
+        BOOL checked=StatsReady(mgr);
         if(!checked || !account.length || !session.length) { Notice(owner,@"统计不可用：缺稳定账号、会话或已核验的32位分页接口。未调用宿主查询。"); return; }
         WUStatsBinding *binding=[WUStatsBinding new]; binding.account=account; binding.session=session; binding.group=[session hasSuffix:@"@chatroom"]; binding.messageManager=mgr;
         // Exact encoding is pinned only AFTER the independent semantic/width gate.
