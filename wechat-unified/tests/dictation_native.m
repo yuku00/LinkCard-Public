@@ -53,13 +53,13 @@ NSUInteger WUContextGeneration(void) { return generation; }
 @implementation HostIcon
 - (void)setHidden:(BOOL)b { self.hiddenCalls++; [super setHidden:b]; }
 @end
-@interface MMGrowTextView : UIView
+@interface DictationFixtureInput : UIView
 @property(nonatomic, strong) UIView *icon, *hitResult;
 @property(nonatomic) NSUInteger getters, hits, begins, moves, ends, cancels;
-@property(nonatomic, copy) void (^endAction)(MMGrowTextView *, NSSet *, UIEvent *);
+@property(nonatomic, copy) void (^endAction)(DictationFixtureInput *, NSSet *, UIEvent *);
 - (id)dictationIcon;
 @end
-@implementation MMGrowTextView
+@implementation DictationFixtureInput
 - (id)dictationIcon { self.getters++; return self.icon; }
 - (UIView *)hitTest:(CGPoint)p withEvent:(UIEvent *)e { self.hits++; return self.hitResult; }
 - (void)touchesBegan:(NSSet *)t withEvent:(UIEvent *)e { self.begins++; }
@@ -70,7 +70,7 @@ NSUInteger WUContextGeneration(void) { return generation; }
 @interface Scene : NSObject
 @property(nonatomic, strong) UIWindow *window;
 @property(nonatomic, strong) BaseMsgContentViewController *chat;
-@property(nonatomic, strong) MMGrowTextView *input;
+@property(nonatomic, strong) DictationFixtureInput *input;
 @property(nonatomic, strong) UITouch *touch;
 @property(nonatomic, strong) UIEvent *event;
 @end
@@ -79,7 +79,7 @@ NSUInteger WUContextGeneration(void) { return generation; }
     enabled=YES; hide=NO; guard=YES; account=@"A"; session=@"chat-A";
     UIApplication.sharedApplication.applicationState=UIApplicationStateActive;
     _window=[UIWindow new]; _window.keyWindow=YES;
-    _chat=[BaseMsgContentViewController new]; _input=[MMGrowTextView new];
+    _chat=[BaseMsgContentViewController new]; _input=[NSClassFromString(@"MMGrowTextView") new];
     [_window addSubview:_input]; _input.nextResponder=_chat;
     _input.icon=[UIImageView new]; [_input addSubview:_input.icon]; _input.hitResult=_input.icon;
     _touch=[UITouch new]; _touch.point=CGPointMake(5,5); _touch.phase=UITouchPhaseBegan;
@@ -96,7 +96,7 @@ static void End(Scene *f, double time) {
     [f.input touchesEnded:[NSSet setWithObject:f.touch] withEvent:f.event];
 }
 static void Changed(void) { [NSNotificationCenter.defaultCenter postNotificationName:WUChanged object:nil]; }
-static void ForeignBegan(MMGrowTextView *v, SEL s, NSSet *t, UIEvent *e) { v.begins++; }
+static void ForeignBegan(DictationFixtureInput *v, SEL s, NSSet *t, UIEvent *e) { v.begins++; }
 static void WrongGetter(id v,SEL s) {}
 static int Finish(NSString *mode) {
     printf("DICTATION_NATIVE %s: %lu checks, %lu failures (production module + Core hooks; UIKit mock)\n",mode.UTF8String,(unsigned long)checks,(unsigned long)failures);
@@ -105,10 +105,13 @@ static int Finish(NSString *mode) {
 int main(int argc, const char **argv) { @autoreleasepool {
     hooks=[NSMutableDictionary dictionary];
     NSString *mode=argc>1?@(argv[1]):@"normal";
+    Class runtimeInput=objc_allocateClassPair(DictationFixtureInput.class,"MMGrowTextView",0);
+    CHECK(runtimeInput!=Nil);
+    if([mode isEqual:@"bad-abi"]) CHECK(class_addMethod(runtimeInput,@selector(dictationIcon),(IMP)WrongGetter,"v@:"));
+    objc_registerClassPair(runtimeInput);
     if([mode isEqual:@"bad-abi"]) {
-        class_replaceMethod(MMGrowTextView.class,@selector(dictationIcon),(IMP)WrongGetter,"v@:");
         WUInstallDictation(); CHECK(!ready && !iconOriginal && !beganOriginal);
-        CHECK(method_getImplementation(class_getInstanceMethod(MMGrowTextView.class,@selector(dictationIcon)))==(IMP)WrongGetter);
+        CHECK(method_getImplementation(class_getInstanceMethod(runtimeInput,@selector(dictationIcon)))==(IMP)WrongGetter);
         return Finish(mode);
     }
     if([mode isEqual:@"conflict"]) {
@@ -174,7 +177,7 @@ int main(int argc, const char **argv) { @autoreleasepool {
     }
     for(NSUInteger action=0; action<5; action++) {
         f=[Scene new]; Begin(f);
-        f.input.endAction=^(MMGrowTextView *v,NSSet *touches,UIEvent *event) {
+        f.input.endAction=^(DictationFixtureInput *v,NSSet *touches,UIEvent *event) {
             v.endAction=nil;
             if(action==0) [v touchesEnded:touches withEvent:event];
             if(action==1) [v touchesCancelled:touches withEvent:event];
