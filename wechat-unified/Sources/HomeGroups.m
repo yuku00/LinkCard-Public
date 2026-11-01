@@ -13,7 +13,7 @@ static id CurrentManager(void) {
 }
 static BOOL Flag(id o,NSString *name,BOOL *value) { SEL s=NSSelectorFromString(name); Method m=class_getInstanceMethod(object_getClass(o),s); if(WUMatches(m,"B",@[])) { *value=((BOOL(*)(id,SEL))objc_msgSend)(o,s); return YES; } if(WUMatches(m,"c",@[])) { *value=((signed char(*)(id,SEL))objc_msgSend)(o,s)!=0; return YES; } return NO; }
 static NSDictionary *State(NSString *a) { return WUAccountOptions(a)[@"home"]?:WUEmptyHomeGroups(); }
-static NSDictionary *Row(id session) {
+static NSDictionary *DecodeRow(id session) {
     if(![session isKindOfClass:NSClassFromString(@"MMSessionInfo")]) return nil;
     NSString *u=nil; for(NSString *key in @[@"m_nsUserName",@"m_nsUsrName",@"userName",@"username"]) { id v=Obj(session,key); if([v isKindOfClass:NSString.class] && [v length]>0 && [v length]<=256) { u=v; break; } }
     if(!u) return nil;
@@ -28,6 +28,7 @@ static NSDictionary *Row(id session) {
     if([kind isEqual:@"other"] && !singleKnown && !brand && ![u.lowercaseString hasPrefix:@"gh_"] && ![@[@"brandsessionholder",@"brandservicesessionholder"] containsObject:u.lowercaseString]) return nil;
     return @{@"username":u,@"kind":kind};
 }
+static NSDictionary *Row(id session) { @try { return DecodeRow(session); } @catch(NSException *e) { return nil; } }
 @interface WUHomeSnapshot : NSObject
 @property(nonatomic,weak) id manager;
 @property(nonatomic,copy) NSString *account;
@@ -93,6 +94,9 @@ static void Capture(id m,SEL sel,id array,NSUInteger index) {
     BOOL echo=s.published.count==3 && array==s.published[index];
     ((void(*)(id,SEL,id))setters[index])(m,sel,array);
     if(!echo) { if(![array isKindOfClass:NSArray.class] || [array count]>20000) { s.invalid=YES; return; } s.source[index]=[array copy]; }
+    // Native setNormalSessions is the evidenced end-of-list projection boundary.
+    // Apply before returning so the host's subsequent cell/index cache sees this same projection.
+    if(index==2) [s apply];
     [s schedule];
 }
 static void Top(id m,SEL s,id a) { Capture(m,s,a,0); }
@@ -103,7 +107,7 @@ static void Count(id m,SEL s,NSUInteger n) {
     WUHomeSnapshot *snap=Snapshot(m);
     if(![snap current]) { snap.account=WUCurrentAccount(); snap.source=[NSMutableArray arrayWithArray:@[NSNull.null,NSNull.null,NSNull.null]]; snap.filtered=NO; snap.invalid=NO; }
     snap.topCount=n; snap.countKnown=YES; snap.published=nil;
-    ((void(*)(id,SEL,NSUInteger))countSetter)(m,s,n); [snap schedule];
+    ((void(*)(id,SEL,NSUInteger))countSetter)(m,s,n); [snap apply]; [snap schedule];
 }
 static UITableView *Table(UIView *v,NSUInteger depth) { if(!depth) return nil; if([v isKindOfClass:UITableView.class]) return (id)v; if(v.subviews.count>100) return nil; for(UIView *c in v.subviews) { UITableView *t=Table(c,depth-1); if(t) return t; } return nil; }
 static NSArray *Tabs(NSDictionary *s) { return [@[@{@"id":@"all",@"name":@"全部"},@{@"id":@"private",@"name":@"私信"},@{@"id":@"chatroom",@"name":@"群聊"},@{@"id":@"other",@"name":@"其他"}] arrayByAddingObjectsFromArray:s[@"groups"]]; }
@@ -146,6 +150,17 @@ void WURefreshHome(UIViewController *owner) {
     @try { [p refresh]; } @catch(NSException *e) { [p restore]; }
 }
 static void Refresh(void) { for(WUHomeSnapshot *s in managers.allObjects) [s apply]; for(WUHomePage *p in homePages.allObjects) { [p refresh]; [p.table reloadData]; } }
+static void ReloadHost(void) {
+    // Evidence: the native refresh path calls MainSessionMgr.onNeedReload with no parameters.
+    // Rebuild native derived caches on tab/config changes; UITableView reload alone is not enough.
+    BOOL relevant=ready && [WUValue(@"enabled") boolValue] && [State(WUCurrentAccount())[@"enabled"] boolValue];
+    for(WUHomeSnapshot *s in managers.allObjects) if([s current] && s.filtered) relevant=YES;
+    if(!relevant) { Refresh(); return; }
+    Refresh();
+    id manager=CurrentManager(); SEL selector=NSSelectorFromString(@"onNeedReload");
+    if(manager && WUMatches(class_getInstanceMethod(object_getClass(manager),selector),"v",@[])) @try { ((void(*)(id,SEL))objc_msgSend)(manager,selector); } @catch(NSException *e) { Snapshot(manager).invalid=YES; }
+    Refresh();
+}
 
 @interface WUHomeGroupsController : UITableViewController
 @property(nonatomic,copy) NSString *account;
@@ -186,12 +201,12 @@ void WUShowHomeGroups(UIViewController *owner) { if(!owner.navigationController)
 void WUInstallHomeGroups(void) {
     static dispatch_once_t once; dispatch_once(&once, ^{
         managers=[NSHashTable weakObjectsHashTable]; homePages=[NSHashTable weakObjectsHashTable];
-        [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ Refresh(); }];
+        [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ ReloadHost(); }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ Refresh(); }];
     });
     if(ready) return;
     getNames=@[@"topSessions",@"allTopSessions",@"normalSessions"]; setNames=@[@"setTopSessions:",@"setAllTopSessions:",@"setNormalSessions:"];
-    Class cls=NSClassFromString(@"MainSessionMgr"); BOOL valid=cls!=Nil;
+    Class cls=NSClassFromString(@"MainSessionMgr"); BOOL valid=cls!=Nil && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"onNeedReload")),"v",@[]);
     for(NSUInteger i=0;i<3;i++) valid=valid && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(getNames[i])),"@",@[]) && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(setNames[i])),"v",@[@"@"]);
     valid=valid && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"setTotalTopSessionCount:")),"v",@[@(@encode(NSUInteger))]);
     if(valid) { BOOL a=WUHook(@"MainSessionMgr",setNames[0],NO,"v",@[@"@"],(IMP)Top,&setters[0]); BOOL b=WUHook(@"MainSessionMgr",setNames[1],NO,"v",@[@"@"],(IMP)AllTop,&setters[1]); BOOL c=WUHook(@"MainSessionMgr",setNames[2],NO,"v",@[@"@"],(IMP)Normal,&setters[2]); BOOL d=WUHook(@"MainSessionMgr",@"setTotalTopSessionCount:",NO,"v",@[@(@encode(NSUInteger))],(IMP)Count,&countSetter); ready=a&&b&&c&&d; }
