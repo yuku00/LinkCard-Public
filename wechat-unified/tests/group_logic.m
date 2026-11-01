@@ -11,6 +11,7 @@ int main(void) { @autoreleasepool {
     // Unsupported actions still reject; repository is now an explicitly implemented manual action.
     assert(!WUValidAccountOptions(@{@"A":@{@"toolbar":@[@"autoReply"]}}));
     assert(WUValidAccountOptions(@{@"A":@{@"toolbar":@[@"repository"]}}));
+    assert(WUValidAccountOptions(@{@"A":@{@"toolbar":@[@"emojiSave"]}}));
     assert(!WUValidAccountOptions(@{@"A":@{@"toolbar":@[@"search",@"search"]}}));
     assert(WUValidMD5(a)); assert(!WUValidMD5(@"bad")); assert(!WUValidMD5(@"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
     NSArray *ids=@[a,@"custom_emoticon_pid",b];
@@ -39,5 +40,5 @@ int main(void) { @autoreleasepool {
     assert([WUToolbarActions(@[@"search",@"autoReply",@"stats",@"search",@"settings"]) isEqual:(@[@"search",@"stats",@"settings"])]);
     assert([WUToolbarActions(@[@"repository",@"search",@"repository"]) isEqual:(@[@"repository",@"search"])]);
     assert(WUToolbarActions(NSNull.null).count==0);
-    puts("GroupLogic: 34 native assertions passed (filter, placeholder, deletion, isolation, validation, manual toolbar allowlist)");
+    puts("GroupLogic: 35 native assertions passed (filter, placeholder, deletion, isolation, validation, manual toolbar allowlist)");
 } return 0; }

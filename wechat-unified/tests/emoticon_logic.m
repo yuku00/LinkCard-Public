@@ -8,10 +8,14 @@ static NSData *Image(NSString *type, NSUInteger frames) {
     unsigned char pixel[]={255,0,0,255,0,255,0,255,0,0,255,255,255,255,255,255};
     CGColorSpaceRef color=CGColorSpaceCreateDeviceRGB();
     CGContextRef context=CGBitmapContextCreate(pixel,2,2,8,8,color,kCGImageAlphaPremultipliedLast);
-    CGImageRef image=CGBitmapContextCreateImage(context); NSMutableData *d=[NSMutableData data];
+    NSMutableData *d=[NSMutableData data];
     CGImageDestinationRef dest=CGImageDestinationCreateWithData((__bridge CFMutableDataRef)d,(__bridge CFStringRef)type,frames,NULL);
-    for(NSUInteger i=0;i<frames;i++) CGImageDestinationAddImage(dest,image,NULL);
-    CHECK(CGImageDestinationFinalize(dest)); CFRelease(dest); CGImageRelease(image); CGContextRelease(context); CGColorSpaceRelease(color); return d;
+    for(NSUInteger i=0;i<frames;i++) {
+        if(i) { CGContextSetRGBFillColor(context,0,0,1,1); CGContextFillRect(context,CGRectMake(0,0,2,2)); }
+        CGImageRef image=CGBitmapContextCreateImage(context);
+        CGImageDestinationAddImage(dest,image,(__bridge CFDictionaryRef)@{(id)kCGImagePropertyGIFDictionary:@{(id)kCGImagePropertyGIFDelayTime:@0.1}}); CGImageRelease(image);
+    }
+    CHECK(CGImageDestinationFinalize(dest)); CFRelease(dest); CGContextRelease(context); CGColorSpaceRelease(color); return d;
 }
 static void Drain(void) { for(int i=0;i<8;i++) [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.002]]; }
 static void Transaction(NSData *data, BOOL allow, BOOL success, BOOL invalidateBeforePermission, BOOL invalidateBeforeResult) {
@@ -42,6 +46,8 @@ int main(void) { @autoreleasepool {
     }
     CHECK([WUEmoticonType(gif) isEqual:@"com.compuserve.gif"]); CHECK([WUEmoticonType(png) isEqual:@"public.png"]); CHECK([WUEmoticonType(jpg) isEqual:@"public.jpeg"]);
     CGImageSourceRef source=CGImageSourceCreateWithData((__bridge CFDataRef)gif,NULL); CHECK(CGImageSourceGetCount(source)==2); CFRelease(source);
+    NSData *partialGIF=[[NSData alloc] initWithBase64EncodedString:@"R0lGODdhAgACAKIAAAAAAAAA//8AAAD/AP///wAAAAAAAAAAACH5BAUAAAUALAAAAAACAAIAAAMDKBOUACH5BAUAAAUALAEAAQACAAIAAAM7" options:0];
+    CHECK(!WUEmoticonType(partialGIF)); // ImageIO accepts frame one of this malformed two-frame stream; structural validation must reject it.
     CHECK(!WUEmoticonType(nil)); CHECK(!WUEmoticonType([NSData data])); CHECK(!WUEmoticonType([NSMutableData dataWithLength:20*1024*1024+1]));
     for(NSData *d in @[gif,png,jpg]) { CHECK(!WUEmoticonType([d subdataWithRange:NSMakeRange(0,d.length-1)])); NSMutableData *bad=[d mutableCopy]; ((unsigned char *)bad.mutableBytes)[0]=0; CHECK(!WUEmoticonType(bad)); }
     NSMutableData *crc=[png mutableCopy]; ((unsigned char *)crc.mutableBytes)[29]^=1; CHECK(!WUEmoticonType(crc));

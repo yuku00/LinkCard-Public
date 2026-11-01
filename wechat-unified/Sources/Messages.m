@@ -530,8 +530,10 @@ static void SaveSelectedEmoticon(UIViewController *owner) {
     if(!WUValidMD5(md5) || !Has(util,selector,"@",@[@"@",@"B",@"B"])) { Notice(owner,@"原表情路径接口或签名不匹配，当前不可用；不会使用缩略图替代。"); return; }
     id path=((id(*)(id,SEL,id,BOOL,BOOL))objc_msgSend)(util,NSSelectorFromString(selector),md5,NO,NO);
     if(![path isKindOfClass:NSString.class] || ![path length]) { Notice(owner,@"原表情文件尚未就绪；不会自动下载或改写原消息。"); return; }
-    NSDictionary *prior=objc_getAssociatedObject(owner,&emojiSaveKey);
-    if([prior[@"identity"] isEqual:identity] && [prior[@"generation"] unsignedIntegerValue]==gen) { Notice(owner,@"该选中表情本次页面已处理或正在保存。请先核对图库，不会重复提交。"); return; }
+    NSMutableDictionary *prior=objc_getAssociatedObject(owner,&emojiSaveKey);
+    if([prior[@"generation"] unsignedIntegerValue]!=gen) { prior=[NSMutableDictionary dictionaryWithObject:@(gen) forKey:@"generation"]; objc_setAssociatedObject(owner,&emojiSaveKey,prior,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+    if([prior[identity] unsignedIntegerValue]==gen) { Notice(owner,@"该选中表情本次页面已处理或正在保存。请先核对图库，不会重复提交。"); return; }
+    if(prior.count>=101) { Notice(owner,@"本页面保存操作已达100次，请核对图库后重新进入聊天。"); return; }
     __weak UIViewController *weak=owner;
     BOOL (^current)(void)=^BOOL{
         @try {
@@ -549,7 +551,10 @@ static void SaveSelectedEmoticon(UIViewController *owner) {
         [weak dismissViewControllerAnimated:YES completion:^{
             if(!current()) return;
             WUEmoticonSave *save=[WUEmoticonSave new];
-            objc_setAssociatedObject(weak,&emojiSaveKey,@{@"identity":identity,@"generation":@(gen),@"operation":save},OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            NSMutableDictionary *operations=objc_getAssociatedObject(weak,&emojiSaveKey);
+            if(!operations) { operations=[NSMutableDictionary dictionary]; objc_setAssociatedObject(weak,&emojiSaveKey,operations,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+            if([operations[identity] unsignedIntegerValue]==gen || operations.count>=101) return;
+            operations[identity]=@(gen);
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
                 NSData *data=WUEmoticonRead(path);
                 dispatch_async(dispatch_get_main_queue(),^{
