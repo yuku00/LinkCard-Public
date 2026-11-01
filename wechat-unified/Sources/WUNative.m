@@ -104,6 +104,8 @@ static BOOL PluginReplacement(IMP candidate) {
 static NSArray *SuspendForStartup(id receiver,SEL selector,IMP loader) {
     if(!NSThread.isMainThread || !startupBoundaryOpen || boundaryRunning ||
        !WUNativeEnabled(@"hotCompat") || !VerifiedBoundary(receiver,selector,loader)) return nil;
+    UIApplication *application=UIApplication.sharedApplication;
+    if(!application || application.applicationState!=UIApplicationStateInactive) return nil;
     NSMutableArray *suspended=[NSMutableArray array];
     @synchronized(WUNativeHookRecord.class) {
         for(WUNativeHookRecord *r in records) {

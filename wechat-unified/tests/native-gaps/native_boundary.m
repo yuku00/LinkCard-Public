@@ -71,9 +71,21 @@ int main(void) { @autoreleasepool {
     assert(method_getImplementation(class_getInstanceMethod(BoundaryTarget.class,@selector(value)))==(IMP)CachedOurs);
     Reset(); mode=4; [app loadUpdateAndExcute]; assert(originalSlot==base && [target value]==101);
     Reset(); TestConfig(@{}); [app loadUpdateAndExcute]; assert(firstPrevious==(IMP)Ours && originalSlot==base && [target value]==121);
-    Reset(); dispatch_sync(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT,0), ^{ [app loadUpdateAndExcute]; });
+    Reset();
+    // dispatch_sync(global) may execute inline on the caller's main thread.
+    // Use a real asynchronously scheduled worker and assert the thread condition.
+    dispatch_semaphore_t finished=dispatch_semaphore_create(0);
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT,0), ^{
+        assert(!NSThread.isMainThread);
+        [app loadUpdateAndExcute];
+        dispatch_semaphore_signal(finished);
+    });
+    assert(dispatch_semaphore_wait(finished,dispatch_time(DISPATCH_TIME_NOW,5ull*NSEC_PER_SEC))==0);
     assert(firstPrevious==(IMP)Ours && originalSlot==base && [target value]==121);
-    Reset(); [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+    Reset(); UIApplication.sharedApplication.applicationState=UIApplicationStateActive;
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil]; TestDrainAsync();
     [app loadUpdateAndExcute]; assert(firstPrevious==(IMP)Ours && originalSlot==base && [target value]==121);
+    Reset(); UIApplication.sharedApplication.applicationState=UIApplicationStateInactive;
+    [app loadUpdateAndExcute]; assert(firstPrevious==(IMP)Ours && originalSlot==base && [target value]==121); // Startup cannot reopen after activation.
     puts("PASS production suspend-before/load/rebase-before-resume: actual new patch calls old host, no recursion; nested/BOOL/throw/config/off/foreign/untrusted/startup-only cases");
 } return 0; }
