@@ -1,0 +1,28 @@
+name: WebClip C container permission probe build4
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probes:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build single C probe and verify signing
+        run: |
+          brew install ldid
+          brew info --json=v2 ldid > WebClipManager/Diagnostics/StartupProbeC/ldid-provenance.json
+          python3 WebClipManager/Diagnostics/StartupProbeC/build.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WebClip-StartupProbe-C-build4
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            WebClipManager/Diagnostics/StartupProbeC/out/*.ipa
+            WebClipManager/Diagnostics/StartupProbeC/out/*.sha256
+            WebClipManager/Diagnostics/StartupProbeC/out/*.plist
+            WebClipManager/Diagnostics/StartupProbeC/out/*.txt
+            WebClipManager/Diagnostics/StartupProbeC/out/verification.json
+            WebClipManager/Diagnostics/StartupProbeC/ldid-provenance.json
