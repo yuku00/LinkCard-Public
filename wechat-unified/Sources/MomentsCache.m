@@ -15,7 +15,8 @@ static BOOL PublicItem(id item) {
         @try { if(((BOOL(*)(id,SEL))objc_msgSend)(item,s)) return NO; } @catch(NSException *e) { return NO; }
     } return YES;
 }
-static NSString *lastError;
+static NSString *lastError, *lastErrorAccount;
+static void SetError(NSString *account, NSError *error) { lastErrorAccount=[account copy]; lastError=error.localizedDescription; }
 static NSMutableSet *pending;
 // Called only for host-provided entries. No fetch, no timeline mutation, no missing-page inference.
 void WUMomentsCacheObserveHost(id item) {
@@ -37,11 +38,11 @@ void WUMomentsCacheObserveHost(id item) {
     dispatch_async(dispatch_get_main_queue(),^{
         [pending removeObject:key]; if(!Allowed(a,user,g)) return;
         NSError *error=nil; NSDictionary *row=WUMCacheObserve(Root(@"Text"),a,n,NSDate.date.timeIntervalSince1970,&error);
-        if(!row) { lastError=error.localizedDescription; return; }
+        if(!row) { SetError(a,error); return; }
         NSArray *old=WUDraftMediaLoad(Root(@"Media"),a,&error);
-        if(!old) { lastError=error.localizedDescription; return; }
+        if(!old) { SetError(a,error); return; }
         BOOL exists=NO; for(NSDictionary *r in old) if([r[@"id"] isEqual:row[@"id"]]) exists=YES;
-        if(sources.count && !exists && Allowed(a,user,g) && !WUDraftMediaPut(Root(@"Media"),a,row[@"id"],@"曾见朋友圈图片",@"images",sources,&error)) lastError=error.localizedDescription;
+        if(sources.count && !exists && Allowed(a,user,g) && !WUDraftMediaPut(Root(@"Media"),a,row[@"id"],@"曾见朋友圈图片",@"images",sources,&error)) SetError(a,error);
     });
 }
 static IMP updatedObjects,updatedNumbers,homepageData;
@@ -62,6 +63,13 @@ void WUInstallMomentsCache(void) {
     NSString *s=@"onDataUpdated:maxItemID:minItemID:reqFirstPageMd5:"; Method m=class_getInstanceMethod(NSClassFromString(@"WCHomepageMgr"),NSSelectorFromString(s));
     if(WUMatches(m,"v",@[@"@",@"@",@"@",@"@"])) WUHook(@"WCHomepageMgr",s,NO,"v",@[@"@",@"@",@"@",@"@"],(IMP)UpdatedObjects,&updatedObjects);
     else if(WUMatches(m,"v",@[@"@",@"Q",@"Q",@"@"])) WUHook(@"WCHomepageMgr",s,NO,"v",@[@"@",@"Q",@"Q",@"@"],(IMP)UpdatedNumbers,&updatedNumbers);
+}
+static BOOL Available(void) {
+    if(!homepageData) return NO; Class c=NSClassFromString(@"WCDataItem");
+    for(NSString *name in @[@"username",@"contentDesc"]) if(!WUMatches(class_getInstanceMethod(c,NSSelectorFromString(name)),"@",@[])) return NO;
+    Method tid=class_getInstanceMethod(c,NSSelectorFromString(@"tid")); if(!WUMatches(tid,"@",@[]) && !WUMatches(tid,"Q",@[])) return NO;
+    for(NSString *name in @[@"isPrivate",@"exceedsVisibleTimeRange"]) { Method m=class_getInstanceMethod(c,NSSelectorFromString(name)); if(!WUMatches(m,"B",@[]) && !WUMatches(m,"c",@[])) return NO; }
+    return YES;
 }
 static void Notice(UIViewController *v, NSString *s) { UIAlertController *a=[UIAlertController alertControllerWithTitle:@"朋友圈本地缓存" message:s preferredStyle:UIAlertControllerStyleAlert]; [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]]; [v presentViewController:a animated:YES completion:nil]; }
 @interface WUMCacheBrowser : UITableViewController
@@ -110,24 +118,27 @@ static void Notice(UIViewController *v, NSString *s) { UIAlertController *a=[UIA
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
 - (void)hide { self.rows=@[]; [self.tableView reloadData]; [self.navigationController popToRootViewControllerAnimated:NO]; }
 - (void)viewWillAppear:(BOOL)animated { [super viewWillAppear:animated]; [self reload]; }
-- (void)reload { if(![self current]) { self.rows=@[]; [self.tableView reloadData]; return; } NSError *e=nil; self.rows=WUMCacheLoad(Root(@"Text"),self.account,&e); if(e) lastError=e.localizedDescription; [self.tableView reloadData]; }
+- (void)reload { if(![self current]) { self.rows=@[]; [self.tableView reloadData]; return; } NSError *e=nil; self.rows=WUMCacheLoad(Root(@"Text"),self.account,&e); if(e) SetError(self.account,e); [self.tableView reloadData]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 2; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?1:self.rows.count; }
-- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { if(s!=0) return nil; return [NSString stringWithFormat:@"仅缓存手动访问时宿主已提供的条目。曾见内容≠服务器当前内容，不判定真实删除。上限200条/正文索引1MiB；图片最多9张、每张8MiB、账号媒体512MiB。评论/视频保存未实现。清理仅自有索引，不回收不可变媒体文件。%@",lastError?:@""]; }
+- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { if(s!=0) return nil; return [NSString stringWithFormat:@"仅缓存手动访问时宿主已提供的条目。曾见内容≠服务器当前内容，不判定真实删除。上限200条/正文索引1MiB；图片最多9张、每张8MiB、账号媒体512MiB。评论/视频保存未实现。清理仅自有索引，不回收不可变媒体文件。%@",[lastErrorAccount isEqual:self.account]?(lastError?:@""):@""]; }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.numberOfLines=2; c.detailTextLabel.numberOfLines=2;
     if(p.section==0) { c.textLabel.text=@"按保留天数安全清理（保留收藏）"; NSDictionary *o=Options(self.account); c.detailTextLabel.text=[NSString stringWithFormat:@"缓存%@ · 监控%lu人 · 保留%@天",[o[@"enabled"] boolValue]?@"开启":@"关闭",(unsigned long)[o[@"monitor"] count],o[@"days"]]; }
-    else { NSDictionary *r=self.rows[p.row]; c.textLabel.text=[NSString stringWithFormat:@"%@%@",[r[@"favorite"] boolValue]?@"★ ":@"",r[@"username"]]; c.detailTextLabel.text=[@"曾见内容 · " stringByAppendingString:r[@"text"]]; c.accessoryType=UITableViewCellAccessoryDisclosureIndicator; } return c;
+    else { NSDictionary *r=self.rows[p.row]; c.textLabel.text=[NSString stringWithFormat:@"%@%@",[r[@"favorite"] boolValue]?@"★ ":@"",r[@"username"]]; c.detailTextLabel.text=[@"曾见内容 · " stringByAppendingString:r[@"text"]]; c.accessoryType=UITableViewCellAccessoryDisclosureIndicator; } if(p.section==0 && !Available()) c.detailTextLabel.text=[c.detailTextLabel.text stringByAppendingString:@" · 宿主接口不可用"];
+    return c;
 }
 - (void)configure {
     if(![self current]) return; NSDictionary *o=Options(self.account);
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"本账号缓存设置" message:@"仅监控列表中的账号标识（每行一个，排除优先）；不自动抓取任何联系人。关闭仅停止采集，已有缓存仍可浏览。" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"本账号缓存设置" message:@"仅监控列表中的账号标识（逗号分隔，排除优先）；不自动抓联系人。总开关须开启；配置/后台返回后请退出重开联系人朋友圈。关闭仅停止采集，已有缓存可浏览。" preferredStyle:UIAlertControllerStyleAlert];
     [a addTextFieldWithConfigurationHandler:^(UITextField *f){ f.placeholder=@"监控账号，以逗号分隔"; f.text=[o[@"monitor"] componentsJoinedByString:@","]; }];
     [a addTextFieldWithConfigurationHandler:^(UITextField *f){ f.placeholder=@"排除账号，以逗号分隔"; f.text=[o[@"exclude"] componentsJoinedByString:@","]; }];
     [a addTextFieldWithConfigurationHandler:^(UITextField *f){ f.placeholder=@"保留天数 1–3650"; f.keyboardType=UIKeyboardTypeNumberPad; f.text=[o[@"days"] stringValue]; }];
     __weak WUMCacheBrowser *weak=self;
     for(NSNumber *enabled in @[@YES,@NO]) [a addAction:[UIAlertAction actionWithTitle:enabled.boolValue?@"保存并启用":@"保存并关闭" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){
-        WUMCacheBrowser *v=weak; if(![v current]) return; NSMutableDictionary *next=[o mutableCopy]; next[@"enabled"]=enabled;
+        WUMCacheBrowser *v=weak; if(![v current]) return;
+        if(enabled.boolValue && !Available()) { Notice(v,@"本宿主缺少已核验的主页/条目接口，未启用；原动态不受影响。已有缓存仍可浏览。"); return; }
+        NSMutableDictionary *next=[o mutableCopy]; next[@"enabled"]=enabled;
         for(NSUInteger i=0;i<2;i++) { NSMutableArray *users=[NSMutableArray array]; for(NSString *u in [a.textFields[i].text componentsSeparatedByCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@",，\n"]]) { NSString *s=[u stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]; if(s.length && ![users containsObject:s]) [users addObject:s]; } next[i==0?@"monitor":@"exclude"]=users; }
         NSString *days=a.textFields[2].text; if(!days.length || [days rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"0123456789"].invertedSet].location!=NSNotFound) { Notice(v,@"保留天数无效，未保存"); return; } next[@"days"]=@([days integerValue]);
         if(!WUSaveAccountOption(v.account,@"momentsCache",next)) Notice(v,@"保存失败/配置超限，原配置保留");

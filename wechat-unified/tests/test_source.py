@@ -175,7 +175,7 @@ class Guardrails(unittest.TestCase):
     def test_moments_cache_real_host_safe_local_only(self):
         ui=(ROOT/'Sources/MomentsCache.m').read_text()
         logic=(ROOT/'Sources/MomentsCacheLogic.m').read_text()
-        for required in ['getHomepageData', 'onDataUpdated:maxItemID:minItemID:reqFirstPageMd5:', 'Bound(o)', 'WUContextGeneration()', 'UIApplicationStateActive', 'pathForExistData', 'WUDraftMediaPut', 'WUDraftMediaURLs', 'pending.count>=32', 'isPrivate', 'exceedsVisibleTimeRange', '曾见内容', '评论保存/合并未实现']:
+        for required in ['getHomepageData', 'onDataUpdated:maxItemID:minItemID:reqFirstPageMd5:', 'Bound(o)', 'WUContextGeneration()', 'UIApplicationStateActive', 'pathForExistData', 'WUDraftMediaPut', 'WUDraftMediaURLs', 'pending.count>=32', 'isPrivate', 'exceedsVisibleTimeRange', '曾见内容', '评论保存/合并未实现', 'lastErrorAccount isEqual:self.account', 'enabled.boolValue && !Available()', '退出重开联系人朋友圈']:
             self.assertIn(required,ui)
         for forbidden in ['NSTimer', 'setM_cache', 'setValue:', 'deleteDataItem:', 'removeItemAt', 'unlink(', 'NSKeyedArchiver', 'NSURLSession']:
             self.assertNotIn(forbidden,ui+logic)
