@@ -41,7 +41,7 @@
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [a addAction:[UIAlertAction actionWithTitle:@"关闭并复位" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){
         BOOL ok=WUNativeResetGuard();
-        [a dismissViewControllerAnimated:NO completion:^{
+        [weakAlert dismissViewControllerAnimated:NO completion:^{
             UIAlertController *result=[UIAlertController alertControllerWithTitle:ok?@"已复位":@"未复位" message:ok?WUNativeGuardStatus():@"守卫尚未接入，或持久保存失败。保持原恢复路径，不恢复Hook。" preferredStyle:UIAlertControllerStyleAlert];
             [result addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]];
             [self presentViewController:result animated:YES completion:nil];
@@ -60,6 +60,4 @@
 void WUShowNativeSettings(UIViewController *owner) {
     if(!owner.navigationController) return;
     [owner.navigationController pushViewController:[[WUNativeSettings alloc] initWithStyle:UITableViewStyleInsetGrouped] animated:YES];
-}
-setGrouped] animated:YES];
 }
