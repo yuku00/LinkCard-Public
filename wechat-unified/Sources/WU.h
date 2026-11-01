@@ -29,6 +29,8 @@ void WUShowThemes(UIViewController *owner);
 void WUStyleSettingSwitches(UIViewController *controller);
 NSString *WUCurrentAccount(void);
 NSUInteger WUContextGeneration(void);
+// Background read only; does not call any host object or refresh account identity.
+NSUInteger WUContextGenerationSnapshot(void);
 NSDictionary *WUAccountOptions(NSString *account);
 BOOL WUSaveAccountOption(NSString *account, NSString *key, id value);
 void WUInstallGroups(void);

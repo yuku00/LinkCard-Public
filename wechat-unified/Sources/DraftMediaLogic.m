@@ -70,7 +70,11 @@ NSArray<NSURL *> *WUDraftMediaURLs(NSURL *root, NSString *a, NSDictionary *row, 
         } return urls;
     }
 }
+NSData *WUDraftMediaReadSource(NSURL *url, NSUInteger limit) { return ReadSource(url,MIN(limit,(NSUInteger)64*1024*1024)); }
 BOOL WUDraftMediaPut(NSURL *root, NSString *a, NSString *uuid, NSString *text, NSString *kind, NSArray *sources, NSError **e) {
+    return WUDraftMediaPutChecked(root,a,uuid,text,kind,sources,nil,e);
+}
+BOOL WUDraftMediaPutChecked(NSURL *root, NSString *a, NSString *uuid, NSString *text, NSString *kind, NSArray *sources, BOOL (^valid)(void), NSError **e) {
     @synchronized(NSFileManager.defaultManager) {
         BOOL images=[kind isEqual:@"images"], video=[kind isEqual:@"video-backup"];
         if(!UUID(uuid) || !String(text,10000) || (!images&&!video) || ![sources isKindOfClass:NSArray.class] || !sources.count || sources.count>(images?9:1)) return Fail(e,@"媒体参数无效");
@@ -81,6 +85,8 @@ BOOL WUDraftMediaPut(NSURL *root, NSString *a, NSString *uuid, NSString *text, N
         NSArray *files=[NSFileManager.defaultManager contentsOfDirectoryAtURL:d includingPropertiesForKeys:nil options:0 error:e]; if(!files) return NO;
         unsigned long long used=0; if(files.count+sources.count+1>4096) return Fail(e,@"保留资源数量已满，未自动删除");
         for(NSURL *u in files) { struct stat st; if(lstat(u.path.fileSystemRepresentation,&st)!=0 || !S_ISREG(st.st_mode)) return Fail(e,@"自有目录存在非普通文件，拒绝写入"); used+=(unsigned long long)st.st_size; if(used>512ULL*1024*1024) return Fail(e,@"账号保留资源已满，未自动删除"); }
+        // Checked callers need a durable empty index before copying, so interrupted first writes remain reclaimable.
+        if(valid && (!valid() || !Save(d,a,old,e))) return Fail(e,@"提交已失效或初始媒体索引无法保存");
         NSMutableArray *resources=[NSMutableArray array];
         for(id source in sources) {
             { // NSError ** writeback must outlive this iteration; no nested autorelease pool.
@@ -102,6 +108,7 @@ BOOL WUDraftMediaPut(NSURL *root, NSString *a, NSString *uuid, NSString *text, N
         if(index==NSNotFound) [rows insertObject:row atIndex:0]; else rows[index]=row;
         // Index is the commit point. Failed/new/old resources are retained under a hard quota.
         // No unlink/sweep means shared references and active host editors remain protected.
+        if(valid && !valid()) return Fail(e,@"账号或代次已失效；复制资源未提交，等待安全回收");
         return Save(d,a,rows,e);
     }
 }

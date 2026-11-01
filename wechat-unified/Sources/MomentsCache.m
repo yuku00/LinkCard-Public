@@ -2,7 +2,11 @@
 #import "MomentsCacheLogic.h"
 #import "DraftMediaLogic.h"
 #import <ImageIO/ImageIO.h>
-static NSURL *Root(NSString *leaf) { return [[NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject URLByAppendingPathComponent:[@"WeChatUnified/MomentsCache/" stringByAppendingString:leaf] isDirectory:YES].URLByResolvingSymlinksInPath; }
+static NSURL *Root(NSString *leaf) { return [[NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject.URLByResolvingSymlinksInPath URLByAppendingPathComponent:[@"WeChatUnified/MomentsCache/" stringByAppendingString:leaf] isDirectory:YES].URLByStandardizingPath; }
+static dispatch_queue_t IO(void) { static dispatch_queue_t q; static dispatch_once_t once; dispatch_once(&once,^{ q=dispatch_queue_create("org.wechatunified.moments-cache.io",DISPATCH_QUEUE_SERIAL); }); return q; }
+// Accessed only on IO(); a lease keeps its index references alive until decoding/viewing ends.
+static NSMutableDictionary *leases;
+static NSSet *Leased(NSString *account) { NSMutableSet *ids=[NSMutableSet set]; for(NSArray *value in leases.allValues) if([value[0] isEqual:account]) [ids addObject:value[1]]; return ids; }
 static NSDictionary *Options(NSString *a) { return WUAccountOptions(a)[@"momentsCache"]?:@{@"enabled":@NO,@"monitor":@[],@"exclude":@[],@"days":@30}; }
 static BOOL Current(NSString *a, NSUInteger g) { return NSThread.isMainThread && a.length && [a isEqual:WUCurrentAccount()] && g==WUContextGeneration() && UIApplication.sharedApplication.applicationState==UIApplicationStateActive; }
 static BOOL Allowed(NSString *a, NSString *user, NSUInteger g) { NSDictionary *o=Options(a); return Current(a,g) && [WUValue(@"enabled") boolValue] && [o[@"enabled"] boolValue] && [o[@"monitor"] containsObject:user] && ![o[@"exclude"] containsObject:user]; }
@@ -24,26 +28,35 @@ void WUMomentsCacheObserveHost(id item) {
     if(!PublicItem(item) || !WUMatches(class_getInstanceMethod([item class],NSSelectorFromString(@"contentDesc")),"@",@[])) return;
     NSString *a=WUCurrentAccount(); NSUInteger g=WUContextGeneration();
     NSString *user=Object(item,@"username"); if(![user isKindOfClass:NSString.class] || !Allowed(a,user,g)) return;
+    user=[user copy]; a=[a copy];
     NSDictionary *n=WUMCacheNormalize(Tid(item),user,Object(item,@"contentDesc")); if(!n) return;
     if(!pending) pending=[NSMutableSet set]; NSArray *key=@[a,@(g),user,n[@"tid"]]; if(pending.count>=32 || [pending containsObject:key]) return;
     NSMutableArray *sources=[NSMutableArray array]; id media=Object(item,@"mediaList");
     if([media isKindOfClass:NSArray.class] && [media count]<=9) for(id m in media) {
         id path=Object(m,@"pathForExistData"); if(![path isKindOfClass:NSString.class] || ![path isAbsolutePath]) continue;
-        // Existing local images only; a path is not a promise that the file survives copying.
-        NSURL *u=[NSURL fileURLWithPath:path]; NSDictionary *attrs=[NSFileManager.defaultManager attributesOfItemAtPath:path error:NULL];
-        if([attrs[NSFileSize] unsignedLongLongValue]>8*1024*1024) continue;
-        CGImageSourceRef image=CGImageSourceCreateWithURL((__bridge CFURLRef)u,NULL); if(image) { if(CGImageSourceGetCount(image)>0) [sources addObject:u]; CFRelease(image); }
+        // Main thread freezes only a path value, never retains a host media/model object.
+        [sources addObject:[NSURL fileURLWithPath:[path copy]]];
     }
-    [pending addObject:key];
-    dispatch_async(dispatch_get_main_queue(),^{
-        [pending removeObject:key]; if(!Allowed(a,user,g)) return;
-        NSError *error=nil; NSDictionary *row=WUMCacheObserve(Root(@"Text"),a,n,NSDate.date.timeIntervalSince1970,&error);
-        if(!row) { SetError(a,error); return; }
-        NSArray *old=WUDraftMediaLoad(Root(@"Media"),a,&error);
-        if(!old) { SetError(a,error); return; }
-        BOOL exists=NO; for(NSDictionary *r in old) if([r[@"id"] isEqual:row[@"id"]]) exists=YES;
-        if(sources.count && !exists && Allowed(a,user,g) && !WUDraftMediaPut(Root(@"Media"),a,row[@"id"],@"曾见朋友圈图片",@"images",sources,&error)) SetError(a,error);
-    });
+    [pending addObject:key]; NSArray *snapshot=[sources copy];
+    dispatch_async(IO(),^{ @autoreleasepool {
+        NSError *error=nil; NSMutableArray *images=[NSMutableArray array];
+        for(NSURL *url in snapshot) {
+            NSData *data=WUDraftMediaReadSource(url,8*1024*1024);
+            CGImageSourceRef source=data?CGImageSourceCreateWithData((__bridge CFDataRef)data,NULL):NULL;
+            NSDictionary *props=source?CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source,0,NULL)):nil;
+            uint64_t w=[props[(__bridge id)kCGImagePropertyPixelWidth] unsignedLongLongValue], h=[props[(__bridge id)kCGImagePropertyPixelHeight] unsignedLongLongValue];
+            BOOL ok=source && CGImageSourceGetCount(source)==1 && w && h && w<=16000000 && h<=16000000 && w*h<=16000000 && CGImageSourceGetStatus(source)==kCGImageStatusComplete;
+            CGImageRef check=ok?CGImageSourceCreateThumbnailAtIndex(source,0,(__bridge CFDictionaryRef)@{(__bridge id)kCGImageSourceCreateThumbnailFromImageAlways:@YES,(__bridge id)kCGImageSourceThumbnailMaxPixelSize:@1200}):NULL;
+            if(source) CFRelease(source); if(check) CGImageRelease(check);
+            if(!ok || !check) { error=[NSError errorWithDomain:@"WUMomentsCache" code:2 userInfo:@{NSLocalizedDescriptionKey:@"图片源消失、无效或超限；旧缓存保留，未提交"}]; break; }
+            [images addObject:data];
+        }
+        __block BOOL current=NO;
+        // Refresh host identity on main before taking any storage lock; commit uses atomic generation only.
+        dispatch_sync(dispatch_get_main_queue(),^{ current=Allowed(a,user,g); });
+        if(current && !error) WUMCacheStore(Root(@"Text"),Root(@"Media"),a,n,images,NSDate.date.timeIntervalSince1970,^BOOL{ return g==WUContextGenerationSnapshot(); },&error);
+        dispatch_async(dispatch_get_main_queue(),^{ [pending removeObject:key]; if(Current(a,g) && error) SetError(a,error); });
+    }});
 }
 static IMP updatedObjects,updatedNumbers,homepageData;
 static char bindingKey;
@@ -77,14 +90,19 @@ static void Notice(UIViewController *v, NSString *s) { UIAlertController *a=[UIA
 @property(nonatomic) NSUInteger generation;
 @property(nonatomic,strong) NSArray *rows;
 @property(nonatomic,strong) id backgroundObserver;
+@property(nonatomic) BOOL loading;
+@property(nonatomic) BOOL cleaning;
 - (BOOL)current;
 - (void)reload;
 @end
 @interface WUMCacheDetail : UIViewController
 @property(nonatomic,weak) WUMCacheBrowser *browser;
 @property(nonatomic,strong) NSDictionary *row;
+@property(nonatomic,copy) NSString *lease;
 @end
 @implementation WUMCacheDetail
+- (void)dealloc { NSString *token=self.lease; if(token) dispatch_async(IO(),^{ [leases removeObjectForKey:token]; }); }
+- (void)viewDidDisappear:(BOOL)animated { [super viewDidDisappear:animated]; if(self.isMovingFromParentViewController || !self.navigationController) { NSString *token=self.lease; self.lease=nil; if(token) dispatch_async(IO(),^{ [leases removeObjectForKey:token]; }); } }
 - (void)viewDidLoad {
     [super viewDidLoad]; self.title=@"曾见内容 · 非服务器当前内容"; self.view.backgroundColor=UIColor.systemBackgroundColor;
     if(![self.browser current]) return;
@@ -92,19 +110,36 @@ static void Notice(UIViewController *v, NSString *s) { UIAlertController *a=[UIA
     UIStackView *stack=[UIStackView new]; stack.axis=UILayoutConstraintAxisVertical; stack.spacing=12; stack.translatesAutoresizingMaskIntoConstraints=NO; [scroll addSubview:stack];
     [NSLayoutConstraint activateConstraints:@[[stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:16],[stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-16],[stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:16],[stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-16],[stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-32]]];
     UILabel *text=[UILabel new]; text.numberOfLines=0; text.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; text.text=[NSString stringWithFormat:@"%@\n\n%@\n\n曾见内容，不证明真实删除；无法恢复未收到内容。评论保存/合并未实现。",self.row[@"username"],self.row[@"text"]]; [stack addArrangedSubview:text];
-    NSError *error=nil; NSArray *media=WUDraftMediaLoad(Root(@"Media"),self.browser.account,&error); BOOL shown=NO;
-    for(NSDictionary *r in media) if([r[@"id"] isEqual:self.row[@"id"]]) {
-        NSArray *urls=WUDraftMediaURLs(Root(@"Media"),self.browser.account,r,&error);
-        for(NSURL *u in urls) {
-            CGImageSourceRef source=CGImageSourceCreateWithURL((__bridge CFURLRef)u,NULL); if(!source) continue;
-            CGImageRef image=CGImageSourceCreateThumbnailAtIndex(source,0,(__bridge CFDictionaryRef)@{(__bridge id)kCGImageSourceCreateThumbnailFromImageAlways:@YES,(__bridge id)kCGImageSourceThumbnailMaxPixelSize:@1200,(__bridge id)kCGImageSourceCreateThumbnailWithTransform:@YES}); CFRelease(source); if(!image) continue;
-            UIImageView *view=[[UIImageView alloc] initWithImage:[UIImage imageWithCGImage:image]]; CGImageRelease(image); view.contentMode=UIViewContentModeScaleAspectFit; [view.heightAnchor constraintEqualToConstant:280].active=YES; [stack addArrangedSubview:view]; shown=YES;
+    NSString *account=[self.browser.account copy], *uuid=self.row[@"id"], *token=NSUUID.UUID.UUIDString; NSUInteger generation=self.browser.generation; self.lease=token;
+    __weak WUMCacheDetail *weak=self;
+    dispatch_async(IO(),^{ @autoreleasepool {
+        if(!leases) leases=[NSMutableDictionary dictionary]; leases[token]=@[account,uuid];
+        NSError *error=nil; NSMutableArray *images=[NSMutableArray array]; NSArray *media=WUDraftMediaLoad(Root(@"Media"),account,&error);
+        for(NSDictionary *r in media) if([r[@"id"] isEqual:uuid]) {
+            NSArray *urls=WUDraftMediaURLs(Root(@"Media"),account,r,&error);
+            for(NSURL *u in urls) {
+                NSData *data=WUDraftMediaReadSource(u,8*1024*1024);
+                CGImageSourceRef source=data?CGImageSourceCreateWithData((__bridge CFDataRef)data,NULL):NULL; if(!source) continue;
+                CGImageRef image=CGImageSourceCreateThumbnailAtIndex(source,0,(__bridge CFDictionaryRef)@{(__bridge id)kCGImageSourceCreateThumbnailFromImageAlways:@YES,(__bridge id)kCGImageSourceThumbnailMaxPixelSize:@1200,(__bridge id)kCGImageSourceCreateThumbnailWithTransform:@YES}); CFRelease(source); if(!image) continue;
+                [images addObject:[UIImage imageWithCGImage:image]]; CGImageRelease(image);
+            }
         }
-    }
-    if(!shown) { UILabel *hint=[UILabel new]; hint.numberOfLines=0; hint.text=error.localizedDescription?:@"无已校验本地图片。未下载、未复制的视频/媒体不声称可恢复。"; [stack addArrangedSubview:hint]; }
+        dispatch_async(dispatch_get_main_queue(),^{
+            WUMCacheDetail *v=weak; if(!v || !Current(account,generation) || ![v.lease isEqual:token]) return;
+            for(UIImage *image in images) { UIImageView *view=[[UIImageView alloc] initWithImage:image]; view.contentMode=UIViewContentModeScaleAspectFit; [view.heightAnchor constraintEqualToConstant:280].active=YES; [stack addArrangedSubview:view]; }
+            if(!images.count) { UILabel *hint=[UILabel new]; hint.numberOfLines=0; hint.text=error.localizedDescription?:@"无已校验本地图片。未下载、未复制的视频/媒体不声称可恢复。"; [stack addArrangedSubview:hint]; }
+        });
+    }});
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:[self.row[@"favorite"] boolValue]?@"取消收藏":@"收藏" style:UIBarButtonItemStylePlain target:self action:@selector(favorite)];
 }
-- (void)favorite { if(![self.browser current]) return; NSError *e=nil; if(!WUMCacheFavorite(Root(@"Text"),self.browser.account,self.row[@"id"],&e)) { Notice(self,e.localizedDescription); return; } [self.browser reload]; [self.navigationController popViewControllerAnimated:YES]; }
+- (void)favorite {
+    if(![self.browser current] || !self.navigationItem.rightBarButtonItem.enabled) return;
+    self.navigationItem.rightBarButtonItem.enabled=NO; NSString *account=[self.browser.account copy], *uuid=self.row[@"id"]; NSUInteger generation=self.browser.generation; __weak WUMCacheDetail *weak=self;
+    dispatch_async(IO(),^{
+        NSError *error=nil; BOOL ok=WUMCacheFavoriteChecked(Root(@"Text"),account,uuid,^BOOL{ return generation==WUContextGenerationSnapshot(); },&error);
+        dispatch_async(dispatch_get_main_queue(),^{ WUMCacheDetail *v=weak; if(!v || !Current(account,generation)) return; v.navigationItem.rightBarButtonItem.enabled=YES; if(!ok) { Notice(v,error.localizedDescription); return; } [v.browser reload]; [v.navigationController popViewControllerAnimated:YES]; });
+    });
+}
 @end
 @implementation WUMCacheBrowser
 - (BOOL)current { return Current(self.account,self.generation); }
@@ -118,10 +153,17 @@ static void Notice(UIViewController *v, NSString *s) { UIAlertController *a=[UIA
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
 - (void)hide { self.rows=@[]; [self.tableView reloadData]; [self.navigationController popToRootViewControllerAnimated:NO]; }
 - (void)viewWillAppear:(BOOL)animated { [super viewWillAppear:animated]; [self reload]; }
-- (void)reload { if(![self current]) { self.rows=@[]; [self.tableView reloadData]; return; } NSError *e=nil; self.rows=WUMCacheLoad(Root(@"Text"),self.account,&e); if(e) SetError(self.account,e); [self.tableView reloadData]; }
+- (void)reload {
+    if(![self current]) { self.rows=@[]; [self.tableView reloadData]; return; }
+    if(self.loading) return; self.loading=YES; NSString *account=[self.account copy]; NSUInteger generation=self.generation; __weak WUMCacheBrowser *weak=self;
+    dispatch_async(IO(),^{
+        NSError *error=nil; NSArray *rows=WUMCacheLoad(Root(@"Text"),account,&error);
+        dispatch_async(dispatch_get_main_queue(),^{ WUMCacheBrowser *v=weak; if(!v) return; v.loading=NO; if(!Current(account,generation)) { if([v current]) [v reload]; return; } v.rows=rows?:@[]; if(error) SetError(account,error); [v.tableView reloadData]; });
+    });
+}
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 2; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?1:self.rows.count; }
-- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { if(s!=0) return nil; return [NSString stringWithFormat:@"仅缓存手动访问时宿主已提供的条目。曾见内容≠服务器当前内容，不判定真实删除。上限200条/正文索引1MiB；图片最多9张、每张8MiB、账号媒体512MiB。评论/视频保存未实现。清理仅自有索引，不回收不可变媒体文件。%@",[lastErrorAccount isEqual:self.account]?(lastError?:@""):@""]; }
+- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { if(s!=0) return nil; return [NSString stringWithFormat:@"仅缓存手动访问时宿主已提供的条目。曾见内容≠服务器当前内容，不判定真实删除。上限200条/正文索引1MiB；图片最多9张、每张8MiB、账号媒体512MiB。评论/视频保存未实现。清理仅回收本模块无引用且无浏览租约的自有图片；串行复制在途时不会清理。%@",[lastErrorAccount isEqual:self.account]?(lastError?:@""):@""]; }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.numberOfLines=2; c.detailTextLabel.numberOfLines=2;
     if(p.section==0) { c.textLabel.text=@"按保留天数安全清理（保留收藏）"; NSDictionary *o=Options(self.account); c.detailTextLabel.text=[NSString stringWithFormat:@"缓存%@ · 监控%lu人 · 保留%@天",[o[@"enabled"] boolValue]?@"开启":@"关闭",(unsigned long)[o[@"monitor"] count],o[@"days"]]; }
@@ -149,18 +191,20 @@ static void Notice(UIViewController *v, NSString *s) { UIAlertController *a=[UIA
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p {
     [t deselectRowAtIndexPath:p animated:YES]; if(![self current]) { [self reload]; return; }
     if(p.section==1) { WUMCacheDetail *v=[WUMCacheDetail new]; v.row=self.rows[p.row]; v.browser=self; [self.navigationController pushViewController:v animated:YES]; return; }
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"仅清理本账号过期缓存索引？" message:@"收藏保留。不会删除宿主动态、源文件或共享媒体。坏索引禁止清理；不可变文件暂不回收。" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"清理本账号过期缓存及无引用图片？" message:@"收藏保留。先提交索引和可重试回收计划，再删除本模块自有无引用文件；共享索引引用和浏览租约保留。不会删除宿主或草稿文件，坏索引禁止回收。" preferredStyle:UIAlertControllerStyleAlert];
     __weak WUMCacheBrowser *weak=self;
-    [a addAction:[UIAlertAction actionWithTitle:@"清理本地索引" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){
-        WUMCacheBrowser *v=weak; if(![v current]) return; NSError *e=nil;
-        @synchronized(NSFileManager.defaultManager) {
-            NSArray *media=WUDraftMediaLoad(Root(@"Media"),v.account,&e);
-            if(!media || !WUMCacheClean(Root(@"Text"),v.account,[Options(v.account)[@"days"] unsignedIntegerValue],NSDate.date.timeIntervalSince1970,&e)) { Notice(v,e.localizedDescription); return; }
-            NSArray *kept=WUMCacheLoad(Root(@"Text"),v.account,&e); if(!kept) { Notice(v,e.localizedDescription); return; }
-            NSSet *ids=[NSSet setWithArray:[kept valueForKey:@"id"]];
-            for(NSDictionary *r in media) if(![ids containsObject:r[@"id"]] && !WUDraftMediaDelete(Root(@"Media"),v.account,r[@"id"],&e)) break;
-        }
-        if(e) Notice(v,e.localizedDescription); [v reload];
+    [a addAction:[UIAlertAction actionWithTitle:@"清理本地缓存" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){
+        WUMCacheBrowser *v=weak; if(![v current] || v.cleaning) return; v.cleaning=YES;
+        NSString *account=[v.account copy]; NSUInteger generation=v.generation, days=[Options(account)[@"days"] unsignedIntegerValue];
+        dispatch_async(IO(),^{
+            NSError *error=nil;
+            NSDictionary *result=WUMCacheReclaim(Root(@"Text"),Root(@"Media"),account,days,NSDate.date.timeIntervalSince1970,Leased(account),^BOOL{ return generation==WUContextGenerationSnapshot(); },&error);
+            dispatch_async(dispatch_get_main_queue(),^{
+                WUMCacheBrowser *owner=weak; if(!owner) return; owner.cleaning=NO; if(!Current(account,generation)) return;
+                NSString *message=[NSString stringWithFormat:@"已删除自有媒体 %@ 个，解除占用约 %@ 字节（文件已分配块统计，非设备可用空间保证）。%@",result[@"files"]?:@0,result[@"bytes"]?:@0,error?[NSString stringWithFormat:@"部分步骤失败，可重试：%@",error.localizedDescription]:@"收藏、索引共享引用及浏览中资源保留。"];
+                Notice(owner,message); [owner reload];
+            });
+        });
     }]]; [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]]; [self presentViewController:a animated:YES completion:nil];
 }
 @end

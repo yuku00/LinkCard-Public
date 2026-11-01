@@ -175,9 +175,9 @@ class Guardrails(unittest.TestCase):
     def test_moments_cache_real_host_safe_local_only(self):
         ui=(ROOT/'Sources/MomentsCache.m').read_text()
         logic=(ROOT/'Sources/MomentsCacheLogic.m').read_text()
-        for required in ['getHomepageData', 'onDataUpdated:maxItemID:minItemID:reqFirstPageMd5:', 'Bound(o)', 'WUContextGeneration()', 'UIApplicationStateActive', 'pathForExistData', 'WUDraftMediaPut', 'WUDraftMediaURLs', 'pending.count>=32', 'isPrivate', 'exceedsVisibleTimeRange', '曾见内容', '评论保存/合并未实现', 'lastErrorAccount isEqual:self.account', 'enabled.boolValue && !Available()', '退出重开联系人朋友圈']:
+        for required in ['getHomepageData', 'onDataUpdated:maxItemID:minItemID:reqFirstPageMd5:', 'Bound(o)', 'WUContextGeneration()', 'UIApplicationStateActive', 'pathForExistData', 'WUMCacheStore', 'WUDraftMediaURLs', 'pending.count>=32', 'isPrivate', 'exceedsVisibleTimeRange', '曾见内容', '评论保存/合并未实现', 'lastErrorAccount isEqual:self.account', 'enabled.boolValue && !Available()', '退出重开联系人朋友圈']:
             self.assertIn(required,ui)
-        for forbidden in ['NSTimer', 'setM_cache', 'setValue:', 'deleteDataItem:', 'removeItemAt', 'unlink(', 'NSKeyedArchiver', 'NSURLSession']:
+        for forbidden in ['NSTimer', 'setM_cache', 'setValue:', 'deleteDataItem:', 'removeItemAt', 'NSKeyedArchiver', 'NSURLSession']:
             self.assertNotIn(forbidden,ui+logic)
         self.assertIn('WUShowMomentsCache(self)',(ROOT/'Sources/Settings.m').read_text())
         self.assertIn('WUInstallMomentsCache();',(ROOT/'Sources/Core.m').read_text())
@@ -185,6 +185,22 @@ class Guardrails(unittest.TestCase):
         self.assertIn('WURepositorySave',logic)
         self.assertIn('if(!old) return NO',logic)
         self.assertIn('rows.count>=200',logic)
+    def test_moments_cache_background_and_owned_reclaim(self):
+        ui=(ROOT/'Sources/MomentsCache.m').read_text()
+        logic=(ROOT/'Sources/MomentsCacheLogic.m').read_text()
+        capture=ui.split('void WUMomentsCacheObserveHost')[1].split('static IMP')[0]
+        main=capture.split('dispatch_async(IO()')[0]
+        for operation in ['WUDraftMediaReadSource', 'CGImageSourceCreate', 'attributesOfItemAtPath', 'WUMCacheObserve(', 'WUDraftMediaPut']:
+            self.assertNotIn(operation,main)
+        for marker in ['DISPATCH_QUEUE_SERIAL','NSArray *snapshot=[sources copy]','WUContextGenerationSnapshot','leases[token]','Leased(account)','v.cleaning']:
+            self.assertIn(marker,ui)
+        for marker in ['OwnedDirectory','st.st_nlink!=1','reclaim.plist','NSSet *leasedIDs','referenced containsObject','NSDataWritingAtomic','st.st_blocks*512','unlink(u.path.fileSystemRepresentation)']:
+            self.assertIn(marker,logic)
+        self.assertNotIn('unlink(',ui)
+        self.assertNotIn('dispatch_sync',logic)
+        shared=(ROOT/'Sources/DraftMediaLogic.m').read_text()
+        self.assertIn('if(valid && !valid())',shared)
+        self.assertNotIn('unlink(',shared)
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()
         for word in ['未实现','无伪开关','便捷朋友圈','ActionBar','全部 AI','未执行']:

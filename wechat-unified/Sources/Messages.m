@@ -42,6 +42,7 @@ static NSString *Account(void) {
 }
 NSString *WUCurrentAccount(void) { @try { return Account(); } @catch(NSException *e) { return nil; } }
 NSUInteger WUContextGeneration(void) { (void)WUCurrentAccount(); return generation; }
+NSUInteger WUContextGenerationSnapshot(void) { return atomic_load(&generation); }
 static id Contact(id v) { return Obj(v,@"GetContact") ?: Obj(v,@"getChatContact"); }
 static NSString *Session(id v) { return Str(Contact(v),@"m_nsUsrName"); }
 NSString *WUChatSession(UIViewController *owner) { @try { return Session(owner); } @catch(NSException *e) { return nil; } }
