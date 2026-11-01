@@ -25,11 +25,11 @@ final class StartupViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         let title = UILabel()
-        title.text = "UIKit 首页 · build 8（恢复系统容器）"
+        title.text = "UIKit 首页 · build 9（保留系统 HOME）"
         title.font = .preferredFont(forTextStyle: .title2)
         title.numberOfLines = 0
         let detail = UILabel()
-        detail.text = "先采集并复制诊断，再打开主界面一次。\n诊断只查询自身权限和固定目录 open/元数据，不枚举目录或读取书签、备忘录内容。\n仅当前进程内存；重启后无法取得之前的崩溃日志。"
+        detail.text = "先采集并复制诊断，再打开主界面一次。\n诊断只查询自身权限和固定目录 open/元数据，不枚举目录或读取书签、备忘录内容。\n仅当前进程内存；重启后无法取得之前的崩溃日志。\n非容器下文件导入/导出禁用，不使用通用 Documents；主界面与诊断不受此限制。"
         detail.numberOfLines = 0
         detail.font = .preferredFont(forTextStyle: .footnote)
         diagnosticsButton.setTitle("① 采集运行权限与固定路径诊断", for: .normal)
@@ -74,7 +74,7 @@ final class StartupViewController: UIViewController {
             let localPaths: LocalPathDiagnostics
             let storageStatus: String
         }
-        let report = Report(build: 8, scope: "current-process-only; no directory enumeration or file contents",
+        let report = Report(build: 9, scope: "current-process-only; no directory enumeration or file contents",
                             runtime: RuntimePermissions.capture(), fixedPaths: ReadAccess.diagnostics(),
                             localPaths: LocalPathDiagnostics.capture(), storageStatus: AppPaths.preparationStatus)
         let encoder = JSONEncoder()

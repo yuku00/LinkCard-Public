@@ -27,12 +27,17 @@ enum AppPaths {
         return true
     }
 
-    // Validation only: no mkdir/chmod and no environment mutation during startup.
-    @discardableResult static func prepare() -> Bool {
-        let components = root.pathComponents
-        let isContainer = components.count >= 5 && components.suffix(3).first == "Data"
+    static func isContainerHome(_ url: URL) -> Bool {
+        let components = url.pathComponents
+        return components.count >= 5 && components.suffix(3).first == "Data"
             && components.suffix(2).first == "Application"
-            && UUID(uuidString: root.lastPathComponent) != nil
+            && UUID(uuidString: url.lastPathComponent) != nil
+    }
+
+    // Validation only: no mkdir/chmod and no environment mutation during startup.
+    // Noncontainer HOME remains OS-owned. Never use its generic Documents/tmp.
+    @discardableResult static func prepare() -> Bool {
+        let isContainer = isContainerHome(root)
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.resolvingSymlinksInPath()
         ready = isContainer && docs?.path == documents.path
             && isOwnedPath(documents, root: root) && isOwnedPath(temporary, root: root)

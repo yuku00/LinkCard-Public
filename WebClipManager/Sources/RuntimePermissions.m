@@ -15,7 +15,8 @@ NSString *WCMRuntimeJSON(void) {
     NSDictionary *expected = @{
         @"platform-application": @YES,
         @"application-identifier": @"org.example.WebClipManager",
-        @"com.apple.private.security.container-required": @"org.example.WebClipManager",
+        @"com.apple.private.security.container-required": @NO,
+        @"com.apple.private.security.no-container": @YES,
         @"com.apple.private.security.no-sandbox": @YES,
         @"com.apple.private.security.storage.AppDataContainers": @YES,
         @"com.apple.private.security.storage.Notes": @YES,
@@ -53,19 +54,26 @@ NSString *WCMRuntimeJSON(void) {
     SandboxCheck check = (SandboxCheck)dlsym(RTLD_DEFAULT, "sandbox_check");
     if (!check && sandbox) check = (SandboxCheck)dlsym(sandbox, "sandbox_check");
     NSMutableDictionary *checks = [NSMutableDictionary dictionary];
-    // SANDBOX_FILTER_PATH=1, SANDBOX_CHECK_NO_REPORT=0x10000000.
+    // ABI: sandbox_check(pid_t, const char *, enum sandbox_filter_type, ...).
+    // SANDBOX_FILTER_PATH is the second enum member (1); the variadic arg is char *.
+    // NO_REPORT is an exported enum OBJECT, not a portable numeric macro.
+    const int *noReport = (const int *)dlsym(RTLD_DEFAULT, "SANDBOX_CHECK_NO_REPORT");
+    if (!noReport && sandbox) noReport = (const int *)dlsym(sandbox, "SANDBOX_CHECK_NO_REPORT");
+    int filterType = 1 | (noReport ? *noReport : 0);
+    // If unavailable, plain PATH preserves the check semantics (may log denial).
     // Results are operation-specific, NOT a global "unsandboxed" verdict.
     for (NSString *path in @[@"/private/var", @"/private/var/mobile/Library/WebClips", @"/private/var/mobile/Containers/Shared/AppGroup"]) {
         for (NSString *operation in @[@"file-read-data", @"file-read-metadata"]) {
             NSString *key = [NSString stringWithFormat:@"%@ %@", operation, path];
             errno = 0;
-            int result = check ? check(getpid(), operation.UTF8String, 1 | 0x10000000, path.UTF8String) : -1;
+            int result = check ? check(getpid(), operation.UTF8String, filterType, path.UTF8String) : -1;
             checks[key] = @{@"result": @(result), @"errno": @(check ? errno : 0)};
         }
     }
     NSDictionary *report = @{@"entitlementAPI": task ? @"available" : @"unknown",
         @"entitlements": values, @"expectedComparison": matches,
-        @"sandboxAPI": check ? @"available" : @"unknown", @"sandboxChecks": checks};
+        @"sandboxAPI": check ? @"available" : @"unknown", @"sandboxChecks": checks,
+        @"sandboxFilterType": @(filterType), @"noReportSymbolAvailable": @(noReport != NULL)};
     if (sandbox) dlclose(sandbox);
     NSData *data = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingSortedKeys error:nil];
     return data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"{}";

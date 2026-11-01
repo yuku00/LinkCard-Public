@@ -3,6 +3,22 @@ import Darwin
 @testable import WebClipManager
 
 final class StorageAndRuntimeTests: XCTestCase {
+    func testNoncontainerHomeCannotEnableFilePanels() {
+        for path in ["/var/mobile", "/private/var/mobile", "/var/mobile/Documents", "/var/tmp", "/"] {
+            XCTAssertFalse(AppPaths.isContainerHome(URL(fileURLWithPath: path)))
+        }
+        XCTAssertTrue(AppPaths.isContainerHome(URL(fileURLWithPath: "/private/var/mobile/Containers/Data/Application/6D8D4654-8F87-4A83-ACBF-784565F53848")))
+    }
+    func testPrepareDoesNotRebindOSEnvironment() {
+        func value(_ key: String) -> String? { getenv(key).map { String(cString: $0) } }
+        let home = value("HOME"), tmp = value("TMPDIR"), fixed = value("CFFIXED_USER_HOME")
+        let foundationHome = NSHomeDirectory()
+        _ = AppPaths.prepare()
+        XCTAssertEqual(value("HOME"), home)
+        XCTAssertEqual(value("TMPDIR"), tmp)
+        XCTAssertEqual(value("CFFIXED_USER_HOME"), fixed)
+        XCTAssertEqual(NSHomeDirectory(), foundationHome)
+    }
     func testActualFoundationPathsAreAppExclusive() {
         XCTAssertTrue(AppPaths.prepare())
         let paths = LocalPathDiagnostics.capture()
@@ -28,7 +44,8 @@ final class StorageAndRuntimeTests: XCTestCase {
         let report = try XCTUnwrap(RuntimePermissions.capture())
         XCTAssertTrue(["available", "unknown"].contains(report.entitlementAPI))
         XCTAssertTrue(["available", "unknown"].contains(report.sandboxAPI))
-        XCTAssertEqual(report.entitlements.count, 7)
+        XCTAssertEqual(report.entitlements.count, 8)
+        XCTAssertEqual(report.sandboxFilterType & 1, 1)
         XCTAssertEqual(Set(report.entitlements.keys), Set(report.expectedComparison.keys))
         for value in report.entitlements.values {
             XCTAssertTrue(["unknown", "absent", "boolean:true", "boolean:false", "string:org.example.WebClipManager", "string:redacted", "unexpected-type"].contains(value))

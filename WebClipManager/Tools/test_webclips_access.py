@@ -4,7 +4,8 @@ import plistlib
 r = Path(__file__).resolve().parents[1]
 e = plistlib.loads((r/'Config/TrollStore.entitlements').read_bytes())
 assert e.get('com.apple.private.security.storage.Safari') is True, 'Missing reviewed Safari storage candidate'
-assert len(e) == 7
+from entitlement_policy import validate_entitlements
+validate_entitlements(e)
 s = (r/'Sources/Repository.swift').read_text()
 check = s.split('private func check(')[1].split('private func folder(')[0]
 assert 'resourceValues' not in check, 'Foundation metadata preflight still gates actual open'

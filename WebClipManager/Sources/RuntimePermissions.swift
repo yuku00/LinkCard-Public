@@ -7,6 +7,8 @@ struct RuntimePermissions: Codable {
     let expectedComparison: [String: String]
     let sandboxAPI: String
     let sandboxChecks: [String: Check]
+    let sandboxFilterType: Int
+    let noReportSymbolAvailable: Bool
     static func capture() -> RuntimePermissions? {
         try? JSONDecoder().decode(Self.self, from: Data(WCMRuntimeJSON().utf8))
     }
