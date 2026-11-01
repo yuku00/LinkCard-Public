@@ -1,6 +1,18 @@
+# 2026-11-01 所选原表情保存Photos增量（CI待运行）
+
+新增EmoticonLogic生产格式/文件验证和Messages真实选中消息入口。账号工具栏手动勾选“所选原表情保存图库”，在微信长按进入多选后只选一个47类表情，经工具菜单再次确认执行；不加全局菜单Hook，不遮挡原菜单，不读未选择聊天，不用设置页文件导入替代。复用既有账号/session/generation/总开关/前台及Hook所有权。需getSelectedMsgs、m_nsEmoticonMD5（或扩展对象）、EmoticonUtil类方法pathOfEmoticonForMd5:needUpdateTime:ignoreWxAM:精确对象/BOOL/BOOL ABI；原证据0xb8514/0xb8760–68的NO/NO参数，不改访问时间、不强制下载。签名不符/原资源缺失明确不可用。
+
+原文件只读描述符、O_NOFOLLOW、前后size/mtime及EOF核验，上限20MiB。仅接受完整GIF/PNG/JPEG；PNG逐块CRC、GIF块边界/终止符、ImageIO完整状态与逐帧解码，最多500帧/单帧1600万像素/合计6400万像素。直接传原始NSData给PHAssetCreationRequest addResource，不经UIImage重编码，不把微信特殊WxAM容器当GIF。Photos AddOnly权限、缺隐私声明保护、performChanges完成回调；实际添加资源且success无error才显示成功。拒绝/取消/失效/失败不报成功。每次确认一次性状态机，权限/结果重复回调只处理一次；同页面同generation同消息防重，失败需退出再进核对后手动重试。提交后无法撤销且无跨启动持久防重，不声称恰好一次。
+
+macOS原生测试运行真实生产格式/读取/保存状态机，Photos权限和写入通过mock，不访问真实图库；iOS专属Photos/UI代码只由CI编译链接，仍缺真机验收。保留所有旧测试，增加22项结构检查中的原资源保护，以及GIF双帧/PNG/JPEG、损坏/CRC/截断/超限/链接/权限拒绝/重复点击与回调/会话失效断言。本轮CI完成前不宣称测试已通过。
+
+**精确未完：** 图片转表情、公众号图片入库仍未实现，不是宣称无法实现。0xfc6890的startOfficialGIFAddWithData:md5:fromViewController:与presentOfficialStaticEmoticonPick:fromViewController:属于旧WCRefineEmoticonToolsHelper，不能当微信宿主接口直接调用；尚需其下游官方添加控制器/委托回调和准确ABI，以及聊天原图/公众号选中图片的原始NSData来源及宿主菜单注册闭环。0x27b738仅已有选择图片调用链线索，不读取或上传任意网页。不挂伪开关、不自动发送。WxAM解码、原长按菜单直接新增项、目标宿主多选菜单可见性、权限提示时序和真实图库动画保留均未验收。原图/原消息/系统Dock不修改；AI/红包详情/在线主题/视频解析排除保持。
+
 # 2026-11-01 图片草稿生产链与视频独立备份（视频恢复未完成）
 
-文字草稿准确构建41288097864 / 93b6c5a已下载核验，详见BUILD-RESULT；没有为旧产物重编译。本轮新增DraftMediaLogic与半屏草稿真实入口，当前源码待本轮CI。图片捕获仅使用已导出0x56865c的imageSelectorController.arrImages；仅接受实际UIImage静态、正向、最多9张/单张1600万像素/PNG20MiB，不把未知包装对象或Live Photo冒充支持。独立PNG像素和正文保存后，按0x1ceb974的initWithImages:contacts:（contacts=nil）重建真实WCNewCommitViewController，精确ABI门控、选择数组逐项相等回读及正文回读；失败保留草稿。不是原图元数据备份，未跑真实微信。
+本轮CI `41290054523` completed/success，commit `b00cb1d502f1f7aa99b1e6c7f23b5269f81fcd09`；macOS媒体事务51断言、图片初始化ABI、21项结构检查及全部旧回归通过，iOS arm64/min16.6编译链接成功。artifact `13076607161` 已下载核验，ZIP293157字节/dylib561296字节；摘要、Mach-O及132页嵌入ad-hoc签名独立核验通过。314/314白名单文件在补记前与远端一致，仅13条工程路径快进3次。详见BUILD-RESULT。本段为成功后的本地补记，不为文档重跑CI。
+
+恢复收尾修复：视频源、索引和复制后校验均使用文件描述符有界读取；修复失败NSError在内层autoreleasepool提前释放导致的真实CI崩溃，增加实际复制写失败、超64MiB稀疏源及错误对象读取回归。未扩功能，旧文字产物仍保留复用。本轮新增DraftMediaLogic与半屏草稿真实入口，已通过本轮CI。图片捕获仅使用已导出0x56865c的imageSelectorController.arrImages；仅接受实际UIImage静态、正向、最多9张/单张1600万像素/PNG20MiB，不把未知包装对象或Live Photo冒充支持。独立PNG像素和正文保存后，按0x1ceb974的initWithImages:contacts:（contacts=nil）重建真实WCNewCommitViewController，精确ABI门控、选择数组逐项相等回读及正文回读；失败保留草稿。不是原图元数据备份，未跑真实微信。
 
 视频分开处理：仅从真实sightDraft.draftItemVideoPath或itemAry首项getVideoPath/videoDraftPath取文件，最多64MiB独立备份正文与文件。绝不修改sightDraft/宿主源路径、不归档宿主模型。缺少从自有URL构造sightDraft所需类/初始化、itemAry元素类型、封面/时长/编辑状态及上传持有协议，**不能恢复真实视频编辑器**；UI明确标为视频备份不可恢复，不宣称媒体草稿完整实现。位置/可见范围/联系人未支持，保存前后均明示，不自动发布或取消编辑器。
 

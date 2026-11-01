@@ -1,3 +1,26 @@
+# 2026-11-01 媒体草稿中断恢复交付（图片有限恢复，视频仅备份）
+
+- 实际CI：https://github.com/yuku00/LinkCard-Public/actions/runs/41290054523 ，completed/success；commit `b00cb1d502f1f7aa99b1e6c7f23b5269f81fcd09`。基于实查远端文字草稿93b6c5a快进3次/13条工程白名单路径，未重提旧文字构建、未reset本地旧HEAD、未改其他项目或workflow。补记前314/314发布白名单blob一致；证据 artifacts/recovery-audit.json 与 media-remote-diff.json。
+- macOS真实执行媒体生产事务51断言、文字存储与图片初始化ABI测试、21项结构检查及全部旧回归；仓库53、离线解码40057、语音5162、广告14及Hook fixture、消息21、分组34、朋友圈29、首页/主题测试、WUStats18项0失败全部通过。iOS arm64/min16.6/SDK18.5 warnings-as-errors编译链接成功。未把macOS mock冒充真实微信或UIKit端到端验收。
+- 第一轮41289790686在媒体失败路径崩溃；第二轮41289901200加诊断，实际捕获objc_retain EXC_BAD_ACCESS。根因为生产循环内autoreleasepool使通过NSError **返回的错误先于ARC调用端writeback释放。移除内层池并加读取失败错误说明回归后第三轮全量通过；原测试未删除。另补复制写入失败与超64MiB稀疏源测试，索引/校验读取复用O_NOFOLLOW、fstat及上限读取，失败保持原索引与资源。
+
+## 已下载并独立核验
+
+- Artifact `13076607161`；ZIP `artifacts/WeChatUnified-41290054523.zip`，293157字节；SHA256 `0b64d6bd10831aa43105426f8cf494f41a3b474e9b8778daea859c86af4ba643`，匹配GitHub digest。
+- dylib `artifacts/run-41290054523/WeChatUnified.dylib`，561296字节；SHA256 `dc1826b77280b5d9353261eef7de305f27bc980b0ed360223871f46884654e7d`，匹配CI SHA256SUMS。
+- 本地解析64-bit arm64 MH_DYLIB；CI codesign --verify --strict通过，本地独立验证CodeDirectory 132页×4096及特殊槽SHA256，ad-hoc有效（不是分发证书）。日志 ci-41290054523.log、元数据 ci-artifacts-41290054523.json、核验 verification-41290054523.json 均已落盘。
+- 使用自己的本地api.html标签、严格TLS和环境凭据；未打印token、未上传原库/转储/用户媒体/密钥，未安装工具链，未注入或操作真实微信。旧41288097864产物保留复用。
+
+## 交付范围及剩余缺口
+
+图片仅真实UIImage静态正向像素、1–9张、单张1600万像素/PNG20MiB，重建initWithImages:contacts:后选择数组与正文回读确认；没有原图元数据、位置/可见范围/联系人恢复。视频仅独立文件与正文备份，缺自有URL构造sightDraft所需类/初始化、itemAry元素类型、封面/时长/编辑状态及上传持有协议，不能恢复真实视频编辑器，不称完整图文视频草稿。
+
+新资源独立UUID、核验后原子提交索引；同路径更新与共享/编辑中引用不unlink。坏索引禁止覆盖及清理，删除仅索引，失败副本也保留；每账号512MiB/4096文件硬限额，达到上限拒绝保存，未自动回收。账号/generation/前台检查保留。文件描述符读取有界但未声称能抵抗同一宿主进程任意并发恶意篡改；UIKit捕获/恢复及真实宿主契约仍未真机验收。无自动发表、无宿主文件删除。AI/Dock/红包详情/在线主题/视频解析继续排除。
+
+本节及STATUS为成功核验后本地交付补记，包内文档是构建时版本；未为补记重复发布。
+
+---
+
 # 2026-11-01 文字草稿准确构建收尾（未重复编译）
 
 CI 41288097864 completed/success，commit `93b6c5a71d52b670595387b79d95243a644a4821`，artifact 13075473694 已通过独立本地 api.html / 严格TLS下载。ZIP 282508字节，SHA256 `626997f42072456ca13e165be07a46026dc641a4682f353925f622e93516a93d` 与远端digest一致。dylib 544128字节，SHA256 `f135ab3bae0bf6124c480e82a396d2113266465356ad0b8010080b6991970d9e` 与SHA256SUMS一致。arm64 MH_DYLIB；CI strict codesign通过，本地独立验证嵌入ad-hoc CodeDirectory 128页×4096字节及特殊槽哈希。产物在 artifacts/run-41288097864；核验记录 verification-41288097864.json。远低于50MB，未安装或注入宿主。该产物仅文字草稿，不代表媒体完成。本地旧HEAD与工作树均保留。

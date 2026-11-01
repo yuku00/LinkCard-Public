@@ -3,6 +3,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build
 python3 tests/test_source.py
+xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/emoticon_logic.m Sources/EmoticonLogic.m -framework Foundation -framework ImageIO -framework CoreGraphics -lz -o build/emoticon-tests
+build/emoticon-tests | tee build/emoticon-tests.txt
+rm build/emoticon-tests
 xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/drafts_logic.m Sources/DraftsLogic.m Sources/RepositoryLogic.m -framework Foundation -o build/drafts-logic-tests
 build/drafts-logic-tests | tee build/drafts-logic-tests.txt
 rm build/drafts-logic-tests
@@ -47,7 +50,7 @@ xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" \
   -Wall -Wextra -Werror -Wno-unused-parameter -Wno-nullability-completeness \
   -O2 \
   -install_name @rpath/WeChatUnified.dylib \
-  Sources/*.m build/codec-iphoneos/libWUOffline.a -Wl,-dead_strip -framework AudioToolbox -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework UniformTypeIdentifiers -lz \
+  Sources/*.m build/codec-iphoneos/libWUOffline.a -Wl,-dead_strip -framework Photos -framework AudioToolbox -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework UniformTypeIdentifiers -lz \
   -o build/WeChatUnified.dylib
 bash tools/test_stats.sh
 xcrun strip -x build/WeChatUnified.dylib

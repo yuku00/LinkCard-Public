@@ -3,6 +3,9 @@
 #import "WUStats.h"
 #import "GroupLogic.h"
 #import "Repository.h"
+#import "EmoticonLogic.h"
+#import <Photos/Photos.h>
+static void SaveSelectedEmoticon(UIViewController *owner);
 static void OpenRepository(UIViewController *owner);
 static BOOL StatsReady(id mgr) {
     Method method=class_getInstanceMethod(object_getClass(mgr),NSSelectorFromString(@"GetMsgByCreateTime:FromID:FromCreateTime:Limit:LeftCount:"));
@@ -155,12 +158,13 @@ static NSHashTable *chatActions;
         if([key isEqual:@"search"] && !Has(v,@"onSearchItem","v",@[])) continue;
         if([key isEqual:@"stats"] && !StatsReady(Service(@"CMessageMgr"))) continue;
         if([key isEqual:@"moments"] && (!WUEnabled(@"convenientMoments") || !WUMomentsAvailable())) continue;
-        NSString *title=@{@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"repository":@"消息仓库",@"moments":@"半屏朋友圈"}[key];
+        NSString *title=@{@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"repository":@"消息仓库",@"emojiSave":@"所选表情保存图库",@"moments":@"半屏朋友圈"}[key];
         [menu addObject:[UIAction actionWithTitle:title image:nil identifier:nil handler:^(UIAction *action){
             WUChatActions *target=weak; UIViewController *owner=target.owner;
             @try {
                 if(!owner.viewIfLoaded.window || owner.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(owner)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:key]) return;
                 if([key isEqual:@"settings"]) WUShowSettings(owner);
+                else if([key isEqual:@"emojiSave"]) SaveSelectedEmoticon(owner);
                 else if([key isEqual:@"repository"]) OpenRepository(owner);
                 else if([key isEqual:@"stats"]) OpenStats(owner);
                 else if([key isEqual:@"moments"]) { if(!WUOpenMoments(owner)) Notice(owner,@"半屏朋友圈当前不可用，未打开全屏替代页面。"); }
@@ -511,4 +515,71 @@ static void OpenRepository(UIViewController *owner) {
         return status;
     };
     WUShowRepository(owner,binding);
+}
+
+// Evidence: WCPulse 0xb8514 / 0xb8760-68 (NO,NO), 0x12be34 raw Photos resource.
+static char emojiSaveKey;
+static void SaveSelectedEmoticon(UIViewController *owner) {
+    NSString *account=Account(), *session=Session(owner); NSUInteger gen=generation;
+    id selected=Obj(owner,@"getSelectedMsgs");
+    if(![selected isKindOfClass:NSArray.class] || [selected count]!=1) { Notice(owner,@"请先用微信长按菜单进入多选，仅选择一个表情，再打开此工具。不会读取未选择的消息。"); return; }
+    id wrap=[selected firstObject]; NSDictionary *identity=Info(wrap);
+    if(!account.length || !session.length || [identity[@"type"] unsignedIntValue]!=47 || !InSession(identity,account,session)) { Notice(owner,@"仅支持当前会话选中的单个表情；图片转表情尚未接入。"); return; }
+    NSString *md5=Str(wrap,@"m_nsEmoticonMD5") ?: Str(Obj(wrap,@"m_extendInfoWithMsgType"),@"m_nsEmoticonMD5");
+    Class util=NSClassFromString(@"EmoticonUtil"); NSString *selector=@"pathOfEmoticonForMd5:needUpdateTime:ignoreWxAM:";
+    if(!WUValidMD5(md5) || !Has(util,selector,"@",@[@"@",@"B",@"B"])) { Notice(owner,@"原表情路径接口或签名不匹配，当前不可用；不会使用缩略图替代。"); return; }
+    id path=((id(*)(id,SEL,id,BOOL,BOOL))objc_msgSend)(util,NSSelectorFromString(selector),md5,NO,NO);
+    if(![path isKindOfClass:NSString.class] || ![path length]) { Notice(owner,@"原表情文件尚未就绪；不会自动下载或改写原消息。"); return; }
+    NSDictionary *prior=objc_getAssociatedObject(owner,&emojiSaveKey);
+    if([prior[@"identity"] isEqual:identity] && [prior[@"generation"] unsignedIntegerValue]==gen) { Notice(owner,@"该选中表情本次页面已处理或正在保存。请先核对图库，不会重复提交。"); return; }
+    __weak UIViewController *weak=owner;
+    BOOL (^current)(void)=^BOOL{
+        @try {
+        UIViewController *v=weak;
+        if(!v.viewIfLoaded.window || (v.navigationController && v.navigationController.topViewController!=v) || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(v)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:@"emojiSave"]) return NO;
+        id now=Obj(v,@"getSelectedMsgs");
+        return [now isKindOfClass:NSArray.class] && [now count]==1 && [now firstObject]==wrap && [Info(wrap) isEqual:identity];
+        } @catch(NSException *e) { return NO; }
+    };
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"保存原表情到图库？" message:@"仅复制所选表情原始GIF/PNG/JPEG；保留动画。缺失、损坏、特殊编码或超过20MiB将拒绝。允许后交由Photos写入，提交后不可撤销；不修改原消息。" preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __block BOOL consumed=NO;
+    [alert addAction:[UIAlertAction actionWithTitle:@"保存原表情" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){
+        if(consumed) return; consumed=YES;
+        [weak dismissViewControllerAnimated:YES completion:^{
+            if(!current()) return;
+            WUEmoticonSave *save=[WUEmoticonSave new];
+            objc_setAssociatedObject(weak,&emojiSaveKey,@{@"identity":identity,@"generation":@(gen),@"operation":save},OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
+                NSData *data=WUEmoticonRead(path);
+                dispatch_async(dispatch_get_main_queue(),^{
+                    [save startData:data current:current permission:^(void (^reply)(BOOL)){
+                        // Missing privacy declaration must not terminate the host process.
+                        id usage=[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSPhotoLibraryAddUsageDescription"];
+                        if(![usage isKindOfClass:NSString.class] || ![usage length]) { reply(NO); return; }
+                        PHAuthorizationStatus status=[PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelAddOnly];
+                        if(status==PHAuthorizationStatusNotDetermined) [PHPhotoLibrary requestAuthorizationForAccessLevel:PHAccessLevelAddOnly handler:^(PHAuthorizationStatus s){ reply(s==PHAuthorizationStatusAuthorized); }];
+                        else reply(status==PHAuthorizationStatusAuthorized);
+                    } writer:^(NSData *original, NSString *uti, void (^reply)(BOOL)){
+                        @try {
+                            __block BOOL added=NO;
+                            [PHPhotoLibrary.sharedPhotoLibrary performChanges:^{
+                                __block BOOL valid=NO;
+                                if(NSThread.isMainThread) valid=current(); else dispatch_sync(dispatch_get_main_queue(),^{ valid=current(); });
+                                if(!valid) return;
+                                PHAssetResourceCreationOptions *options=[PHAssetResourceCreationOptions new]; options.uniformTypeIdentifier=uti;
+                                options.originalFilename=[@"Emoticon." stringByAppendingString:[uti isEqual:@"com.compuserve.gif"]?@"gif":([uti isEqual:@"public.png"]?@"png":@"jpg")];
+                                PHAssetCreationRequest *request=[PHAssetCreationRequest creationRequestForAsset];
+                                [request addResourceWithType:PHAssetResourceTypePhoto data:original options:options]; added=request!=nil;
+                            } completionHandler:^(BOOL success,NSError *error){ reply(added && success && !error); }];
+                        } @catch(NSException *e) { reply(NO); }
+                    } completion:^(NSString *result){
+                        if([result isEqual:@"cancelled"] || !current()) return;
+                        Notice(weak,@{@"saved":@"Photos已确认保存原表情。",@"failed":@"Photos未确认保存成功；请核对图库，未自动重试。",@"denied":@"没有添加照片权限或宿主缺少权限声明，未保存。",@"invalid":@"原文件缺失、损坏、超限或不是完整GIF/PNG/JPEG；未保存，未用静图替代。"}[result]);
+                    }];
+                });
+            });
+        }];
+    }]];
+    [pendingAlerts addObject:alert]; [owner presentViewController:alert animated:YES completion:nil];
 }

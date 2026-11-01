@@ -158,6 +158,17 @@ class Guardrails(unittest.TestCase):
             self.assertIn(required,ui)
         self.assertIn('initWithImages:images contacts:nil',host)
         self.assertIn('tests/draft_media_logic.m',(ROOT/'tools/build.sh').read_text())
+    def test_emoticon_original_photos_completion(self):
+        logic=(ROOT/'Sources/EmoticonLogic.m').read_text()
+        ui=(ROOT/'Sources/Messages.m').read_text().split('// Evidence: WCPulse 0xb8514')[1]
+        for required in ['PNGComplete', 'GIFComplete', 'crc32', 'CGImageSourceGetStatusAtIndex', 'self.started', 'self.finished', 'O_NOFOLLOW', '20*1024*1024']:
+            self.assertIn(required,logic)
+        for required in ['getSelectedMsgs', 'PHAccessLevelAddOnly', 'NSPhotoLibraryAddUsageDescription', 'performChanges:', 'addResourceWithType:PHAssetResourceTypePhoto data:original', 'added && success && !error', 'gen!=generation', 'if(consumed)', 'needUpdateTime:ignoreWxAM:']:
+            self.assertIn(required,ui)
+        for forbidden in ['UIImagePNGRepresentation', 'UIImageJPEGRepresentation', 'WUHook(', 'sendMsg', 'removeItem', 'UIWebView', 'WKWebView']:
+            self.assertNotIn(forbidden,ui+logic)
+        self.assertIn('tests/emoticon_logic.m',(ROOT/'tools/build.sh').read_text())
+        self.assertIn('-framework Photos',(ROOT/'tools/build.sh').read_text())
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()
         for word in ['未实现','无伪开关','便捷朋友圈','ActionBar','全部 AI','未执行']:
