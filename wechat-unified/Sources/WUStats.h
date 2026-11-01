@@ -8,7 +8,21 @@
 
 NS_ASSUME_NONNULL_BEGIN
 // All binding callbacks execute on the main thread. Bind only verified host context.
+// Inclusive civil dates, converted to [start midnight, day-after-end midnight)
+// using calendar arithmetic (not 86400 seconds across DST). nil means invalid.
+FOUNDATION_EXPORT NSDictionary * _Nullable WUStatsDateRange(NSString *start, NSString *end, NSTimeZone *zone);
+FOUNDATION_EXPORT BOOL WUStatsTimeInRange(NSNumber *time, NSDictionary * _Nullable range);
+
 @interface WUStatsBinding : NSObject
+@property(nonatomic, copy, nullable) NSDictionary *dateRange;
+@property(nonatomic, copy) NSTimeZone *timeZone;
+// Set only when the host contract proves descending time, not from page observations.
+@property(nonatomic) BOOL descendingTimeVerified;
+@property(nonatomic) NSUInteger pageLimit; // 1..100, shared budget for overview
+@property(nonatomic, copy, nullable) WUStatsBinding * _Nullable (^bindingForSession)(NSString *);
+@property(nonatomic, copy) NSArray<NSDictionary *> *sessions;
+@property(nonatomic, copy, nullable) void (^visitSnapshot)(void (^)(NSDictionary *));
+@property(nonatomic, copy, nullable) void (^clearVisits)(void (^)(BOOL));
 @property(nonatomic, copy) NSString *account;
 @property(nonatomic, copy) NSString *session;
 @property(nonatomic) BOOL group;
@@ -39,6 +53,25 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)initWithBinding:(WUStatsBinding *)binding;
 - (void)start:(void (^)(NSDictionary * _Nullable result, NSString *status))update;
 - (void)cancel; // main thread; drops data and rejects pending callbacks
+@end
+
+@interface WUStatsOverviewJob : NSObject
+@property(nonatomic, readonly) BOOL cancelled;
+- (instancetype)initWithBinding:(WUStatsBinding *)binding;
+- (void)start:(void (^)(NSDictionary * _Nullable, NSString *))update;
+- (void)cancel;
+@end
+
+// Called on a serial IO queue. Files contain only hashed account/session IDs,
+// event time and verified kind; never message text or plaintext account IDs.
+FOUNDATION_EXPORT NSArray<NSDictionary *> *WUStatsVisitRanking(NSArray<NSDictionary *> *events, NSDictionary * _Nullable range);
+FOUNDATION_EXPORT NSString *WUStatsVisitID(NSString *account, NSString *session);
+@interface WUStatsVisitStore : NSObject
+@property(nonatomic, copy, nullable) BOOL (^writeData)(NSData *, NSURL *);
+- (instancetype)initWithDirectory:(NSURL *)directory account:(NSString *)account;
+- (BOOL)recordSession:(NSString *)session kind:(NSString *)kind time:(NSTimeInterval)time active:(BOOL)active enabled:(BOOL)enabled current:(BOOL (^)(void))current;
+- (NSDictionary *)snapshot;
+- (BOOL)clearIfCurrent:(BOOL (^)(void))current;
 @end
 
 // Attach per-owner, never globally reuse another account/session's binding.

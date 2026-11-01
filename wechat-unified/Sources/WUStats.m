@@ -5,8 +5,24 @@
 #import <string.h>
 
 @implementation WUStatsBinding
-- (instancetype)init { if ((self = [super init])) { _account=@""; _session=@""; _verifiedEncoding=@""; _initialCursor=@{}; } return self; }
+- (instancetype)init { if ((self = [super init])) { _account=@""; _session=@""; _verifiedEncoding=@""; _initialCursor=@{}; _timeZone=[NSTimeZone.localTimeZone copy]; _sessions=@[]; _pageLimit=100; } return self; }
 @end
+
+NSDictionary *WUStatsDateRange(NSString *start, NSString *end, NSTimeZone *zone) {
+    if(![start isKindOfClass:NSString.class] || ![end isKindOfClass:NSString.class] || !zone) return nil;
+    NSDateFormatter *f=[NSDateFormatter new]; f.locale=[NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    NSCalendar *cal=[[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian]; cal.timeZone=zone;
+    f.calendar=cal; f.timeZone=zone; f.dateFormat=@"yyyy-MM-dd"; f.lenient=NO;
+    NSDate *a=[f dateFromString:start], *b=[f dateFromString:end];
+    if(!a || !b || ![[f stringFromDate:a] isEqual:start] || ![[f stringFromDate:b] isEqual:end] || [a compare:b]==NSOrderedDescending) return nil;
+    NSDate *exclusive=[cal dateByAddingUnit:NSCalendarUnitDay value:1 toDate:b options:0];
+    if(!exclusive || a.timeIntervalSince1970<0) return nil;
+    return @{@"start":@(a.timeIntervalSince1970),@"end":@(exclusive.timeIntervalSince1970),@"label":[NSString stringWithFormat:@"%@ 至 %@（含） · %@ · [起日00:00,末日次日00:00)",start,end,zone.name]};
+}
+BOOL WUStatsTimeInRange(NSNumber *time, NSDictionary *range) {
+    if(!range) return YES;
+    return [time isKindOfClass:NSNumber.class] && isfinite(time.doubleValue) && time.doubleValue>0 && time.doubleValue>=[range[@"start"] doubleValue] && time.doubleValue<[range[@"end"] doubleValue];
+}
 
 static NSString *WUString(id value) { return [value isKindOfClass:NSString.class] ? [value copy] : @""; }
 static NSString *WUID(id value) {
@@ -39,6 +55,7 @@ static void WUWords(NSString *text, NSMutableDictionary *words) {
 }
 
 @interface WUStatsAccumulator ()
+@property(nonatomic,copy) NSDictionary *dateRange;
 @property(nonatomic,strong) NSMutableArray<NSMutableDictionary *> *records;
 @property(nonatomic,strong) NSMutableDictionary *serverIndex;
 @property(nonatomic,strong) NSMutableDictionary *localIndex;
@@ -61,6 +78,7 @@ static void WUWords(NSString *text, NSMutableDictionary *words) {
         id t=r[@"time"]; if (t && (![t isKindOfClass:NSNumber.class] || !isfinite([t doubleValue]) || [t doubleValue]<0 || [t doubleValue]>253402300799.0 || floor([t doubleValue])!=[t doubleValue])) return NO;
     }
     for (NSDictionary *input in records) {
+        if(!WUStatsTimeInRange(input[@"time"],self.dateRange)) continue;
         NSString *sid=WUID(input[@"sid"]), *lid=WUID(input[@"lid"]), *source=WUString(input[@"source"]);
         // A length-prefixed source prevents delimiter collisions.
         NSString *lk=lid.length && source.length ? [NSString stringWithFormat:@"%lu:%@:%@",(unsigned long)source.length,source,lid] : @"";
@@ -188,7 +206,8 @@ static NSArray *WUReadPage(WUStatsBinding *b,NSDictionary *cursor,uint32_t *left
         _binding=[WUStatsBinding new]; _binding.account=[b.account copy]; _binding.session=[b.session copy]; _binding.group=b.group; _binding.messageManager=b.messageManager;
         _binding.verifiedEncoding=[b.verifiedEncoding copy]; _binding.stillCurrent=[b.stillCurrent copy]; _binding.decodePage=[b.decodePage copy]; _binding.initialCursor=[b.initialCursor copy];
         _cursor=_binding.initialCursor; _cursors=[NSMutableSet set];
-        _accumulator=[[WUStatsAccumulator alloc] initWithTimeZone:NSTimeZone.localTimeZone group:b.group];
+        _binding.dateRange=[b.dateRange copy]; _binding.pageLimit=MAX(1,MIN(100,b.pageLimit)); _binding.timeZone=[b.timeZone copy]; _binding.descendingTimeVerified=b.descendingTimeVerified;
+        _accumulator=[[WUStatsAccumulator alloc] initWithTimeZone:_binding.timeZone group:b.group]; _accumulator.dateRange=_binding.dateRange;
     } return self;
 }
 - (void)cancel { NSAssert(NSThread.isMainThread,@"main thread required"); self.cancelled=YES; self.generation++; self.accumulator=nil; self.update=nil; self.binding=nil; [self.cursors removeAllObjects]; }
@@ -227,14 +246,15 @@ static NSArray *WUReadPage(WUStatsBinding *b,NSDictionary *cursor,uint32_t *left
 }
 - (void)step {
     if(![self valid]) { [self finish:@"已取消" complete:NO]; return; }
+    self.pages++; // Count attempts too: rejected pages must not evade the overview budget.
     NSString *failure=nil; uint32_t left=0; NSArray *page=WUReadPage(self.binding,self.cursor,&left,&failure);
+    self.readCount+=page.count;
     if(![self valid]) { [self finish:@"已取消" complete:NO]; return; }
     if (!page) { [self finish:failure?:@"读取失败" complete:NO]; return; }
     NSDictionary *decoded=nil;
     @try { decoded=self.binding.decodePage(page,left,self.cursor); } @catch (__unused NSException *e) { decoded=nil; }
     if (![self valid]) { [self finish:@"已取消" complete:NO]; return; }
     if (![decoded isKindOfClass:NSDictionary.class] || ![decoded[@"records"] isKindOfClass:NSArray.class] || ![decoded[@"done"] isKindOfClass:NSNumber.class] || [decoded[@"records"] count]!=page.count || ![self.accumulator addRecords:decoded[@"records"]]) { [self finish:@"读取停止：页解码不完整或记录无效" complete:NO]; return; }
-    self.pages++; self.readCount+=page.count;
     BOOL done=[decoded[@"done"] boolValue];
     if (done) { if(left!=0) [self finish:@"已截断：结束标志与剩余计数矛盾" complete:NO]; else [self finish:@"完成：仅本地可见范围，非服务器全部历史" complete:YES]; return; }
     NSDictionary *next=decoded[@"next"];
@@ -246,8 +266,11 @@ static NSArray *WUReadPage(WUStatsBinding *b,NSDictionary *cursor,uint32_t *left
     BOOL advances=(initial && newID>0) || newID<oldID || (newID==oldID && newTime<oldTime);
     NSString *key=[NSString stringWithFormat:@"%u:%u",newTime,newID];
     if (!page.count || !advances || [self.cursors containsObject:key]) { [self finish:@"已截断：游标未前进或页面重复" complete:NO]; return; }
+    // Only a proven descending-time contract permits early stop. Equality must
+    // continue: further local IDs can share the start second. ID order alone is insufficient.
+    if(self.binding.descendingTimeVerified && self.binding.dateRange && newTime>0 && newTime<[self.binding.dateRange[@"start"] doubleValue]) { [self finish:@"完成：越过日期下界（不截断边界同秒）" complete:YES]; return; }
     [self.cursors addObject:key]; self.cursor=[next copy];
-    if(self.readCount>=20000 || self.pages>=100) { [self finish:@"已截断：达到 20,000 条 / 100 页本地上限" complete:NO]; return; }
+    if(self.readCount>=20000 || self.pages>=self.binding.pageLimit) { [self finish:@"已截断：达到本次页数预算（总上限20,000条/100页）" complete:NO]; return; }
     if(self.update) self.update(nil,[NSString stringWithFormat:@"本地扫描 %lu 页 / %lu 条…",(unsigned long)self.pages,(unsigned long)self.readCount]);
     NSUInteger generation=self.generation;
     __weak typeof(self) weakSelf=self;
@@ -260,39 +283,103 @@ static char WUStatsOwnerKey;
 @interface WUStatsController : UITableViewController
 @property(nonatomic,strong) WUStatsBinding *binding;
 @property(nonatomic,strong) WUStatsJob *job;
+@property(nonatomic,strong) WUStatsOverviewJob *overviewJob;
+@property(nonatomic) BOOL overview;
 @property(nonatomic,strong) NSArray<NSDictionary *> *sections;
 @property(nonatomic,copy) NSString *status;
 @property(nonatomic,strong) NSTimer *contextTimer;
+@property(nonatomic,copy) NSDictionary *visits;
+@property(nonatomic,copy) NSDictionary *lastResult;
 @end
 @implementation WUStatsController
+- (BOOL)scanning { return (self.job && !self.job.cancelled) || (self.overviewJob && !self.overviewJob.cancelled); }
 - (void)viewDidLoad {
     [super viewDidLoad]; self.title=@"本地消息统计"; self.status=@"尚未扫描"; self.sections=@[];
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"扫描" style:UIBarButtonItemStylePlain target:self action:@selector(scan)];
     self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain target:self action:@selector(close)];
     self.tableView.rowHeight=UITableViewAutomaticDimension; self.tableView.estimatedRowHeight=48;
     [self render:nil];
+    [self reloadVisits];
+}
+- (void)reloadVisits {
+    if(!self.binding.visitSnapshot) return;
+    __weak typeof(self) weak=self;
+    self.binding.visitSnapshot(^(NSDictionary *snapshot) { WUStatsController *v=weak; if(!v || !v.binding || !v.binding.stillCurrent()) return; v.visits=snapshot; [v render:v.lastResult]; });
+}
+- (void)chooseRange {
+    if(!self.binding || [self scanning]) return;
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"统计日期（含起止日）" message:[NSString stringWithFormat:@"格式 yyyy-MM-dd；时区 %@。按日历转换为起日00:00至末日次日00:00。未知时间不进入范围统计。",self.binding.timeZone.name] preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *f){ f.placeholder=@"起日，例如 2026-01-01"; }];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *f){ f.placeholder=@"末日，例如 2026-11-01"; }];
+    __weak typeof(self) weak=self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"应用" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        WUStatsController *v=weak; if(!v.binding || !v.binding.stillCurrent()) return;
+        NSDictionary *range=WUStatsDateRange(alert.textFields[0].text,alert.textFields[1].text,v.binding.timeZone);
+        if(!range) { v.status=@"日期无效：请填写存在的日期，起日不得晚于末日"; [v render:v.lastResult]; return; }
+        [v.job cancel]; [v.overviewJob cancel]; v.job=nil; v.binding.dateRange=range; v.status=@"日期已更新，请手动扫描"; [v render:nil];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+- (void)confirmClearVisits {
+    if(!self.binding.clearVisits) return;
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"清空本账号访问日志？" message:@"只清理本插件记录，不删除微信聊天。不可恢复；之后继续记录真实出现事件。" preferredStyle:UIAlertControllerStyleAlert];
+    __weak typeof(self) weak=self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"清空" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a){
+        WUStatsController *v=weak; if(!v.binding || !v.binding.stillCurrent()) return;
+        v.binding.clearVisits(^(BOOL ok){ WUStatsController *c=weak; if(!c.binding || !c.binding.stillCurrent()) return; c.status=ok?@"本账号访问日志已清空":@"清空失败，保留旧日志"; [c reloadVisits]; });
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated]; __weak typeof(self) weakSelf=self;
     self.contextTimer=[NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(__unused NSTimer *timer) {
         WUStatsController *vc=weakSelf; if(!vc || !vc.binding) return;
         BOOL valid=NO; @try {valid=vc.binding.stillCurrent && vc.binding.stillCurrent();} @catch (__unused NSException *e) {}
-        if(!valid) { [vc.job cancel]; vc.job=nil; vc.binding=nil; vc.status=@"账号或会话已变化，结果已清除"; [vc render:nil]; }
+        if(!valid) { [vc.job cancel]; [vc.overviewJob cancel]; vc.job=nil; vc.binding=nil; vc.visits=nil; vc.status=@"账号或会话已变化，结果已清除"; [vc render:nil]; }
     }];
 }
-- (void)viewWillDisappear:(BOOL)animated { [super viewWillDisappear:animated]; [self.contextTimer invalidate]; self.contextTimer=nil; [self.job cancel]; self.job=nil; self.status=@"已停止"; [self render:nil]; }
-- (void)close { [self.job cancel]; [self dismissViewControllerAnimated:YES completion:nil]; }
+- (void)viewWillDisappear:(BOOL)animated { [super viewWillDisappear:animated]; [self.contextTimer invalidate]; self.contextTimer=nil; [self.job cancel]; [self.overviewJob cancel]; self.job=nil; self.status=@"已停止"; [self render:nil]; }
+- (void)close { [self.job cancel]; [self.overviewJob cancel]; [self dismissViewControllerAnimated:YES completion:nil]; }
 - (void)scan {
-    if(self.job && !self.job.cancelled) { [self.job cancel]; self.job=nil; self.status=@"已取消并清除结果"; [self render:nil]; return; }
+    if([self scanning]) { [self.job cancel]; [self.overviewJob cancel]; self.job=nil; self.status=@"已取消并清除结果"; [self render:nil]; return; }
     if(!self.binding) { self.status=@"尚未接入：主工程尚未绑定经核验的宿主账号、会话、签名与解码器"; [self render:nil]; return; }
-    self.job=[[WUStatsJob alloc] initWithBinding:self.binding]; self.status=@"准备本地读取…"; [self render:nil];
+    self.status=@"准备本地读取…";
     __weak typeof(self) weakSelf=self;
-    [self.job start:^(NSDictionary *result,NSString *status) { WUStatsController *vc=weakSelf; if(!vc) return; vc.status=status; [vc render:result]; }];
+    void (^update)(NSDictionary *,NSString *)=^(NSDictionary *result,NSString *status) { WUStatsController *vc=weakSelf; if(!vc) return; vc.status=status; [vc render:result]; };
+    if(self.overview) { self.overviewJob=[[WUStatsOverviewJob alloc] initWithBinding:self.binding]; [self render:nil]; [self.overviewJob start:update]; }
+    else { self.job=[[WUStatsJob alloc] initWithBinding:self.binding]; [self render:nil]; [self.job start:update]; }
 }
 - (void)render:(NSDictionary *)r {
+    self.lastResult=r;
     NSMutableArray *sections=[NSMutableArray array];
-    [sections addObject:@{@"title":@"状态与范围",@"rows":@[self.status?:@"",@"只读当前会话本地消息；不联网、不落盘、不包含 AI。需手动扫描。",@"上限 20,000 条 / 100 页。无可靠 ID 不合并；未知时间、发送者与同秒消息不推断互动。",@"规则统计不是社交意图：6小时新段、24小时破冰、5分钟同人连发。首尾不补猜开场。"]}];
-    if(r) {
+    [sections addObject:@{@"title":@"时间范围与访问日志",@"rows":@[self.binding.dateRange[@"label"]?:[NSString stringWithFormat:@"全部可见日期 · %@（点选起止）",self.binding.timeZone.name?:@"无上下文"],@"重置日期为全部",@"清空本账号访问日志",self.overview?@"扫描范围：已加载私聊/群聊消息数排行（点选切换）":@"扫描范围：当前会话（点选切换）"]}];
+    if(self.binding.sessions.count) {
+        NSMutableDictionary *counts=[NSMutableDictionary dictionary];
+        for(NSDictionary *row in self.binding.sessions) { NSString *kind=row[@"kind"]; counts[kind]=@([counts[kind] unsignedIntegerValue]+([kind isEqual:@"unknown"]?[row[@"count"] unsignedIntegerValue]:1)); }
+        [sections addObject:@{@"title":@"宿主已加载会话总览（非好友画像）",@"rows":@[[NSString stringWithFormat:@"私聊 %@ · 群聊 %@ · 其他 %@ · 未知条目 %@",counts[@"private"]?:@0,counts[@"chatroom"]?:@0,counts[@"other"]?:@0,counts[@"unknown"]?:@0],@"来自 MainSessionMgr 三数组的未过滤快照，已知会话去重；不保证全部历史/已删除会话。未知条目可能跨数组重复。"]}];
+    }
+    NSMutableDictionary *names=[NSMutableDictionary dictionary];
+    NSArray *visitRanking=WUStatsVisitRanking(self.visits[@"events"]?:@[],self.binding.dateRange);
+    for(NSDictionary *row in self.binding.sessions) if([row[@"username"] length]) names[WUStatsVisitID(WUStatsVisitID(self.binding.account,@""),row[@"username"])]=row[@"username"];
+    NSMutableArray *visitRows=[NSMutableArray arrayWithObjects:@"只记录启用统计工具后的真实前台聊天出现；同一最近会话12秒去抖，不补造历史，不等于消息数/最常聊。",@"账号隔离原子日志：最多4096条/1MiB，满后停止；日期范围同消息筛选。日志无正文、无明文账号/会话。",nil];
+    if([self.visits[@"error"] length]) [visitRows addObject:self.visits[@"error"]];
+    if([self.visits[@"full"] boolValue]) [visitRows addObject:@"日志已满：访问榜只是已记录范围，清空后才能继续记录。"];
+    for(NSDictionary *row in visitRanking) { NSString *key=row[@"id"]; [visitRows addObject:[NSString stringWithFormat:@"%@ · %@：%@ 次",names[key]?:[key substringToIndex:12],row[@"kind"],row[@"count"]]]; }
+    if(!visitRanking.count) [visitRows addObject:@"此范围暂无已记录访问（不推断历史）"];
+    [sections addObject:@{@"title":@"会话访问次数榜",@"rows":visitRows}];
+    [sections addObject:@{@"title":@"状态与范围",@"rows":@[self.status?:@"",@"只读所选范围本地消息；消息统计不落盘、不联网、不包含 AI。需手动扫描；访问日志另按启用后真实事件记录。",@"总上限20,000条/100页；排行另限用户名顺序前50个已加载可分类会话，所有子扫描共享页数预算。未知时间不进入日期范围；同秒消息不推断互动。",@"规则统计不是社交意图：6小时新段、24小时破冰、5分钟同人连发。首尾不补猜开场。"]}];
+    if([r[@"overview"] boolValue]) {
+        NSMutableArray *rows=[NSMutableArray arrayWithObjects:[NSString stringWithFormat:@"已处理 %@ / %@ 个可靠会话 · %@ 页 · %@ 条扫描记录",r[@"processed"],r[@"sessions"],r[@"pages"],r[@"scanned"]],[r[@"complete"] boolValue]?@"完成已加载可分类会话；不是服务器全部历史":@"部分排行/截断：未扫会话可能更活跃，不称全账号最常聊",nil];
+        [sections addObject:@{@"title":@"最常聊 · 本地消息数（所选日期）",@"rows":rows}];
+        for(NSString *kind in @[@"private",@"chatroom"]) {
+            NSMutableArray *rank=[NSMutableArray array];
+            for(NSDictionary *row in r[@"rank"]) if([row[@"kind"] isEqual:kind]) [rank addObject:[NSString stringWithFormat:@"%@：%@ 条%@",row[@"id"],row[@"count"],[row[@"complete"] boolValue]?@"":@"（部分/下界）"]];
+            [sections addObject:@{@"title":[kind isEqual:@"private"]?@"私聊消息数榜（非好友关系证明）":@"群会话消息数榜",@"rows":rank.count?rank:@[@"无样本"]}];
+        }
+    }
+    if(r && ![r[@"overview"] boolValue]) {
         id mean=r[@"replyMeanSeconds"];
         NSString *meanText=[mean isKindOfClass:NSNumber.class] ? [NSString stringWithFormat:@"%.1f 秒",[mean doubleValue]] : @"无样本";
         [sections addObject:@{@"title":@"概览",@"rows":@[[NSString stringWithFormat:@"%@ · %@",[r[@"group"] boolValue]?@"群聊":@"私聊",r[@"timezone"]],[NSString stringWithFormat:@"%@ 条 · %@ 页 · 去重 %@ 条",r[@"total"],r[@"pages"],r[@"duplicates"]],[NSString stringWithFormat:@"未知ID %@ · 无效时间 %@ · 未知发送者 %@",r[@"unknownID"],r[@"unknownTime"],r[@"unknownSender"]],[NSString stringWithFormat:@"活跃 %lu 天 · 最长连续 %@ 天 · 深夜 %@ 条",(unsigned long)[r[@"days"] count],r[@"longestStreak"],r[@"night"]],[NSString stringWithFormat:@"相邻异人回复 %@ 对 · 均值 %@",r[@"replyCount"],meanText],[r[@"complete"] boolValue]?@"已到接口返回的本地边界":@"部分结果 / 已截断，不能称全部历史"]}];
@@ -308,10 +395,18 @@ static char WUStatsOwnerKey;
             [sections addObject:@{@"title":entry[1],@"rows":rows.count?rows:@[@"无样本"]}];
         }
     }
-    [sections addObject:@{@"title":@"尚未实现 / 不伪造",@"rows":@[@"全账号最常聊好友、群浏览访问榜：未接会话枚举/访问事件；消息数不冒充访问量。",@"画像、共同群、年龄/性别/地域/入群日期：没有可靠接口，保持未知。",@"支付交易去重、App 专用补页、完整历程：尚未接入。红包/转账仅接受经核验解码器的互斥分类，不猜 XML。",@"热词使用系统本地词边界，过滤短词、数字、少量停用词；跳过 URL/XML 正文。不保留正文样本，不作 AI 分析。"]}];
+    [sections addObject:@{@"title":@"尚未实现 / 不伪造",@"rows":@[@"未加载/未知分类/非私聊群聊会话不进入消息数榜；访问榜不冒充最常聊。日期扫描复用ID游标，缺时间单调性证据，当前不会仅凭某页时间越界提前停止。",@"画像、共同群、年龄/性别/地域/入群日期：没有可靠接口，保持未知。",@"支付交易去重、App 专用补页、完整历程：尚未接入。红包/转账仅接受经核验解码器的互斥分类，不猜 XML。",@"热词使用系统本地词边界，过滤短词、数字、少量停用词；跳过 URL/XML 正文。不保留正文样本，不作 AI 分析。"]}];
     self.sections=sections;
-    self.navigationItem.rightBarButtonItem.title=self.job && !self.job.cancelled ? @"取消" : @"扫描";
+    self.navigationItem.rightBarButtonItem.title=[self scanning] ? @"取消" : @"扫描";
     [self.tableView reloadData];
+}
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
+    [tableView deselectRowAtIndexPath:path animated:YES];
+    if(path.section!=0 || !self.binding || !self.binding.stillCurrent()) return;
+    if(path.row==0) [self chooseRange];
+    else if(path.row==1) { [self.job cancel]; [self.overviewJob cancel]; self.job=nil; self.binding.dateRange=nil; self.status=@"已重置日期，请手动扫描"; [self render:nil]; }
+    else if(path.row==2) [self confirmClearVisits];
+    else { [self.job cancel]; [self.overviewJob cancel]; self.overview=!self.overview; self.status=@"范围已切换，请手动扫描"; [self render:nil]; }
 }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return self.sections.count; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return [self.sections[section][@"rows"] count]; }
@@ -320,7 +415,7 @@ static char WUStatsOwnerKey;
     UITableViewCell *cell=[tableView dequeueReusableCellWithIdentifier:@"stat"];
     if(!cell) cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"stat"];
     cell.textLabel.numberOfLines=0; cell.textLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; cell.textLabel.adjustsFontForContentSizeCategory=YES;
-    cell.textLabel.text=self.sections[path.section][@"rows"][path.row]; cell.selectionStyle=UITableViewCellSelectionStyleNone; return cell;
+    cell.textLabel.text=self.sections[path.section][@"rows"][path.row]; cell.selectionStyle=path.section==0?UITableViewCellSelectionStyleDefault:UITableViewCellSelectionStyleNone; cell.accessoryType=path.section==0?UITableViewCellAccessoryDisclosureIndicator:UITableViewCellAccessoryNone; return cell;
 }
 @end
 void WUStatsBindOwner(UIViewController *owner,WUStatsBinding *binding) {

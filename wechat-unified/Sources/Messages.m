@@ -224,10 +224,36 @@ static NSHashTable *chatActions;
     } @catch(NSException *e) { Notice(v,@"无法读取选中消息；未提交撤回。"); }
 }
 @end
+extern NSArray<NSDictionary *> *WUStatsHostSessions(void);
+static dispatch_queue_t StatsVisitQueue(void) {
+    static dispatch_queue_t q; static dispatch_once_t once; dispatch_once(&once,^{ q=dispatch_queue_create("org.wechatunified.stats-visits",DISPATCH_QUEUE_SERIAL); }); return q;
+}
+static WUStatsVisitStore *StatsVisitStore(NSString *account) {
+    static WUStatsVisitStore *store; static NSString *key;
+    NSString *hash=WUStatsVisitID(account,@"");
+    if(![key isEqual:hash]) {
+        NSURL *root=[[NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject URLByAppendingPathComponent:@"WeChatUnified/StatsVisits" isDirectory:YES];
+        store=[[WUStatsVisitStore alloc] initWithDirectory:root account:account]; key=hash;
+    }
+    return store;
+}
+static void RecordStatsVisit(UIViewController *owner) {
+    if(!NSThread.isMainThread || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || !owner.viewIfLoaded.window || owner.presentedViewController || (owner.navigationController && owner.navigationController.topViewController!=owner) || ![WUValue(@"enabled") boolValue]) return;
+    NSString *account=Account(), *session=Session(owner);
+    if(!account.length || !session.length || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:@"stats"]) return;
+    NSString *kind=@"unknown";
+    for(NSDictionary *row in WUStatsHostSessions()) if([row[@"username"] isEqual:session]) { kind=row[@"kind"]; break; }
+    if([session hasSuffix:@"@chatroom"]) kind=@"chatroom";
+    NSUInteger gen=WUContextGeneration(); NSTimeInterval time=NSDate.date.timeIntervalSince1970;
+    dispatch_async(StatsVisitQueue(),^{
+        [StatsVisitStore(account) recordSession:session kind:kind time:time active:YES enabled:YES current:^BOOL { return gen==WUContextGenerationSnapshot(); }];
+    });
+}
 static IMP chatAppearOriginal, chatDisappearOriginal;
 static char chatKey;
 static void ChatAppeared(UIViewController *v,SEL s,BOOL animated) {
     ((void(*)(id,SEL,BOOL))chatAppearOriginal)(v,s,animated);
+    @try { RecordStatsVisit(v); } @catch(__unused NSException *e) {}
     @try { WUChatActions *a=objc_getAssociatedObject(v,&chatKey); if(!a) { a=[WUChatActions new]; a.owner=v; objc_setAssociatedObject(v,&chatKey,a,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [chatActions addObject:a]; } [a refresh]; } @catch(NSException *e) {}
 }
 static void ChatDisappeared(UIViewController *v,SEL s,BOOL animated) {
@@ -448,9 +474,18 @@ static void OpenStats(UIViewController *owner) {
         binding.verifiedEncoding=[NSString stringWithUTF8String:method_getTypeEncoding(method)];
         binding.initialCursor=@{@"id":@0,@"time":@0}; // 0x158ca0c..30, not a guessed UINT_MAX cursor.
         NSUInteger g=generation; __weak UIViewController *weak=owner;
-        binding.stillCurrent=^BOOL{ return weak && [WUValue(@"enabled") boolValue] && [account isEqual:Account()] && g==generation && [session isEqual:Session(weak)]; };
-        BOOL group=binding.group;
-        binding.decodePage=^NSDictionary *(NSArray *page,uint32_t left,NSDictionary *cursor) {
+        binding.stillCurrent=^BOOL{ return weak && UIApplication.sharedApplication.applicationState==UIApplicationStateActive && [WUValue(@"enabled") boolValue] && [account isEqual:Account()] && g==generation && [session isEqual:Session(weak)] && [WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:@"stats"]; };
+        binding.sessions=WUStatsHostSessions()?:@[];
+        binding.visitSnapshot=^(void (^done)(NSDictionary *)) { dispatch_async(StatsVisitQueue(),^{
+            NSDictionary *snapshot=[StatsVisitStore(account) snapshot];
+            dispatch_async(dispatch_get_main_queue(),^{ if(g==WUContextGeneration() && [account isEqual:Account()]) done(snapshot); });
+        }); };
+        binding.clearVisits=^(void (^done)(BOOL)) { dispatch_async(StatsVisitQueue(),^{
+            BOOL ok=[StatsVisitStore(account) clearIfCurrent:^BOOL { return g==WUContextGenerationSnapshot(); }];
+            dispatch_async(dispatch_get_main_queue(),^{ if(g==WUContextGeneration() && [account isEqual:Account()]) done(ok); });
+        }); };
+        NSDictionary *(^decodeForSession)(NSArray *,uint32_t,NSDictionary *,NSString *)=^NSDictionary *(NSArray *page,uint32_t left,NSDictionary *cursor,NSString *session) {
+            BOOL group=[session hasSuffix:@"@chatroom"];
             NSMutableArray *records=[NSMutableArray arrayWithCapacity:page.count]; uint64_t minID=0, minTime=0;
             for(id wrap in page) {
                 if(![wrap isKindOfClass:NSClassFromString(@"CMessageWrap")]) return nil;
@@ -468,6 +503,17 @@ static void OpenStats(UIViewController *owner) {
             // Do not equate a short page or an untrusted LeftCount alone with end.
             if(page.count && !minID) return nil;
             return @{@"records":[records copy],@"next":@{@"id":@(minID),@"time":@(minTime)},@"done":@(page.count==0 && left==0)};
+        };
+        binding.decodePage=^NSDictionary *(NSArray *page,uint32_t left,NSDictionary *cursor) { return decodeForSession(page,left,cursor,session); };
+        __weak WUStatsBinding *weakBinding=binding;
+        binding.bindingForSession=^WUStatsBinding *(NSString *target) {
+            WUStatsBinding *base=weakBinding; if(!base || !base.stillCurrent()) return nil;
+            BOOL known=NO; for(NSDictionary *row in base.sessions) if([row[@"username"] isEqual:target] && [@[@"private",@"chatroom"] containsObject:row[@"kind"]]) { known=YES; break; }
+            if(!known) return nil;
+            WUStatsBinding *child=[WUStatsBinding new]; child.account=account; child.session=target; child.group=[target hasSuffix:@"@chatroom"]; child.messageManager=mgr;
+            child.verifiedEncoding=base.verifiedEncoding; child.initialCursor=base.initialCursor; child.stillCurrent=base.stillCurrent; child.timeZone=base.timeZone; child.dateRange=base.dateRange;
+            child.decodePage=^NSDictionary *(NSArray *page,uint32_t left,NSDictionary *cursor) { return decodeForSession(page,left,cursor,target); };
+            return child;
         };
         WUStatsBindOwner(owner,binding); WUShowStats(owner);
     } @catch(NSException *e) { Notice(owner,@"统计绑定失败，未启动扫描。"); }

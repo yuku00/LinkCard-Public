@@ -50,6 +50,25 @@ static WUHomeSnapshot *Snapshot(id m) {
     return s;
 }
 static void Refresh(void);
+// Read the unfiltered host-owned arrays, never visible cell text or projected lists.
+NSArray<NSDictionary *> *WUStatsHostSessions(void) {
+    if(!NSThread.isMainThread || !ready) return nil;
+    @try {
+        id manager=CurrentManager(); if(!manager) return nil;
+        WUHomeSnapshot *snapshot=Snapshot(manager);
+        if(![snapshot current] || snapshot.invalid || snapshot.source.count!=3 || [snapshot.source containsObject:NSNull.null]) return nil;
+        NSMutableDictionary *rows=[NSMutableDictionary dictionary]; NSUInteger unknown=0;
+        for(NSArray *array in snapshot.source) for(id native in array) {
+            NSDictionary *row=Row(native);
+            if(row) rows[row[@"username"]]=row;
+            else unknown++;
+        }
+        NSMutableArray *result=[NSMutableArray array];
+        for(NSString *key in [rows.allKeys sortedArrayUsingSelector:@selector(compare:)]) [result addObject:rows[key]];
+        if(unknown) [result addObject:@{@"username":@"",@"kind":@"unknown",@"count":@(unknown)}];
+        return [result copy];
+    } @catch(__unused NSException *e) { return nil; }
+}
 @implementation WUHomeSnapshot
 - (void)schedule {
     if(self.queued) return; self.queued=YES;

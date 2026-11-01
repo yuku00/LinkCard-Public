@@ -1,3 +1,7 @@
+# 2026-11-01 统计增量：本轮待CI
+
+以8f7148897e63baa07108a90e8f933644ef3b1a53 / CI41300366511为旧成功基线；已核对远端head与release-state一致。本地27结构回归通过，保留31 XCTest及全部原生回归，尚无本轮原生测试/arm64编译结果。两个新统计.m已加入发布白名单，iOS Sources/*.m及test_stats显式链接均覆盖。仅发布既有增量，不重复开发、不开放未知日期排序捷径。
+
 # 2026-11-01 输入交互/可逆卡片：本轮待CI
 
 基线b7c3e4082f740f738800dbab7b7afd6a1f25c8dd / CI41298154018。新增输入有效编辑呼吸、纯搜索真实首页header隐藏、精确文件/表情背景卡片，共四项独立配置；保持键盘/发送按钮仍明确阻塞，无伪开关。27项本地结构回归已通过；新增生产纯逻辑目标过滤/64组合输入生命周期/自有值恢复测试，全部旧测试保留。尚未运行本轮真实iOS编译，不以前轮成功替代；后续必须核对本轮head_sha、产物摘要/arm64/嵌入签名。无真实宿主、用户数据、发删或安装；不为文档重复构建。
@@ -403,3 +407,11 @@ HomeGroups.m 已包含 setNormalSessions 返回前同步投影、置顶计数set
 
 ## 0.3.0 中断恢复即时核验（2026-11-01）
 已重建自己的本地 api.html 标签并恢复严格 TLS 查询。远端独立分支头为 `9d09db169be76b49bca0b60c7585b3c318e3ffd3`；对应 Actions `41270961089` 实际 completed/success，编译和上传步骤成功。此前 poll 中断不是本次编译失败。Artifact `13069043195`，99433 字节。正在核对下载内容和本轮源码；旧版0.2.0报告保留为历史，不代表最新产物。未进行真机验收。
+
+## 最新：美化增量 CI 修复交付（2026-11-01）
+- commit `8f7148897e63baa07108a90e8f933644ef3b1a53`；run `41300366511` / job `124829847490`：completed/success；artifact `13080254890`。本轮一次构建成功。
+- 已修旧 run 41299546175 的 `Sources/WU.h:24–25 unknown type name 'UIView'`：Foundation-only Ads hook 测试缺前向声明。仅发布已有 WU.h 声明、Appearance.m 自有图层恢复/可见性增量，移除未使用变量；测试不删改，本地 27/27 通过，CI 原生测试通过。
+- 下载 `artifacts/WeChatUnified-41300366511.zip`（365672 字节），SHA256 `60e46b5cae1c8191a4a0f9ab896ac3a47e74b9ca7aae554a952b1e92d9ba8467`，与 GitHub digest 一致。
+- 产物 `artifacts/run-41300366511/WeChatUnified.dylib`（698736 字节），SHA256 `f10e7339074818eb4faf158e40c85430e2eb9c9866ece64c74a6c7d4973ee981`，已核对 SHA256SUMS、arm64 MH_DYLIB、CI 严格 ad-hoc 签名验证及本地 165 页 CodeDirectory 哈希。
+- 补记前 332/332 发布文件与远端一致。本段和 RECOVERY-NOTE 为成功后本地记录，不触发额外 CI；无 reset/强推/跨项目修改。
+- 未扩功能：保持输入呼吸灯、文件/表情卡片、首页 header 隐藏；键盘发送按钮未做。未接触真实微信/用户数据、未执行真实发删、未作真机验收。
