@@ -45,5 +45,20 @@ int main(void) { @autoreleasepool {
     // Simulated late decode and stale seek: the same production lease must reject all invalidation causes.
     NSUInteger requests=1, completion=requests; requests++; CHECK(completion!=requests);
     for(NSUInteger g=3;g<8;g++) CHECK(!WUVoiceLease(@"a",@"a",2,g,YES,YES,YES,YES));
+    for(NSString *name in @[@"standard.silk",@"tencent.silk",@"synthetic.amr"]) {
+        NSString *hex=[NSString stringWithContentsOfFile:[@"tests/fixtures/" stringByAppendingFormat:@"%@.hex",name] encoding:NSUTF8StringEncoding error:NULL]; CHECK(hex!=nil);
+        NSMutableData *encoded=[NSMutableData data];
+        for(NSUInteger i=0;i+1<hex.length;i+=2) { unsigned v=0; CHECK(sscanf([[hex substringWithRange:NSMakeRange(i,2)] UTF8String],"%2x",&v)==1); uint8_t b=v; [encoded appendBytes:&b length:1]; }
+        NSDictionary *decoded=WUVoiceDecode(encoded); CHECK(decoded!=nil);
+        CHECK(fabs([decoded[@"duration"] doubleValue]-1000)<.01); CHECK([decoded[@"channels"] intValue]==1);
+        CHECK([decoded[@"sampleRate"] intValue]==([name hasSuffix:@"amr"]?8000:16000));
+        NSArray *bars=decoded[@"peaks"]; CHECK(bars.count==48);
+        double maximum=0; for(NSNumber *bar in bars) { CHECK(isfinite(bar.doubleValue) && bar.doubleValue>=0 && bar.doubleValue<=1); maximum=fmax(maximum,bar.doubleValue); }
+        CHECK(maximum>.1); CHECK(WUVoiceSeekMS(.5,[decoded[@"duration"] doubleValue])==500);
+        if(![name hasSuffix:@"amr"]) { CHECK([bars.firstObject doubleValue]<.01); CHECK([bars.lastObject doubleValue]>.1); }
+        NSProgress *cancel=[NSProgress progressWithTotalUnitCount:1]; [cancel cancel]; CHECK(!WUVoiceDecodeCancellable(encoded,cancel));
+        uint8_t junk=0x7c; [encoded appendBytes:&junk length:1]; CHECK(!WUVoiceDecode(encoded));
+    }
+    CHECK(!WUVoiceDecode([NSMutableData dataWithLength:8*1024*1024+1]));
     printf("Voice: %lu assertions passed (PCM decode, peaks, millisecond seek, lifecycle)\n",(unsigned long)checks);
 } return 0; }

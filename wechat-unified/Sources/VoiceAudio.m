@@ -1,5 +1,7 @@
 #import "VoiceAudio.h"
 #import "VoiceLogic.h"
+#import "OfflineVoice.h"
+#include <stdlib.h>
 #import <AudioToolbox/AudioToolbox.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -25,10 +27,21 @@ static OSStatus Read(void *ctx, SInt64 position, UInt32 count, void *out, UInt32
     if(*actual) memcpy(out,(const char *)data.bytes+position,*actual); return noErr;
 }
 static SInt64 VoiceDataSize(void *ctx) { return (SInt64)[(__bridge NSData *)ctx length]; }
-NSDictionary *WUVoiceDecode(NSData *data) {
-    if(data.length<12 || data.length>8*1024*1024) return nil;
+static int Cancelled(void *ctx) { return [(__bridge NSProgress *)ctx isCancelled]; }
+NSDictionary *WUVoiceDecode(NSData *data) { return WUVoiceDecodeCancellable(data,nil); }
+NSDictionary *WUVoiceDecodeCancellable(NSData *data, NSProgress *cancellation) {
+    if(cancellation.cancelled || data.length<6 || data.length>8*1024*1024) return nil;
     const uint8_t *p=data.bytes;
-    // SILK/AMR/raw data are deliberately not passed to an unrelated decoder.
+    BOOL offline=(data.length>=9 && !memcmp(p,"#!SILK_V3",9)) || (data.length>=10 && p[0]==2 && !memcmp(p+1,"#!SILK_V3",9)) || !memcmp(p,"#!AMR\n",6);
+    if(offline) {
+        WUOfflinePCM pcm={0};
+        if(WUOfflineDecode(p,data.length,Cancelled,(__bridge void *)cancellation,&pcm)) return nil;
+        NSArray *peaks=WUVoicePeaks(pcm.samples,pcm.frames,1,48);
+        NSDictionary *result=peaks && !cancellation.cancelled ? @{ @"duration":@(pcm.frames*1000.0/pcm.rate), @"peaks":peaks, @"sampleRate":@(pcm.rate), @"channels":@1 } : nil;
+        free(pcm.samples); return result;
+    }
+    if(data.length<12) return nil;
+    // Only known system containers reach AudioToolbox; malformed codecs fail closed.
     BOOL known=(!memcmp(p,"RIFF",4) && !memcmp(p+8,"WAVE",4)) || !memcmp(p,"caff",4) || !memcmp(p+4,"ftyp",4);
     if(!known) return nil;
     AudioFileID file=NULL; ExtAudioFileRef ext=NULL; NSDictionary *result=nil;
@@ -45,6 +58,7 @@ NSDictionary *WUVoiceDecode(NSData *data) {
         if(ExtAudioFileSetProperty(ext,kExtAudioFileProperty_ClientDataFormat,sizeof(client),&client)) goto done;
         NSMutableData *pcm=[NSMutableData data]; float chunk[4096*2]; NSUInteger frames=0;
         for(;;) {
+            if(cancellation.cancelled) goto done;
             UInt32 n=4096; AudioBufferList buffers={0}; buffers.mNumberBuffers=1;
             buffers.mBuffers[0].mNumberChannels=client.mChannelsPerFrame;
             buffers.mBuffers[0].mData=chunk; buffers.mBuffers[0].mDataByteSize=sizeof(chunk);

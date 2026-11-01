@@ -1,4 +1,12 @@
-# 2026-11-01 语音显示链增量（源码已落盘，待本轮CI）
+# 2026-11-01 离线语音生产集成（本节覆盖下方历史缺口）
+
+已将最小固定版本SILK/AMR-NB decoder-only源码接入WUVoiceDecode；标准/腾讯SILK输出明确16kHz mono signed-int16，AMR-NB明确8kHz mono signed-int16，Apple小端数值转换为float计算真实48桶波形与帧时长，沿用原有seek/UI。严格解析长度/TOC，8MiB输入、5120字节SILK包、9000包、180秒、受限内存；坏头/截断/解码错误/超限/取消全部返回失败，不交付部分PCM。NSProgress逐包取消，原request/account/generation检查继续丢弃旧结果。不推测宿主PCM、不执行真实宿主、不上传或修改语音。
+
+依赖仅54+76个解码源码单元及必要头文件，manifest逐文件固定SHA256；许可证/NOTICE随二进制分发，不作专利保证。无encoder、无下载或安装、无额外iOS架构。新增生产C入口合成解码/边界/取消40054原生断言本地Linux通过，19项现有结构检查通过；macOS原生WUVoiceDecode波形/时长与iOS arm64编译结果等待本轮CI，不能称已iOS运行。全部原有测试及排除范围保留。先前dylib基准376016字节，实际变化以成功产物核验为准。
+
+# 历史：语音显示链增量（当时SILK完整链仍缺）
+
+CI `41280295233` completed/success，最新commit `348040c4a8fb4de331536f09717822632b07c5d0`，artifact `13072693084` 已下载。19项结构测试、新增52项真实原生断言及全部旧测试通过；49/49白名单blob发布一致。ZIP160802字节、dylib376016字节；SHA256、arm64 Mach-O及87页嵌入ad-hoc代码签名已独立核验。首次CI的回调Size命名冲突已修复后全量重跑，无测试删减。详见BUILD-RESULT，未注入真实宿主。此段为构建后本地交付补记。
 
 新增独立 Voice / VoiceAudio / VoiceLogic：VoiceMessageCellView布局和移出窗口、VoiceMessageViewModel setIsPlaying: 只经统一Hook所有权与精确签名门控。读取MMContext当前MsgPlayingFacade的32位整数currentPlayTime；seek仅接受void/unsigned int参数，单位毫秒，证据为0x5cdd44存w0与0x5cda68按总毫秒乘比例后传w2，不以double秒调用。仅正在播放且cell/model/message/账号/generation/服务实例仍一致时松手seek；随后以真实时钟确认，不伪改进度。不自动播放或发送，不改原消息/模型/对端时长。
 
@@ -6,7 +14,7 @@
 
 **准确缺口：常见微信SILK/AMR仍未适配PCM解码。** 0x5cb210仅证实旧库调用SilkAudioCodec与m_decodedData，不能证明当前宿主PCM采样率/声道/格式契约；本轮不硬编码猜24kHz、不把未知裸数据送系统错误解码。此类消息只能展示已确认的真实播放毫秒时间，明确显示总时长/波形不可用，禁止seek；因此不是完整WCPulse语音支持，也不称截图八项对所有微信语音完成。支持系统容器也须当前宿主getVoicePath存在且文件就绪；签名或路径不匹配明确不可用。保持键盘未加入：无足够可靠入口，不强行becomeFirstResponder。无真机验收。
 
-新增真实生成WAV的系统解码测试、PCM峰值/静音/双声道/边界/毫秒seek/格式化/生命周期失效断言及结构检查，保留全部已有测试。CI与最终产物结果后补BUILD-RESULT。继续排除全部AI、ActionBar/Dock、红包详情、在线主题、视频解析；未reset本地旧HEAD，不上传转储或用户媒体。
+新增真实生成WAV的系统解码测试、PCM峰值/静音/双声道/边界/毫秒seek/格式化/生命周期失效断言及结构检查，保留全部已有测试。CI与最终产物结果已记录BUILD-RESULT。继续排除全部AI、ActionBar/Dock、红包详情、在线主题、视频解析；未reset本地旧HEAD，不上传转储或用户媒体。
 
 ---
 

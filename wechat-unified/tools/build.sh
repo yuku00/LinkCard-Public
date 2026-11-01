@@ -3,7 +3,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build
 python3 tests/test_source.py
-xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/voice_logic.m Sources/VoiceLogic.m Sources/VoiceAudio.m -framework Foundation -framework AudioToolbox -o build/voice-logic-tests
+python3 tools/build_codecs.py macosx
+xcrun --sdk macosx clang -Wall -Wextra -Werror -I Sources tests/offline_voice.c build/codec-macosx/libWUOffline.a -o build/offline-voice-tests
+build/offline-voice-tests 2>&1 | tee build/offline-voice-tests.txt
+rm build/offline-voice-tests
+python3 tools/build_codecs.py iphoneos
+xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/voice_logic.m Sources/VoiceLogic.m Sources/VoiceAudio.m build/codec-macosx/libWUOffline.a -framework Foundation -framework AudioToolbox -o build/voice-logic-tests
 build/voice-logic-tests | tee build/voice-logic-tests.txt
 rm build/voice-logic-tests
 xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/ads_logic.m Sources/AdsLogic.m -framework Foundation -o build/ads-logic-tests
@@ -33,7 +38,7 @@ xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" \
   -Wall -Wextra -Werror -Wno-unused-parameter -Wno-nullability-completeness \
   -O2 \
   -install_name @rpath/WeChatUnified.dylib \
-  Sources/*.m -framework AudioToolbox -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework UniformTypeIdentifiers -lz \
+  Sources/*.m build/codec-iphoneos/libWUOffline.a -Wl,-dead_strip -framework AudioToolbox -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework UniformTypeIdentifiers -lz \
   -o build/WeChatUnified.dylib
 bash tools/test_stats.sh
 xcrun strip -x build/WeChatUnified.dylib
@@ -45,3 +50,11 @@ otool -L build/WeChatUnified.dylib | tee build/dependencies.txt
 xcrun vtool -show-build build/WeChatUnified.dylib | tee build/platform.txt
 shasum -a 256 build/WeChatUnified.dylib | tee build/SHA256SUMS
 cp README.md STATUS.md build/
+mkdir -p build/licenses
+cp Vendor/silk/LICENSE build/licenses/SILK-LICENSE.txt
+cp Vendor/amr/LICENSE build/licenses/AMR-LICENSE.txt
+cp Vendor/amr/NOTICE build/licenses/AMR-NOTICE.txt
+cp Vendor/README.md build/licenses/README.md
+wc -c build/WeChatUnified.dylib | tee build/size.txt
+# Only the signed dylib, evidence and required notices are shipped.
+rm -r build/codec-macosx build/codec-iphoneos

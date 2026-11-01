@@ -51,6 +51,7 @@ static BOOL Playing(id vm) {
 @property(nonatomic) BOOL loading, attempted;
 @property(nonatomic,strong) WUVoiceWave *wave;
 @property(nonatomic,strong) NSDictionary *audio;
+@property(nonatomic,strong) NSProgress *cancellation;
 - (BOOL)valid;
 - (void)clear;
 - (void)refresh;
@@ -120,7 +121,7 @@ static BOOL Foreground(void) { return UIApplication.sharedApplication.applicatio
     return WUVoiceLease(self.account,WUCurrentAccount(),self.generation,WUContextGeneration(),self.cell.window!=nil,WUEnabled(@"voiceProgress"),Foreground(),vm && vm==self.model && self.message && Object(vm,@"messageWrap")==self.message);
 }
 - (void)clear {
-    self.request++; self.loading=NO; self.attempted=NO; self.audio=nil; self.path=nil;
+    [self.cancellation cancel]; self.request++; self.loading=NO; self.attempted=NO; self.audio=nil; self.path=nil;
     [self.wave removeFromSuperview]; self.wave=nil;
 }
 - (BOOL)canSeek {
@@ -144,11 +145,12 @@ static BOOL Foreground(void) { return UIApplication.sharedApplication.applicatio
     self.wave.frame=CGRectMake(area.origin.x+8,CGRectGetMaxY(area)-30,MAX(0,area.size.width-16),28);
     id path=CallObject(self.message,@"getVoicePath");
     if(![path isKindOfClass:NSString.class]) path=nil;
-    if(![self.path isEqual:path] && (self.path || path)) { self.request++; self.loading=NO; self.attempted=NO; self.audio=nil; self.path=[path copy]; }
+    if(![self.path isEqual:path] && (self.path || path)) { [self.cancellation cancel]; self.request++; self.loading=NO; self.attempted=NO; self.audio=nil; self.path=[path copy]; }
     if(!self.attempted && path) {
         self.attempted=YES; self.loading=YES; NSUInteger request=++self.request; __weak WUVoiceBinding *weak=self;
+        NSProgress *cancellation=[NSProgress progressWithTotalUnitCount:1]; self.cancellation=cancellation;
         dispatch_async(audioQueue,^{ @autoreleasepool {
-            NSDictionary *audio=WUVoiceDecode(WUVoiceReadLocal(path));
+            NSDictionary *audio=cancellation.cancelled?nil:WUVoiceDecodeCancellable(WUVoiceReadLocal(path),cancellation);
             dispatch_async(dispatch_get_main_queue(),^{
                 WUVoiceBinding *b=weak; if(!b || b.request!=request || ![b valid]) return;
                 b.loading=NO; b.audio=audio; [b refresh];
