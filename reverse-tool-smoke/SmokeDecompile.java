@@ -3,7 +3,10 @@
 import ghidra.app.util.headless.HeadlessScript;
 import ghidra.app.decompiler.DecompInterface;
 import ghidra.program.model.listing.Function;
-import ghidra.program.model.listing.FunctionIterator;
+import ghidra.program.model.symbol.Symbol;
+import ghidra.program.model.symbol.SymbolIterator;
+import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.address.Address;
 import java.nio.file.*;
 import java.util.*;
 
@@ -30,12 +33,32 @@ public class SmokeDecompile extends HeadlessScript {
             decompiler.toggleCCode(true);
             decompiler.toggleSyntaxTree(true);
             if (!decompiler.openProgram(currentProgram)) throw new IllegalStateException("decompiler open failed");
-            FunctionIterator functions = currentProgram.getFunctionManager().getFunctions(true);
-            while (functions.hasNext()) {
+            Map<String, Address> targets = new TreeMap<>();
+            SymbolIterator symbols = currentProgram.getSymbolTable().getAllSymbols(true);
+            try (var inventory = Files.newBufferedWriter(out.resolve("synthetic-symbols.tsv"))) {
+                while (symbols.hasNext()) {
+                    Symbol symbol = symbols.next();
+                    inventory.write(symbol.getName() + "\t" + symbol.getAddress() + "\n");
+                    String name = symbol.getName().replaceFirst("^_+", "");
+                    if (expected.contains(name) && symbol.getAddress().isMemoryAddress()) {
+                        Address old = targets.putIfAbsent(name, symbol.getAddress());
+                        if (old != null && !old.equals(symbol.getAddress()))
+                            throw new IllegalStateException("ambiguous symbol " + name);
+                    }
+                }
+            }
+            for (var target : targets.entrySet()) {
                 monitor.checkCancelled();
-                Function f = functions.next();
-                String name = f.getName().replaceFirst("^_+", "");
-                if (!expected.contains(name)) continue;
+                String name = target.getKey();
+                Function f = getFunctionAt(target.getValue());
+                if (f == null) {
+                    disassemble(target.getValue());
+                    f = createFunction(target.getValue(), name);
+                }
+                if (f == null) throw new IllegalStateException("no function at symbol " + name);
+                // Entry functions can have an analyzer-selected primary name.
+                // The synthetic Mach-O symbol, not that primary name, identifies the target.
+                f.setName(name, SourceType.USER_DEFINED);
                 if (!found.add(name)) throw new IllegalStateException("duplicate target " + name);
                 var result = decompiler.decompileFunction(f, 30, monitor);
                 if (!result.decompileCompleted() || result.getDecompiledFunction() == null || result.getHighFunction() == null)
