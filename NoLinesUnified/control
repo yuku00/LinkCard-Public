@@ -1,0 +1,10 @@
+Package: local.nolines.unified
+Name: NoLines Unified
+Version: 0.1.0
+Architecture: iphoneos-arm64e
+Description: Separator-only source rebuild; no Photos or tab simplification.
+Maintainer: Local Build
+Author: Local Build
+Section: Tweaks
+Depends: mobilesubstrate, firmware (>= 16.0)
+Conflicts: com.wkk.noline, com.hx.wn

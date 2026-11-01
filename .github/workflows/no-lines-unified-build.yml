@@ -1,0 +1,54 @@
+name: NoLines Unified RootHide
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'NoLinesUnified/**'
+      - '.github/workflows/no-lines-unified-build.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      THEOS: ${{ github.workspace }}/.theos-roothide
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Prepare pinned RootHide Theos and Apple toolchain
+        run: |
+          set -euxo pipefail
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          brew install ldid dpkg make
+          git clone https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" checkout 3ac89c984ec652fd16bcd91b33ae16de45ce76fa
+          git -C "$THEOS" submodule update --init --recursive
+          test -f "$THEOS/vendor/mod/roothide/package/deb.mk"
+          git -C "$THEOS" submodule status --recursive
+      - name: Build both device architectures using real roothide scheme
+        working-directory: NoLinesUnified
+        run: |
+          set -euxo pipefail
+          gmake clean
+          gmake -j2 FINALPACKAGE=1 package
+          mkdir -p build-report
+          cp packages/*.deb build-report/
+          dpkg-deb --info packages/*.deb > build-report/control.txt
+          dpkg-deb --contents packages/*.deb > build-report/contents.txt
+          dpkg-deb -x packages/*.deb build-report/extracted
+          BIN=build-report/extracted/Library/MobileSubstrate/DynamicLibraries/NoLinesUnified.dylib
+          test -f "$BIN"
+          file "$BIN" > build-report/macho.txt
+          lipo -info "$BIN" >> build-report/macho.txt
+          otool -L "$BIN" >> build-report/macho.txt
+          otool -l "$BIN" > build-report/load-commands.txt
+          ldid -e "$BIN" > build-report/entitlements.plist
+          shasum -a 256 packages/*.deb > build-report/SHA256SUMS
+          cat build-report/control.txt build-report/contents.txt build-report/macho.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: NoLinesUnified-RootHide
+          path: NoLinesUnified/build-report/
+          if-no-files-found: error
