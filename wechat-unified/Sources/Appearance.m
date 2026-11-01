@@ -18,11 +18,7 @@ static void Decorate(UIView *v,NSString *key) {
     Class chat=NSClassFromString(@"BaseMsgContentViewController"); BOOL inChat=NO;
     for(UIResponder *r=v; r; r=r.nextResponder) if(chat && [r isKindOfClass:chat]) { inChat=YES; break; }
     if(!inChat) return;
-    CAShapeLayer *l=[CAShapeLayer layer]; l.name=@"org.wechatunified.border";
-    l.frame=v.bounds; l.path=[UIBezierPath bezierPathWithRoundedRect:CGRectInset(v.bounds,1,1) cornerRadius:10].CGPath;
-    l.fillColor=UIColor.clearColor.CGColor;
-    l.strokeColor=[UIColor.systemTealColor resolvedColorWithTraitCollection:v.traitCollection].CGColor; l.lineWidth=1;
-    [v.layer addSublayer:l]; objc_setAssociatedObject(v,&layerKey,l,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [decorated addObject:v];
+    WUApplyConfiguredSurface(v,key,10,YES); [decorated addObject:v];
 }
 static BOOL Visible(UIView *v) {
     if(!v.window || !v.window.isKeyWindow || CGRectIsEmpty(v.bounds)) return NO;
@@ -47,8 +43,9 @@ static void RefreshInput(UIView *v) {
     if(l && l.superlayer!=v.layer) { Remove(v); l=nil; }
     if(!l) { l=[CAShapeLayer layer]; l.name=@"org.wechatunified.input"; l.fillColor=UIColor.clearColor.CGColor; [v.layer addSublayer:l]; objc_setAssociatedObject(v,&layerKey,l,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [decorated addObject:v]; }
     [CATransaction begin]; [CATransaction setDisableActions:YES];
-    l.frame=v.bounds; l.path=[UIBezierPath bezierPathWithRoundedRect:CGRectInset(v.bounds,1,1) cornerRadius:10].CGPath;
-    l.strokeColor=[UIColor.systemTealColor resolvedColorWithTraitCollection:v.traitCollection].CGColor; l.lineWidth=effect==2?2:1;
+    NSDictionary *style=WUSurfaceStyle(@"inputBorder"); CGFloat radius=style[@"radius"]?[style[@"radius"] doubleValue]:10;
+    l.frame=v.bounds; l.path=[UIBezierPath bezierPathWithRoundedRect:CGRectInset(v.bounds,1,1) cornerRadius:radius].CGPath;
+    l.strokeColor=WUSurfaceColor(@"inputBorder",@"border",v.traitCollection,UIColor.systemTealColor).CGColor; l.lineWidth=style[@"borderWidth"]?[style[@"borderWidth"] doubleValue]:(effect==2?2:1);
     [CATransaction commit];
     if(effect==2 && ![l animationForKey:@"wu.breathe"]) { CABasicAnimation *a=[CABasicAnimation animationWithKeyPath:@"opacity"]; a.fromValue=@0.25; a.toValue=@1; a.duration=1.2; a.autoreverses=YES; a.repeatCount=HUGE_VALF; [l addAnimation:a forKey:@"wu.breathe"]; }
     if(effect!=2) [l removeAnimationForKey:@"wu.breathe"];
@@ -60,9 +57,9 @@ static void RefreshInput(UIView *v) {
     }
 }
 BOOL WUInputPulseAvailable(void) { return pulseReady; }
-static void Input(UIView *v,SEL s) { ((void(*)(id,SEL))inputLayout)(v,s); [inputs addObject:v]; RefreshInput(v); WURefreshDictation(v); }
-static void InputWindow(UIView *v,SEL s) { Remove(v); ((void(*)(id,SEL))inputWindow)(v,s); [inputs addObject:v]; RefreshInput(v); WURefreshDictation(v); }
-static void Notice(UIView *v,SEL s) { Remove(v); ((void(*)(id,SEL))noticeLayout)(v,s); Decorate(v,@"noticeBorder"); }
+static void Input(UIView *v,SEL s) { WURestoreConfiguredSurface(v); ((void(*)(id,SEL))inputLayout)(v,s); [inputs addObject:v]; WUApplyConfiguredSurface(v,@"inputBorder",10,YES); RefreshInput(v); WURefreshDictation(v); }
+static void InputWindow(UIView *v,SEL s) { WURestoreConfiguredSurface(v); Remove(v); ((void(*)(id,SEL))inputWindow)(v,s); [inputs addObject:v]; WUApplyConfiguredSurface(v,@"inputBorder",10,YES); RefreshInput(v); WURefreshDictation(v); }
+static void Notice(UIView *v,SEL s) { WURestoreConfiguredSurface(v); Remove(v); ((void(*)(id,SEL))noticeLayout)(v,s); Decorate(v,@"noticeBorder"); }
 static void RestoreTables(void) {
     for(UITableView *t in tables) {
         NSNumber *baseline=objc_getAssociatedObject(t,&separatorKey);
@@ -92,7 +89,7 @@ void WUInstallAppearance(void) {
             if([n.name isEqual:UIApplicationWillResignActiveNotification]) inputSuspended=YES;
             if([n.name isEqual:UIApplicationDidBecomeActiveNotification]) inputSuspended=NO;
             RestoreTables(); [pulseWatch invalidate]; pulseWatch=nil;
-            for(UIView *v in decorated.allObjects) { Remove(v); [v setNeedsLayout]; }
+            for(UIView *v in decorated.allObjects) { WURestoreConfiguredSurface(v); Remove(v); [v setNeedsLayout]; }
             if(![n.name isEqual:UIApplicationWillResignActiveNotification]) for(UIView *v in inputs.allObjects) RefreshInput(v);
         }];
     });

@@ -1,3 +1,11 @@
+# 2026-11-01 语音转述两项集成：CI及产物取回完成
+
+- commit `2792943d0804532a3be98d9c11f4ebe9c9a00525`；[CI41308827848](https://github.com/yuku00/LinkCard-Public/actions/runs/41308827848) completed/success，job124854742400。前代理在结果核验阶段中断，主会话直接接管取回，无重复发布或代码改动。
+- 生产转述模块+Core Hook原生UIKit mock正常86/86、错误ABI4/4、冲突8/8通过；配置保存32检查、31项统计XCTest及原回归通过；iOS arm64编译、严格codesign验证通过。首轮错误ABI夹具误用class_replaceMethod不改类型编码，修为动态子类错误签名后通过，未放宽生产校验。
+- artifact13084666082，ZIP461956字节，GitHub digest `c7a24047563c2907d937e66ba1929d8990ec4d8f5f93f3de380d112799a7e384`已实算匹配；dylib882240字节，SHA256 `a07738101beb59b1ec173f325a95f5e98858726d0be18fb7b50aa85a41f221df`匹配包内清单，本地解析arm64 MH_DYLIB。
+- 补记前348/348源码路径与成功commit一致，打包 `artifacts/WeChatUnified-current-source-2792943.zip`，SHA256 `9c0aab3d2f706c958b10d39883d49f7ca40161ca34bc6aedaa0bf5d45f2ec0ce`；是当前部分工程源码，不是完整需求源码。校验记录 `artifacts/verification-41308827848.json`，构建日志 `artifacts/dictation-ci-41308827848.log`。
+- 两项设置/配置/安装/布局刷新已接通；防误触为短点按先聚焦，不是业务确认弹窗。UIImageView快照的同值alpha/刷新间隙限制见DICTATION-INTEGRATION.md；真实触摸派发、输入副作用及宿主ABI未真机验收。没有运行Ghidra、上传原样本、操作真实微信或数据。仅补本文与STATUS，不为文档重复CI。
+
 # 2026-11-01 两项P0修复（真实红→绿CI及产物核验通过）
 
 - 红基线 commit `5478dd0c4f33e649783dd53555b252b972f9694c` / run `41305087598` / job `124843744812`：真实生产WUSaveAccountOption→WUSave→磁盘重载18检查11失败；同一构造类I/q/i/Q的复读就绪与普通语音/语音包分别失败1/5/6/6项。独立job仅在实际运行返回预期症状失败时通过，编译错误不计红。

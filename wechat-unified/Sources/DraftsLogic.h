@@ -8,3 +8,5 @@ id WUDraftsCreateEditor(Class cls);
 id WUDraftsTextView(id editor);
 id WUDraftsObject(id receiver, NSString *selector);
 id WUDraftsCreateImageEditor(Class cls, NSArray *images);
+BOOL WUDraftsVideoEditorAvailable(Class editor, Class factory);
+id WUDraftsCreateVideoEditor(Class editor, Class factory, NSURL *editingCopy, BOOL (^current)(void), id *expectedDraft);

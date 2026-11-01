@@ -69,9 +69,16 @@ class Guardrails(unittest.TestCase):
         self.assertIn('method_copyReturnType',SRC)
         self.assertIn('class_addMethod(c,s,replacement',SRC)
     def test_atomic_configuration(self):
+        core=(ROOT/'Sources/Core.m').read_text()
         for required in ['O_NOFOLLOW','O_EXCL','fsync(fd)','renameat(', 'backup.json', 'config.json']:
-            self.assertIn(required,SRC)
-        self.assertNotIn('writeToFile:',SRC)
+            self.assertIn(required,core)
+        # The preference store must not fall back to non-atomic writes. Theme staging
+        # and user-requested export use checked Foundation atomic writes separately.
+        self.assertNotIn('writeToFile:',core)
+        for key,validator in [('pluginHub','WUHubValidOptions'),('themeOptions','WUValidThemeOptions'),('surfaceStyles','WUValidSurfaceStyles')]:
+            self.assertIn('@"'+key+'"',core)
+            self.assertIn(validator+'(value)',core)
+        self.assertIn('Sources/ThemeCatalog.m',(ROOT/'tests/test_p0.py').read_text())
     def test_defaults_safe(self):
         self.assertIn('@"enabled":@NO',SRC)
         self.assertIn('com.tencent.xin',SRC)
@@ -92,7 +99,7 @@ class Guardrails(unittest.TestCase):
         theme=(ROOT/'Sources/Themes.m').read_text()
         for required in ['inflateInit2(&z,-MAX_WBITS)', 'crc32(', 'NSIntersectionRange', '512', '32*1024*1024', '64*1024*1024', '0170000']:
             self.assertIn(required, archive)
-        for required in ['themePack', 'bubblePack', 'RestoreVisibleImages', 'O_NOFOLLOW', 'UIImage', 'UIControlStateNormal', 'NSUUID.UUID.UUIDString', 'NSCache', 'PackPath', 'ValidPNG']:
+        for required in ['themePack', 'bubblePack', 'RestoreVisibleImages', 'O_NOFOLLOW', 'UIImage', 'UIControlStateNormal', 'NSUUID.UUID.UUIDString', 'NSCache', 'PackPath', 'WUThemeValidateResource', 'WUWriteThemeZIP', 'WUThemeMergeFiles']:
             self.assertIn(required,theme)
         self.assertNotIn('loadColorFrom',theme)
         self.assertNotIn('replacementResourcePath',theme)
@@ -210,9 +217,12 @@ class Guardrails(unittest.TestCase):
     def test_moments_cache_real_host_safe_local_only(self):
         ui=(ROOT/'Sources/MomentsCache.m').read_text()
         logic=(ROOT/'Sources/MomentsCacheLogic.m').read_text()
-        for required in ['getHomepageData', 'onDataUpdated:maxItemID:minItemID:reqFirstPageMd5:', 'Bound(o)', 'WUContextGeneration()', 'UIApplicationStateActive', 'pathForExistData', 'WUMCacheStore', 'WUDraftMediaURLs', 'pending.count>=32', 'isPrivate', 'exceedsVisibleTimeRange', '曾见内容', '评论保存/合并未实现', 'lastErrorAccount isEqual:self.account', 'enabled.boolValue && !Available()', '退出重开联系人朋友圈']:
+        for required in ['getHomepageData', 'onDataUpdated:maxItemID:minItemID:reqFirstPageMd5:', 'Bound(o)', 'WUContextGeneration()', 'UIApplicationStateActive', 'pathForExistData', 'WUMCacheStore', 'WUDraftMediaURLs', 'pending.count>=32', 'isPrivate', 'exceedsVisibleTimeRange', '曾见内容', '评论宿主解码器尚未接入', 'lastErrorAccount isEqual:self.account', 'enabled.boolValue && !Available()', '退出重开联系人朋友圈']:
             self.assertIn(required,ui)
-        for forbidden in ['NSTimer', 'setM_cache', 'setValue:', 'deleteDataItem:', 'removeItemAt', 'NSKeyedArchiver', 'NSURLSession']:
+        # The detail-only timer cancels playback on account changes; it never fetches content.
+        self.assertIn('if(!v || ![v.browser current])',ui)
+        self.assertNotIn('NSTimer',ui.split('static IMP updatedObjects')[0])
+        for forbidden in ['setM_cache', 'setValue:', 'deleteDataItem:', 'removeItemAt', 'NSKeyedArchiver', 'NSURLSession']:
             self.assertNotIn(forbidden,ui+logic)
         self.assertIn('WUShowMomentsCache(self)',(ROOT/'Sources/Settings.m').read_text())
         self.assertIn('WUInstallMomentsCache();',(ROOT/'Sources/Core.m').read_text())
@@ -271,8 +281,11 @@ class Guardrails(unittest.TestCase):
             self.assertIn(marker,appearance)
         for forbidden in ['becomeFirstResponder', 'resignFirstResponder', 'WUHook(@"UIView"', 'WUHook(@"UIButton"']:
             self.assertNotIn(forbidden,appearance+surfaces)
-        for marker in ['m_bgImageView','UIImageView.class','isDescendantOfView:cell','WUSurfaceValueOwned','appliedRadius']:
+        for marker in ['m_bgImageView','UIImageView.class','isDescendantOfView:cell','WUApplyConfiguredSurface','WURestoreConfiguredSurface']:
             self.assertIn(marker,surfaces)
+        style=(ROOT/'Sources/SurfaceStyle.m').read_text()
+        for marker in ['WUSurfaceValueOwned','state[@"applied"]','WUSurfaceColor','fontSize','WURestoreConfiguredSurface']:
+            self.assertIn(marker,style)
         for marker in ['WURestoreMessageSurface(cell)', 'WUCardRole(', 'cellModelOriginal && cellWindowOriginal && cellReuseOriginal']:
             self.assertIn(marker,messages)
         for marker in ['SearchOnlyHeader', 'NewMainFrameViewController', 'WCSearchBar', 'searchHeaderFrame', 'self.table.tableHeaderView==self.searchPlaceholder', 'restoreGroup']:

@@ -221,6 +221,7 @@ static NSArray *WUReadPage(WUStatsBinding *b,NSDictionary *cursor,uint32_t *left
     if(self.finishing) return; self.finishing=YES;
     NSArray *records=[[NSArray alloc] initWithArray:self.accumulator.records copyItems:YES];
     NSTimeZone *zone=[self.accumulator.calendar.timeZone copy]; BOOL group=self.accumulator.group;
+    NSString *account=[self.binding.account copy], *peer=[self.binding.session copy];
     NSUInteger duplicates=self.accumulator.duplicates, pages=self.pages, scanned=self.readCount, generation=self.generation;
     self.accumulator=nil;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
@@ -228,6 +229,7 @@ static NSArray *WUReadPage(WUStatsBinding *b,NSDictionary *cursor,uint32_t *left
             WUStatsAccumulator *snapshot=[[WUStatsAccumulator alloc] initWithTimeZone:zone group:group];
             snapshot.records=[records mutableCopy]; snapshot.duplicates=duplicates;
             NSMutableDictionary *result=[[snapshot result] mutableCopy];
+            result[@"details"]=WUStatsDetails(records,account,peer,group,zone);
             result[@"complete"]=@(complete); result[@"pages"]=@(pages); result[@"scanned"]=@(scanned); result[@"scope"]=@"当前会话；仅经核验分页接口可见的本地记录";
             dispatch_async(dispatch_get_main_queue(),^{
                 if(self.cancelled || generation!=self.generation) return;
@@ -290,6 +292,7 @@ static char WUStatsOwnerKey;
 @property(nonatomic,strong) NSTimer *contextTimer;
 @property(nonatomic,copy) NSDictionary *visits;
 @property(nonatomic,copy) NSDictionary *lastResult;
+@property(nonatomic,copy) NSArray<NSString *> *sectionOrder;
 @end
 @implementation WUStatsController
 - (BOOL)scanning { return (self.job && !self.job.cancelled) || (self.overviewJob && !self.overviewJob.cancelled); }
@@ -351,10 +354,40 @@ static char WUStatsOwnerKey;
     if(self.overview) { self.overviewJob=[[WUStatsOverviewJob alloc] initWithBinding:self.binding]; [self render:nil]; [self.overviewJob start:update]; }
     else { self.job=[[WUStatsJob alloc] initWithBinding:self.binding]; [self render:nil]; [self.job start:update]; }
 }
+- (NSString *)layoutKey { return [@"WU.stats.sections." stringByAppendingString:WUStatsVisitID(self.binding.account,@"")]; }
+- (void)configureSections {
+    if(!self.binding || !self.binding.stillCurrent() || self.presentedViewController) return;
+    NSDictionary *labels=@{@"sessions":@"会话总览",@"visits":@"访问榜",@"overview":@"概览",@"selfPeer":@"我与对方汇总",@"journey":@"关系历程",@"types":@"类型",@"days":@"日历",@"hours":@"小时",@"speakers":@"发言",@"replies":@"回复",@"openers":@"开场",@"closers":@"收尾",@"icebreakers":@"破冰",@"bursts":@"连发",@"words":@"热词",@"rank":@"排行范围",@"private":@"私聊排行",@"chatroom":@"群排行",@"myGroups":@"我的发言最多的群"};
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"板块选择与顺序" message:@"勾选项按序显示；点选后可隐藏或上移。不改变扫描来源和统计分母。" preferredStyle:UIAlertControllerStyleActionSheet];
+    NSMutableArray *keys=[self.sectionOrder mutableCopy]; for(NSString *key in WUStatsOptionalSections()) if(![keys containsObject:key]) [keys addObject:key];
+    for(NSString *key in keys) {
+        BOOL selected=[self.sectionOrder containsObject:key];
+        [a addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@ %@",selected?@"✓":@"○",labels[key]] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            [self dismissViewControllerAnimated:YES completion:^{
+                if(!self.binding || !self.binding.stillCurrent()) return;
+                UIAlertController *edit=[UIAlertController alertControllerWithTitle:labels[key] message:nil preferredStyle:UIAlertControllerStyleAlert];
+                void (^commit)(BOOL)=^(BOOL move) {
+                    if(!self.binding || !self.binding.stillCurrent()) return;
+                    NSMutableArray *order=[self.sectionOrder mutableCopy]; NSUInteger i=[order indexOfObject:key];
+                    if(move && i!=NSNotFound && i>0) [order exchangeObjectAtIndex:i withObjectAtIndex:i-1];
+                    else if(!move) { if(i==NSNotFound) [order addObject:key]; else [order removeObjectAtIndex:i]; }
+                    self.sectionOrder=WUStatsSectionOrder(order); [NSUserDefaults.standardUserDefaults setObject:self.sectionOrder forKey:[self layoutKey]]; [self render:self.lastResult];
+                };
+                [edit addAction:[UIAlertAction actionWithTitle:selected?@"隐藏":@"显示（追加到末尾）" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ commit(NO); }]];
+                if(selected && [self.sectionOrder indexOfObject:key]>0) [edit addAction:[UIAlertAction actionWithTitle:@"上移一位" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ commit(YES); }]];
+                [edit addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]]; [self presentViewController:edit animated:YES completion:nil];
+            }];
+        }]];
+    }
+    [a addAction:[UIAlertAction actionWithTitle:@"恢复全部及默认顺序" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ if(!self.binding || !self.binding.stillCurrent()) return; self.sectionOrder=WUStatsOptionalSections(); [NSUserDefaults.standardUserDefaults removeObjectForKey:[self layoutKey]]; [self render:self.lastResult]; }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    a.popoverPresentationController.sourceView=self.view; a.popoverPresentationController.sourceRect=CGRectMake(CGRectGetMidX(self.view.bounds),80,1,1); [self presentViewController:a animated:YES completion:nil];
+}
 - (void)render:(NSDictionary *)r {
     self.lastResult=r;
+    if(!self.sectionOrder) self.sectionOrder=WUStatsSectionOrder(self.binding.account.length?[NSUserDefaults.standardUserDefaults objectForKey:[self layoutKey]]:nil);
     NSMutableArray *sections=[NSMutableArray array];
-    [sections addObject:@{@"title":@"时间范围与访问日志",@"rows":@[self.binding.dateRange[@"label"]?:[NSString stringWithFormat:@"全部可见日期 · %@（点选起止）",self.binding.timeZone.name?:@"无上下文"],@"重置日期为全部",@"清空本账号访问日志",self.overview?@"扫描范围：已加载私聊/群聊消息数排行（点选切换）":@"扫描范围：当前会话（点选切换）"]}];
+    [sections addObject:@{@"title":@"时间范围与访问日志",@"rows":@[self.binding.dateRange[@"label"]?:[NSString stringWithFormat:@"全部可见日期 · %@（点选起止）",self.binding.timeZone.name?:@"无上下文"],@"重置日期为全部",@"清空本账号访问日志",self.overview?@"扫描范围：已加载私聊/群聊消息数排行（点选切换）":@"扫描范围：当前会话（点选切换）",@"板块选择与排序"]}];
     if(self.binding.sessions.count) {
         NSMutableDictionary *counts=[NSMutableDictionary dictionary];
         for(NSDictionary *row in self.binding.sessions) { NSString *kind=row[@"kind"]; counts[kind]=@([counts[kind] unsignedIntegerValue]+([kind isEqual:@"unknown"]?[row[@"count"] unsignedIntegerValue]:1)); }
@@ -395,8 +428,37 @@ static char WUStatsOwnerKey;
             [sections addObject:@{@"title":entry[1],@"rows":rows.count?rows:@[@"无样本"]}];
         }
     }
-    [sections addObject:@{@"title":@"尚未实现 / 不伪造",@"rows":@[@"未加载/未知分类/非私聊群聊会话不进入消息数榜；访问榜不冒充最常聊。日期扫描复用ID游标，缺时间单调性证据，当前不会仅凭某页时间越界提前停止。",@"画像、共同群、年龄/性别/地域/入群日期：没有可靠接口，保持未知。",@"支付交易去重、App 专用补页、完整历程：尚未接入。红包/转账仅接受经核验解码器的互斥分类，不猜 XML。",@"热词使用系统本地词边界，过滤短词、数字、少量停用词；跳过 URL/XML 正文。不保留正文样本，不作 AI 分析。"]}];
-    self.sections=sections;
+    if(r[@"details"]) {
+        NSDictionary *d=r[@"details"], *summary=d[@"summary"];
+        NSMutableArray *rows=[NSMutableArray arrayWithObject:[NSString stringWithFormat:@"分母：去重且满足所选日期的全部 %@ 条（含系统消息）；未知发送者单列，不算对方。",d[@"denominator"]]];
+        NSArray *keys=[r[@"group"] boolValue]?@[@"self",@"others",@"unknown"]:@[@"self",@"peer",@"unknown"];
+        NSDictionary *names=@{@"self":@"我",@"peer":@"对方",@"others":@"其他群成员",@"unknown":@"未知/非会话双方"};
+        for(NSString *key in keys) {
+            NSDictionary *b=summary[key]; NSString *share=[b[@"shareOfTotal"] isKindOfClass:NSNumber.class]?[NSString stringWithFormat:@"%.1f%%",100*[b[@"shareOfTotal"] doubleValue]]:@"无样本";
+            NSMutableArray *types=[NSMutableArray array]; for(NSString *type in [b[@"types"] allKeys]) [types addObject:[NSString stringWithFormat:@"%@ %@",type,b[@"types"][type]]]; [types sortUsingSelector:@selector(compare:)];
+            [rows addObject:[NSString stringWithFormat:@"%@：%@ 条 · %@ · 活跃 %@ 天\n%@",names[key],b[@"count"],share,b[@"activeDays"],[types componentsJoinedByString:@" / "]]];
+        }
+        [sections addObject:@{@"title":@"我与对方汇总",@"rows":rows}];
+        NSDateFormatter *f=[NSDateFormatter new]; f.timeZone=self.binding.timeZone; f.dateFormat=@"yyyy-MM-dd HH:mm:ss";
+        NSMutableArray *journey=[NSMutableArray arrayWithObject:@"只展示本次本地可见记录的历程；最早记录不是加好友/入群日，空白日期不推断关系。日期筛选/截断会改变起止。"];
+        for(NSString *key in @[@"first",@"last"]) if([d[key] isKindOfClass:NSNumber.class]) [journey addObject:[NSString stringWithFormat:@"%@：%@",[key isEqual:@"first"]?@"最早可见消息":@"最近可见消息",[f stringFromDate:[NSDate dateWithTimeIntervalSince1970:[d[key] doubleValue]]]]];
+        for(NSString *type in [[d[@"firstByType"] allKeys] sortedArrayUsingSelector:@selector(compare:)]) [journey addObject:[NSString stringWithFormat:@"首次可见 %@：%@",type,[f stringFromDate:[NSDate dateWithTimeIntervalSince1970:[d[@"firstByType"][type] doubleValue]]]]];
+        for(NSDictionary *day in d[@"timeline"]) [journey addObject:[NSString stringWithFormat:@"%@ · %@ 条（我 %@ / %@ %@ / 未知 %@）",day[@"day"],day[@"count"],day[@"self"],[r[@"group"] boolValue]?@"群成员":@"对方",day[[r[@"group"] boolValue]?@"others":@"peer"],day[@"unknown"]]];
+        if(![d[@"timeline"] count]) [journey addObject:@"无有效时间样本"];
+        [sections addObject:@{@"title":@"关系历程（已见消息）",@"rows":journey}];
+    }
+    if([r[@"overview"] boolValue]) {
+        NSMutableArray *rows=[NSMutableArray arrayWithObject:@"仅上述已扫描群，按我发出的消息数（不含系统/拍一拍）降序；同数按群ID排序。部分扫描值为下界，不称全账号第一。"];
+        for(NSDictionary *row in r[@"myGroups"]) [rows addObject:[NSString stringWithFormat:@"%@：我 %@ 条%@",row[@"id"],row[@"count"],[row[@"complete"] boolValue]?@"":@"（部分/下界）"]];
+        if(![r[@"myGroups"] count]) [rows addObject:@"无群聊样本"];
+        [sections addObject:@{@"title":@"我的发言最多的群",@"rows":rows}];
+    }
+    [sections addObject:@{@"title":@"尚未实现 / 不伪造",@"rows":@[@"未加载/未知分类/非私聊群聊会话不进入消息数榜；访问榜不冒充最常聊。日期扫描复用ID游标，缺时间单调性证据，当前不会仅凭某页时间越界提前停止。",@"画像、共同群、年龄/性别/地域/入群日期：没有可靠接口，保持未知。",@"支付交易去重、App 专用补页、加好友/入群等宿主事件历程：尚未接入；已见消息历程已单独展示。红包/转账仅接受经核验解码器的互斥分类，不猜 XML。",@"热词使用系统本地词边界，过滤短词、数字、少量停用词；跳过 URL/XML 正文。不保留正文样本，不作 AI 分析。"]}];
+    NSDictionary *sectionKeys=@{@"宿主已加载会话总览（非好友画像）":@"sessions",@"会话访问次数榜":@"visits",@"概览":@"overview",@"我与对方汇总":@"selfPeer",@"关系历程（已见消息）":@"journey",@"消息主类型":@"types",@"日历分布":@"days",@"小时分布":@"hours",@"发言榜":@"speakers",@"回复对数":@"replies",@"开场者":@"openers",@"收尾者":@"closers",@"破冰":@"icebreakers",@"连发":@"bursts",@"本地热词（前100）":@"words",@"最常聊 · 本地消息数（所选日期）":@"rank",@"私聊消息数榜（非好友关系证明）":@"private",@"群会话消息数榜":@"chatroom",@"我的发言最多的群":@"myGroups"};
+    NSMutableArray *ordered=[NSMutableArray array];
+    for(NSDictionary *s in sections) if(!sectionKeys[s[@"title"]]) [ordered addObject:s];
+    for(NSString *key in self.sectionOrder) for(NSDictionary *s in sections) if([sectionKeys[s[@"title"]] isEqual:key]) [ordered addObject:s];
+    self.sections=ordered;
     self.navigationItem.rightBarButtonItem.title=[self scanning] ? @"取消" : @"扫描";
     [self.tableView reloadData];
 }
@@ -406,6 +468,7 @@ static char WUStatsOwnerKey;
     if(path.row==0) [self chooseRange];
     else if(path.row==1) { [self.job cancel]; [self.overviewJob cancel]; self.job=nil; self.binding.dateRange=nil; self.status=@"已重置日期，请手动扫描"; [self render:nil]; }
     else if(path.row==2) [self confirmClearVisits];
+    else if(path.row==4) [self configureSections];
     else { [self.job cancel]; [self.overviewJob cancel]; self.overview=!self.overview; self.status=@"范围已切换，请手动扫描"; [self render:nil]; }
 }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return self.sections.count; }

@@ -50,6 +50,28 @@ NSArray<NSNumber *> *WUEmojiIndexes(NSArray<NSString *> *identifiers, NSDictiona
     }
     return [out copy];
 }
+NSDictionary *WURenameEmojiGroup(NSDictionary *s, NSString *identifier, NSString *name) {
+    if(!ValidEmoji(s) || ![identifier isKindOfClass:NSString.class] ||
+       [identifier hasPrefix:@"__"] || ![name isKindOfClass:NSString.class]) return nil;
+    name=[name stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if(!Text(name,40)) return nil;
+    NSMutableArray *groups=[s[@"groups"] mutableCopy];
+    NSUInteger index=[groups indexOfObjectPassingTest:^BOOL(NSDictionary *g,NSUInteger i,BOOL *stop){ return [g[@"id"] isEqual:identifier]; }];
+    if(index==NSNotFound) return nil;
+    groups[index]=@{@"id":identifier,@"name":name};
+    NSMutableDictionary *next=[s mutableCopy]; next[@"groups"]=[groups copy];
+    return ValidEmoji(next)?[next copy]:nil;
+}
+NSDictionary *WUMoveEmojiGroup(NSDictionary *s, NSString *identifier, NSInteger destination) {
+    if(!ValidEmoji(s) || ![identifier isKindOfClass:NSString.class] || [identifier hasPrefix:@"__"] ||
+       destination<0 || (NSUInteger)destination>=[s[@"groups"] count]) return nil;
+    NSMutableArray *groups=[s[@"groups"] mutableCopy];
+    NSUInteger index=[groups indexOfObjectPassingTest:^BOOL(NSDictionary *g,NSUInteger i,BOOL *stop){ return [g[@"id"] isEqual:identifier]; }];
+    if(index==NSNotFound) return nil;
+    id moved=groups[index]; [groups removeObjectAtIndex:index]; [groups insertObject:moved atIndex:(NSUInteger)destination];
+    NSMutableDictionary *next=[s mutableCopy]; next[@"groups"]=[groups copy];
+    return ValidEmoji(next)?[next copy]:nil;
+}
 NSDictionary *WURemoveEmojiGroup(NSDictionary *s, NSString *identifier) {
     if(!ValidEmoji(s) || [identifier hasPrefix:@"__"]) return s;
     NSMutableDictionary *out=[s mutableCopy], *membership=[s[@"membership"] mutableCopy]; NSMutableArray *groups=[NSMutableArray array];

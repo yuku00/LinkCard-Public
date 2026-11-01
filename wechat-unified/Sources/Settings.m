@@ -40,7 +40,7 @@
 - (void)refresh { [self.tableView reloadData]; [self.view setNeedsLayout]; }
 - (void)done { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 3; }
-- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?self.rows.count:(s==1?5:1); }
+- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?self.rows.count:(s==1?6:1); }
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return @[@"本期实现（默认关闭，先小范围测试）",@"本地工具",@"宿主适配状态"][s]; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
     if(s==0) return @"只显示有执行路径的开关；灰色表示当前宿主缺接口/签名。消息动作在聊天页，执行前确认并重验上下文。拍一拍同步BOOL协议尚未安全适配，没有伪开关。复读长按下载/主题图标及红包跨会话定位尚未完成。";
@@ -67,7 +67,7 @@
         NSString *key=self.rows[p.row][0]; cell.textLabel.text=self.rows[p.row][1];
         UISwitch *sw=[UISwitch new]; sw.accessibilityIdentifier=key; sw.accessibilityLabel=cell.textLabel.text;
         sw.on=WUValue(key)?[WUValue(key) boolValue]:([key hasPrefix:@"voice"] && ![@[@"voiceProgress",@"voiceCountdown"] containsObject:key]); sw.enabled=[self available:key] || sw.on;
-        if([key hasPrefix:@"voice"]) cell.detailTextLabel.text=@"主功能默认关，倒数默认关。WAV/CAF/M4A以系统PCM实测；SILK/AMR未适配，不显示假波形或假时长。仅正在播放且解码成功时可定位。";
+        if([key hasPrefix:@"voice"]) cell.detailTextLabel.text=@"主功能默认关，倒数默认关。已接本地SILK、腾讯SILK、AMR-NB及系统可解码容器的真实PCM；不支持的格式明确拒绝。只在播放和接口匹配时定位，不修改原语音消息。";
         if([key isEqual:@"inputPulse"]) cell.detailTextLabel.text=@"仅可见聊天输入正在编辑时动画；关闭、离窗、后台及减少动态时取消，不操作键盘焦点。";
         if([@[@"fileSurface",@"emoticonSurface"] containsObject:key]) cell.detailTextLabel.text=@"仅已确认消息背景UIImageView，不改媒体、动画、下载、点击或文字。首次需查看对应消息后重开设置。";
         if([key isEqual:@"hideHomeSearch"]) cell.detailTextLabel.text=@"仅NewMainFrame真实纯搜索表头；混合或未知布局不隐藏。首次需访问首页后重开设置，关闭恢复原表头和高度。";
@@ -77,6 +77,7 @@
         [sw addTarget:self action:@selector(change:) forControlEvents:UIControlEventValueChanged]; cell.accessoryView=sw; cell.selectionStyle=UITableViewCellSelectionStyleNone;
     } else { cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; cell.textLabel.text=p.section==2?@"查看接口检测（不含聊天数据）":(p.row==0?@"编辑朋友圈屏蔽词":(p.row==1?@"识别链接 / 外部浏览器打开":(p.row==2?@"导入和管理本地主题 / 气泡":@"账号表情分组 / 聊天工具栏"))); }
     if(p.section==1 && p.row==4) cell.textLabel.text=@"朋友圈缓存 / 收藏 / 安全清理";
+    if(p.section==1 && p.row==5) cell.textLabel.text=@"插件收纳 / 设置入口管理";
     return cell;
 }
 - (void)alert:(NSString *)message {
@@ -89,6 +90,7 @@
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p {
     [t deselectRowAtIndexPath:p animated:YES]; if(p.section==0) return;
     if(p.section==2) { [self alert:[WUHookStatus() componentsJoinedByString:@"\n"]]; return; }
+    if(p.row==5) { WUShowPluginHub(self); return; }
     if(p.row==4) { WUShowMomentsCache(self); return; }
     if(p.row==3) { WUShowGroups(self); return; }
     if(p.row==2) { WUShowThemes(self); return; }

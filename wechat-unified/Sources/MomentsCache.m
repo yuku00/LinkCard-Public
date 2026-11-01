@@ -1,7 +1,10 @@
 #import "WU.h"
+#import "MomentsCacheComments.h"
 #import "MomentsCacheLogic.h"
 #import "DraftMediaLogic.h"
 #import <ImageIO/ImageIO.h>
+#import <AVKit/AVKit.h>
+#import "LocalVideoContainer.h"
 static NSURL *Root(NSString *leaf) { return [[NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject.URLByResolvingSymlinksInPath URLByAppendingPathComponent:[@"WeChatUnified/MomentsCache/" stringByAppendingString:leaf] isDirectory:YES].URLByStandardizingPath; }
 static dispatch_queue_t IO(void) { static dispatch_queue_t q; static dispatch_once_t once; dispatch_once(&once,^{ q=dispatch_queue_create("org.wechatunified.moments-cache.io",DISPATCH_QUEUE_SERIAL); }); return q; }
 // Accessed only on IO(); a lease keeps its index references alive until decoding/viewing ends.
@@ -32,7 +35,15 @@ void WUMomentsCacheObserveHost(id item) {
     NSDictionary *n=WUMCacheNormalize(Tid(item),user,Object(item,@"contentDesc")); if(!n) return;
     if(!pending) pending=[NSMutableSet set]; NSArray *key=@[a,@(g),user,n[@"tid"]]; if(pending.count>=32 || [pending containsObject:key]) return;
     NSMutableArray *sources=[NSMutableArray array]; id media=Object(item,@"mediaList");
-    if([media isKindOfClass:NSArray.class] && [media count]<=9) for(id m in media) {
+    NSString *kind=@"images";
+    if([media isKindOfClass:NSArray.class] && [media count]==1) {
+        // Existing evidence: WCMediaItem.pathForSightData, not a guessed network URL.
+        id path=Object(media[0],@"pathForSightData");
+        if([path isKindOfClass:NSString.class] && [path isAbsolutePath] && [NSFileManager.defaultManager fileExistsAtPath:path]) {
+            kind=@"video-backup"; [sources addObject:[NSURL fileURLWithPath:[path copy]]];
+        }
+    }
+    if(!sources.count && [media isKindOfClass:NSArray.class] && [media count]<=9) for(id m in media) {
         id path=Object(m,@"pathForExistData"); if(![path isKindOfClass:NSString.class] || ![path isAbsolutePath]) continue;
         // Main thread freezes only a path value, never retains a host media/model object.
         [sources addObject:[NSURL fileURLWithPath:[path copy]]];
@@ -41,7 +52,12 @@ void WUMomentsCacheObserveHost(id item) {
     dispatch_async(IO(),^{ @autoreleasepool {
         NSError *error=nil; NSMutableArray *images=[NSMutableArray array];
         for(NSURL *url in snapshot) {
-            NSData *data=WUDraftMediaReadSource(url,8*1024*1024);
+            BOOL video=[kind isEqual:@"video-backup"];
+            NSData *data=WUDraftMediaReadSource(url,(video?64u:8u)*1024u*1024u);
+            if(video) {
+                if(!WULocalVideoContainer(data.bytes,data.length)) { error=[NSError errorWithDomain:@"WUMomentsCache" code:3 userInfo:@{NSLocalizedDescriptionKey:@"本地视频不完整、含外部引用或格式未支持；旧缓存保留，未下载"}]; break; }
+                [images addObject:data]; continue;
+            }
             CGImageSourceRef source=data?CGImageSourceCreateWithData((__bridge CFDataRef)data,NULL):NULL;
             NSDictionary *props=source?CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source,0,NULL)):nil;
             uint64_t w=[props[(__bridge id)kCGImagePropertyPixelWidth] unsignedLongLongValue], h=[props[(__bridge id)kCGImagePropertyPixelHeight] unsignedLongLongValue];
@@ -54,9 +70,22 @@ void WUMomentsCacheObserveHost(id item) {
         __block BOOL current=NO;
         // Refresh host identity on main before taking any storage lock; commit uses atomic generation only.
         dispatch_sync(dispatch_get_main_queue(),^{ current=Allowed(a,user,g); });
-        if(current && !error) WUMCacheStore(Root(@"Text"),Root(@"Media"),a,n,images,NSDate.date.timeIntervalSince1970,^BOOL{ return g==WUContextGenerationSnapshot(); },&error);
+        if(current && !error) WUMCacheStoreMedia(Root(@"Text"),Root(@"Media"),a,n,kind,images,NSDate.date.timeIntervalSince1970,Leased(a),^BOOL{ return g==WUContextGenerationSnapshot(); },&error);
         dispatch_async(dispatch_get_main_queue(),^{ [pending removeObject:key]; if(Current(a,g) && error) SetError(a,error); });
     }});
+}
+void WUMomentsCacheObserveNormalizedComments(id item, NSArray<NSDictionary *> *comments, NSString *account, NSUInteger generation) {
+    if(!Current(account,generation) || ![item isKindOfClass:NSClassFromString(@"WCDataItem")] || !PublicItem(item)) return;
+    NSString *user=Object(item,@"username"); if(![user isKindOfClass:NSString.class] || !Allowed(account,user,generation)) return;
+    NSDictionary *n=WUMCacheNormalize(Tid(item),user,Object(item,@"contentDesc"));
+    NSArray *snapshot=WUMCacheMergeComments(@[],comments,NULL); if(!n || !snapshot) return;
+    NSString *a=[account copy]; user=[user copy];
+    dispatch_async(IO(),^{
+        __block BOOL allowed=NO; dispatch_sync(dispatch_get_main_queue(),^{ allowed=Allowed(a,user,generation); });
+        if(!allowed) return; NSError *error=nil;
+        WUMCacheSaveComments(Root(@"Text"),a,user,n[@"tid"],snapshot,NSDate.date.timeIntervalSince1970,^BOOL{ return generation==WUContextGenerationSnapshot(); },&error);
+        dispatch_async(dispatch_get_main_queue(),^{ if(Current(a,generation) && error) SetError(a,error); });
+    });
 }
 static IMP updatedObjects,updatedNumbers,homepageData;
 static char bindingKey;
@@ -95,29 +124,61 @@ static void Notice(UIViewController *v, NSString *s) { UIAlertController *a=[UIA
 - (BOOL)current;
 - (void)reload;
 @end
+static char videoStatusKey;
 @interface WUMCacheDetail : UIViewController
 @property(nonatomic,weak) WUMCacheBrowser *browser;
 @property(nonatomic,strong) NSDictionary *row;
 @property(nonatomic,copy) NSString *lease;
+@property(nonatomic,strong) AVPlayerViewController *video;
+@property(nonatomic,strong) NSTimer *contextTimer;
+@property(nonatomic,strong) AVPlayerItem *observedVideo;
+@property(nonatomic,strong) UILabel *videoHint;
 @end
 @implementation WUMCacheDetail
-- (void)dealloc { NSString *token=self.lease; if(token) dispatch_async(IO(),^{ [leases removeObjectForKey:token]; }); }
+- (void)dealloc { [self.observedVideo removeObserver:self forKeyPath:@"status" context:&videoStatusKey]; [self.contextTimer invalidate]; [NSNotificationCenter.defaultCenter removeObserver:self]; [self.video.player pause]; NSString *token=self.lease; if(token) dispatch_async(IO(),^{ [leases removeObjectForKey:token]; }); }
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    if(context!=&videoStatusKey) { [super observeValueForKeyPath:keyPath ofObject:object change:change context:context]; return; }
+    dispatch_async(dispatch_get_main_queue(),^{
+        if(object!=self.video.player.currentItem || ![self.browser current]) { [self stopVideo]; return; }
+        AVPlayerItemStatus status=self.video.player.currentItem.status;
+        if(status==AVPlayerItemStatusReadyToPlay) self.videoHint.text=@"已就绪的自有本地视频；点播放，仅离线浏览，不回插宿主、不发布。";
+        else if(status==AVPlayerItemStatusFailed) { [self stopVideo]; self.videoHint.text=@"本地副本无法解码/播放，资源保留；未下载，不声称恢复成功。"; }
+    });
+}
+- (void)stopVideo { [self.video.player pause]; }
+- (void)viewWillDisappear:(BOOL)animated { [super viewWillDisappear:animated]; [self stopVideo]; }
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated]; [self.contextTimer invalidate]; __weak WUMCacheDetail *weak=self;
+    self.contextTimer=[NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer *timer){
+        WUMCacheDetail *v=weak; if(!v || ![v.browser current]) { [v stopVideo]; [v.video.player replaceCurrentItemWithPlayerItem:nil]; [timer invalidate]; if(v.navigationController.topViewController==v) [v.navigationController popViewControllerAnimated:NO]; }
+    }];
+}
 - (void)viewDidDisappear:(BOOL)animated { [super viewDidDisappear:animated]; if(self.isMovingFromParentViewController || !self.navigationController) { NSString *token=self.lease; self.lease=nil; if(token) dispatch_async(IO(),^{ [leases removeObjectForKey:token]; }); } }
 - (void)viewDidLoad {
     [super viewDidLoad]; self.title=@"曾见内容 · 非服务器当前内容"; self.view.backgroundColor=UIColor.systemBackgroundColor;
     if(![self.browser current]) return;
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(stopVideo) name:UIApplicationWillResignActiveNotification object:nil];
     UIScrollView *scroll=[UIScrollView new]; scroll.frame=self.view.bounds; scroll.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight; [self.view addSubview:scroll];
     UIStackView *stack=[UIStackView new]; stack.axis=UILayoutConstraintAxisVertical; stack.spacing=12; stack.translatesAutoresizingMaskIntoConstraints=NO; [scroll addSubview:stack];
     [NSLayoutConstraint activateConstraints:@[[stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:16],[stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-16],[stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:16],[stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-16],[stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-32]]];
-    UILabel *text=[UILabel new]; text.numberOfLines=0; text.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; text.text=[NSString stringWithFormat:@"%@\n\n%@\n\n曾见内容，不证明真实删除；无法恢复未收到内容。评论保存/合并未实现。",self.row[@"username"],self.row[@"text"]]; [stack addArrangedSubview:text];
+    UILabel *text=[UILabel new]; text.numberOfLines=0; text.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; text.text=[NSString stringWithFormat:@"%@\n\n%@\n\n曾见内容，不证明真实删除；无法恢复未收到内容。评论宿主解码器尚未接入；已保存的规范化评论仅代表曾见快照。",self.row[@"username"],self.row[@"text"]]; [stack addArrangedSubview:text];
+    for(NSDictionary *comment in self.row[@"comments"]) {
+        UILabel *label=[UILabel new]; label.numberOfLines=0; label.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+        label.text=[NSString stringWithFormat:@"%@%@\n%@",comment[@"author"],[comment[@"replyTo"] length]?[@" 回复 " stringByAppendingString:comment[@"replyTo"]]:@"",comment[@"text"]]; [stack addArrangedSubview:label];
+    }
     NSString *account=[self.browser.account copy], *uuid=self.row[@"id"], *token=NSUUID.UUID.UUIDString; NSUInteger generation=self.browser.generation; self.lease=token;
     __weak WUMCacheDetail *weak=self;
     dispatch_async(IO(),^{ @autoreleasepool {
         if(!leases) leases=[NSMutableDictionary dictionary]; leases[token]=@[account,uuid];
-        NSError *error=nil; NSMutableArray *images=[NSMutableArray array]; NSArray *media=WUDraftMediaLoad(Root(@"Media"),account,&error);
+        NSError *error=nil; NSMutableArray *images=[NSMutableArray array], *videos=[NSMutableArray array]; NSArray *media=WUDraftMediaLoad(Root(@"Media"),account,&error);
         for(NSDictionary *r in media) if([r[@"id"] isEqual:uuid]) {
             NSArray *urls=WUDraftMediaURLs(Root(@"Media"),account,r,&error);
             for(NSURL *u in urls) {
+                if([r[@"kind"] isEqual:@"video-backup"]) {
+                    NSData *video=WUDraftMediaReadSource(u,64*1024*1024);
+                    if(WULocalVideoContainer(video.bytes,video.length)) [videos addObject:u];
+                    continue;
+                }
                 NSData *data=WUDraftMediaReadSource(u,8*1024*1024);
                 CGImageSourceRef source=data?CGImageSourceCreateWithData((__bridge CFDataRef)data,NULL):NULL; if(!source) continue;
                 CGImageRef image=CGImageSourceCreateThumbnailAtIndex(source,0,(__bridge CFDictionaryRef)@{(__bridge id)kCGImageSourceCreateThumbnailFromImageAlways:@YES,(__bridge id)kCGImageSourceThumbnailMaxPixelSize:@1200,(__bridge id)kCGImageSourceCreateThumbnailWithTransform:@YES}); CFRelease(source); if(!image) continue;
@@ -127,7 +188,15 @@ static void Notice(UIViewController *v, NSString *s) { UIAlertController *a=[UIA
         dispatch_async(dispatch_get_main_queue(),^{
             WUMCacheDetail *v=weak; if(!v || !Current(account,generation) || ![v.lease isEqual:token]) return;
             for(UIImage *image in images) { UIImageView *view=[[UIImageView alloc] initWithImage:image]; view.contentMode=UIViewContentModeScaleAspectFit; [view.heightAnchor constraintEqualToConstant:280].active=YES; [stack addArrangedSubview:view]; }
-            if(!images.count) { UILabel *hint=[UILabel new]; hint.numberOfLines=0; hint.text=error.localizedDescription?:@"无已校验本地图片。未下载、未复制的视频/媒体不声称可恢复。"; [stack addArrangedSubview:hint]; }
+            if(videos.count) {
+                v.video=[AVPlayerViewController new]; v.video.player=[AVPlayer playerWithURL:videos.firstObject];
+                v.video.allowsPictureInPicturePlayback=NO; [v addChildViewController:v.video];
+                [v.video.view.heightAnchor constraintEqualToConstant:280].active=YES; [stack addArrangedSubview:v.video.view]; [v.video didMoveToParentViewController:v];
+                UILabel *hint=[UILabel new]; hint.numberOfLines=0; hint.text=@"已复制本地视频，等待播放器校验；不会自动播放。"; [stack addArrangedSubview:hint];
+                v.videoHint=hint; v.observedVideo=v.video.player.currentItem;
+                [v.observedVideo addObserver:v forKeyPath:@"status" options:NSKeyValueObservingOptionInitial|NSKeyValueObservingOptionNew context:&videoStatusKey];
+            }
+            if(!images.count && !videos.count) { UILabel *hint=[UILabel new]; hint.numberOfLines=0; hint.text=error.localizedDescription?:@"无已校验可播放的本地媒体。视频缺失/格式或编码不支持时保留原缓存，不下载、不声称可恢复。"; [stack addArrangedSubview:hint]; }
         });
     }});
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:[self.row[@"favorite"] boolValue]?@"取消收藏":@"收藏" style:UIBarButtonItemStylePlain target:self action:@selector(favorite)];
@@ -163,7 +232,7 @@ static void Notice(UIViewController *v, NSString *s) { UIAlertController *a=[UIA
 }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 2; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?1:self.rows.count; }
-- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { if(s!=0) return nil; return [NSString stringWithFormat:@"仅缓存手动访问时宿主已提供的条目。曾见内容≠服务器当前内容，不判定真实删除。上限200条/正文索引1MiB；图片最多9张、每张8MiB、账号媒体512MiB。评论/视频保存未实现。清理仅回收本模块无引用且无浏览租约的自有图片；串行复制在途时不会清理。%@",[lastErrorAccount isEqual:self.account]?(lastError?:@""):@""]; }
+- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { if(s!=0) return nil; return [NSString stringWithFormat:@"仅缓存手动访问时宿主已提供的条目。曾见内容≠服务器当前内容，不判定真实删除。上限200条/正文索引1MiB；图片最多9张、每张8MiB；单条本地视频最多64MiB，账号媒体512MiB。视频可离线浏览；评论解码宿主入口仍未绑定。清理仅回收本模块无引用且无浏览租约的自有媒体；串行复制在途时不会清理。%@",[lastErrorAccount isEqual:self.account]?(lastError?:@""):@""]; }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.numberOfLines=2; c.detailTextLabel.numberOfLines=2;
     if(p.section==0) { c.textLabel.text=@"按保留天数安全清理（保留收藏）"; NSDictionary *o=Options(self.account); c.detailTextLabel.text=[NSString stringWithFormat:@"缓存%@ · 监控%lu人 · 保留%@天",[o[@"enabled"] boolValue]?@"开启":@"关闭",(unsigned long)[o[@"monitor"] count],o[@"days"]]; }

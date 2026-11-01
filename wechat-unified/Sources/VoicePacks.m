@@ -3,6 +3,8 @@
 #import "OfflineVoice.h"
 #import "WU.h"
 #import <AVFoundation/AVFoundation.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import "DraftMediaLogic.h"
 #include <stdlib.h>
 #include <string.h>
 @implementation WUVoicePackBinding
@@ -17,7 +19,7 @@ static NSData *Wave(NSData *data) {
     int16_t *samples=(int16_t *)(p+44); for(size_t i=0;i<pcm.frames;i++) samples[i]=(int16_t)(pcm.samples[i]*32768.0f);
     free(pcm.samples); return wave;
 }
-@interface WUVoicePacksController : UITableViewController <AVAudioPlayerDelegate>
+@interface WUVoicePacksController : UITableViewController <AVAudioPlayerDelegate, UIDocumentPickerDelegate>
 @property(nonatomic,strong) WUVoicePackBinding *binding;
 @property(nonatomic,strong) WUVoicePackStore *store;
 @property(nonatomic,strong) NSArray *rows;
@@ -29,6 +31,8 @@ static NSData *Wave(NSData *data) {
 @property(nonatomic,strong) NSProgress *cancellation;
 @property(nonatomic) BOOL busy;
 @property(nonatomic) BOOL invalid;
+@property(nonatomic,strong) NSURL *exportURL;
+@property(nonatomic,weak) UIDocumentPickerViewController *filePicker;
 @end
 @implementation WUVoicePacksController
 - (BOOL)current { return !self.invalid && self.binding.current && self.binding.current(); }
@@ -45,7 +49,7 @@ static NSData *Wave(NSData *data) {
 - (void)viewDidLoad {
     [super viewDidLoad]; self.cancellation=[NSProgress progressWithTotalUnitCount:1]; self.title=@"本账号本地语音包"; self.submitted=[NSMutableSet set];
     self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain target:self action:@selector(close)];
-    self.navigationItem.rightBarButtonItems=@[[[UIBarButtonItem alloc] initWithTitle:@"保存所选" style:UIBarButtonItemStylePlain target:self action:@selector(saveSelected)],[[UIBarButtonItem alloc] initWithTitle:@"停止试听" style:UIBarButtonItemStylePlain target:self action:@selector(stop)]];
+    self.navigationItem.rightBarButtonItems=@[[[UIBarButtonItem alloc] initWithTitle:@"保存所选" style:UIBarButtonItemStylePlain target:self action:@selector(saveSelected)],[[UIBarButtonItem alloc] initWithTitle:@"导入文件" style:UIBarButtonItemStylePlain target:self action:@selector(importFile)]];
     __weak typeof(self) weak=self;
     self.backgroundObserver=[NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note){ [weak close]; }];
     self.timer=[NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *t){ if(![weak current]) [weak close]; }]; [self reload];
@@ -58,12 +62,71 @@ static NSData *Wave(NSData *data) {
     });
 }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return self.rows.count; }
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return @"仅所选就绪34类原始配对；外部文件导入尚未开放。试听完全离线，不发送。跨宿主版本仅可试听。"; }
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return @"仅手动所选34类真实配对可发送；AMR/SILK/.wuvoice文件可导入离线试听。导入元数据不授权发送，须与本账号所选原载荷逐字节核对；跨版本仅试听。"; }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; NSDictionary *r=self.rows[path.row];
     c.textLabel.text=r[@"name"]; c.detailTextLabel.numberOfLines=0;
-    c.detailTextLabel.text=[NSString stringWithFormat:@"所选微信语音 · %@毫秒 · format %@\n来源版本 %@ · %@",r[@"ms"],r[@"format"],r[@"version"],[r[@"version"] isEqual:self.binding.version]?@"可确认单次发送":@"版本不同：不可发送，仅试听"];
+    c.detailTextLabel.text=[r[@"pairing"] boolValue]?[NSString stringWithFormat:@"所选微信语音 · %@毫秒 · 实测format %@\n来源版本 %@ · %@",r[@"ms"],r[@"format"],r[@"version"],WUVoicePackMatches(r,self.binding.version)?@"可确认单次发送":@"版本不同：仅试听"]:[NSString stringWithFormat:@"外部导入 · %@毫秒\n尚未与宿主载荷配对：仅离线试听/导出",r[@"ms"]];
     return c;
+}
+- (void)importFile {
+    if(self.busy || ![self current] || self.presentedViewController) return;
+    [self stop]; self.busy=YES;
+    UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeData] asCopy:YES];
+    picker.allowsMultipleSelection=NO; picker.delegate=self; self.filePicker=picker;
+    [self presentViewController:picker animated:YES completion:nil];
+}
+- (void)finishExport {
+    NSURL *url=self.exportURL; self.exportURL=nil;
+    if(url) dispatch_async(Queue(),^{ [NSFileManager.defaultManager removeItemAtURL:url error:NULL]; });
+}
+- (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)controller {
+    if(controller!=self.filePicker) return; self.filePicker=nil; self.busy=NO; [self finishExport];
+}
+- (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    if(controller!=self.filePicker) return; self.filePicker=nil;
+    if(self.exportURL) { self.busy=NO; [self finishExport]; return; }
+    if(![self current] || urls.count!=1) { self.busy=NO; return; }
+    NSURL *url=urls.firstObject; BOOL scoped=[url startAccessingSecurityScopedResource]; NSUInteger gen=self.binding.generation;
+    NSString *name=url.lastPathComponent.stringByDeletingPathExtension; if(name.length>80) name=[name substringToIndex:80];
+    dispatch_async(Queue(),^{
+        NSError *error=nil; BOOL ok=NO;
+        @try { ok=[self.store importFile:url name:name current:^BOOL{ return !self.cancellation.cancelled && WUContextGenerationSnapshot()==gen; } error:&error]; }
+        @finally { if(scoped) [url stopAccessingSecurityScopedResource]; }
+        dispatch_async(dispatch_get_main_queue(),^{ self.busy=NO; if(![self current]) return;
+            void (^finish)(void)=^{ if(![self current]) return; if(ok) [self reload]; else [self notice:error.localizedDescription?:@"导入失败，旧包保留"]; };
+            if(self.presentedViewController==controller) [self dismissViewControllerAnimated:YES completion:finish]; else finish();
+        });
+    });
+}
+- (void)exportRow:(NSDictionary *)row {
+    if(self.busy || ![self current] || self.exportURL) return; [self stop]; self.busy=YES;
+    dispatch_async(Queue(),^{
+        NSError *error=nil; NSData *data=[self.store exportResource:row[@"id"] error:&error];
+        NSURL *root=[[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES].URLByResolvingSymlinksInPath URLByAppendingPathComponent:@"WUVoiceExports" isDirectory:YES];
+        NSURL *url=[root URLByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingPathExtension:@"wuvoice"]];
+        BOOL safe=[root.path isEqual:root.URLByStandardizingPath.URLByResolvingSymlinksInPath.path];
+        BOOL ok=safe && data && [NSFileManager.defaultManager createDirectoryAtURL:root withIntermediateDirectories:YES attributes:@{NSFileProtectionKey:NSFileProtectionComplete} error:&error];
+        NSArray *files=ok?[NSFileManager.defaultManager contentsOfDirectoryAtURL:root includingPropertiesForKeys:nil options:0 error:&error]:nil;
+        BOOL written=ok && files && files.count<8 && !self.cancellation.cancelled && [data writeToURL:url options:NSDataWritingWithoutOverwriting error:&error];
+        ok=written && [WUDraftMediaReadSource(url,10*1024*1024) isEqual:data];
+        dispatch_async(dispatch_get_main_queue(),^{
+            self.busy=NO; if(![self current] || !ok) { if(written) self.exportURL=url; [self finishExport]; if([self current]) [self notice:error.localizedDescription?:@"导出失败或临时副本已达8个；未删除未知文件"]; return; }
+            self.exportURL=url; self.busy=YES;
+            UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc] initForExportingURLs:@[url] asCopy:YES]; picker.delegate=self; self.filePicker=picker;
+            [self presentViewController:picker animated:YES completion:nil];
+        });
+    });
+}
+- (void)pairRow:(NSDictionary *)row {
+    if(self.busy || ![self current]) return;
+    NSDictionary *snapshot=self.binding.capture?self.binding.capture():nil;
+    if(!snapshot) { [self notice:@"先在当前聊天选择一条真实就绪语音；导入包自报的format/版本不能作为配对证据"]; return; }
+    [self stop]; self.busy=YES; NSUInteger gen=self.binding.generation;
+    dispatch_async(Queue(),^{ NSError *error=nil;
+        BOOL ok=[self.store pair:row[@"id"] selectedData:snapshot[@"data"] format:snapshot[@"format"] version:snapshot[@"version"] current:^BOOL{ return !self.cancellation.cancelled && WUContextGenerationSnapshot()==gen; } error:&error];
+        dispatch_async(dispatch_get_main_queue(),^{ self.busy=NO; if(![self current]) return; if(ok) [self reload]; else [self notice:error.localizedDescription?:@"核对失败，没有请求发送"]; });
+    });
 }
 - (void)saveSelected {
     if(self.busy || ![self current]) return;
@@ -132,9 +195,12 @@ static NSData *Wave(NSData *data) {
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)path {
     [tableView deselectRowAtIndexPath:path animated:YES]; if(self.busy || ![self current]) return;
     NSDictionary *row=self.rows[path.row];
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:row[@"name"] message:@"来源：本账号手动所选微信语音；非AI，无联网TTS。" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:row[@"name"] message:@"本账号手动保存/导入的离线音频。导出包含原音频，请自行选择保存位置；导入的format声明不等于真实配对。" preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"离线试听" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self use:row sending:NO]; }]];
-    [a addAction:[UIAlertAction actionWithTitle:@"确认发送至当前会话" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self use:row sending:YES]; }]];
+    if(WUVoicePackMatches(row,self.binding.version)) [a addAction:[UIAlertAction actionWithTitle:@"确认发送至当前会话" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self use:row sending:YES]; }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"停止试听" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self stop]; }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"与所选微信语音逐字节核对" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self dismissViewControllerAnimated:YES completion:^{ [self pairRow:row]; }]; }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"导出 .wuvoice 文件" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self dismissViewControllerAnimated:YES completion:^{ [self exportRow:row]; }]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"重命名" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self dismissViewControllerAnimated:YES completion:^{ [self edit:row deleting:NO]; }]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"删除自有副本" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){ [self dismissViewControllerAnimated:YES completion:^{ [self edit:row deleting:YES]; }]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]]; [self presentViewController:a animated:YES completion:nil];

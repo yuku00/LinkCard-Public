@@ -3,6 +3,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build
 python3 tests/test_source.py
+python3 tests/make_theme_fixtures.py > build/theme-fixtures.json
+sh tests/run_ui_tests.sh
+cp test-results/theme-primitives.txt test-results/theme-catalog.txt build/
 xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/dictation_logic.c -o build/dictation-logic-tests
 build/dictation-logic-tests | tee build/dictation-logic-tests.txt
 rm build/dictation-logic-tests
@@ -55,6 +58,9 @@ rm build/message-logic-tests
 xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/theme_archive.m Sources/ThemeArchive.m -framework Foundation -lz -o build/theme-archive-tests
 build/theme-archive-tests | tee build/theme-archive-tests.txt
 rm build/theme-archive-tests
+xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/plugin_hub_logic.m Sources/PluginHubLogic.m -framework Foundation -o build/plugin-hub-tests
+build/plugin-hub-tests | tee build/plugin-hub-tests.txt
+rm build/plugin-hub-tests
 xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/group_logic.m Sources/GroupLogic.m Sources/HomeLogic.m -framework Foundation -o build/group-logic-tests
 build/group-logic-tests | tee build/group-logic-tests.txt
 rm build/group-logic-tests
@@ -64,13 +70,14 @@ rm build/home-logic-tests
 xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/moments_logic.m Sources/MomentsLogic.m Sources/GroupLogic.m Sources/HomeLogic.m -framework Foundation -o build/moments-logic-tests
 build/moments-logic-tests | tee build/moments-logic-tests.txt
 rm build/moments-logic-tests
+bash tools/test_data_completion.sh
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" \
   -miphoneos-version-min=16.6 -fobjc-arc -fobjc-arc-exceptions -fblocks -dynamiclib \
   -Wall -Wextra -Werror -Wno-unused-parameter -Wno-nullability-completeness \
   -O2 \
   -install_name @rpath/WeChatUnified.dylib \
-  Sources/*.m build/codec-iphoneos/libWUOffline.a -Wl,-dead_strip -framework Photos -framework AVFoundation -framework AudioToolbox -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework UniformTypeIdentifiers -lz \
+  Sources/*.m build/codec-iphoneos/libWUOffline.a -Wl,-dead_strip -framework Photos -framework AVKit -framework AVFoundation -framework AudioToolbox -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework UniformTypeIdentifiers -lz \
   -o build/WeChatUnified.dylib
 bash tools/test_stats.sh
 xcrun strip -x build/WeChatUnified.dylib

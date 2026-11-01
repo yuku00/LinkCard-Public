@@ -1,4 +1,5 @@
 #import "DraftMediaLogic.h"
+#import "LocalVideoContainer.h"
 #import <CommonCrypto/CommonDigest.h>
 #include <sys/stat.h>
 #include <errno.h>
@@ -70,6 +71,27 @@ NSArray<NSURL *> *WUDraftMediaURLs(NSURL *root, NSString *a, NSDictionary *row, 
         } return urls;
     }
 }
+NSURL *WUDraftMediaVideoEditingCopy(NSURL *root, NSString *a, NSDictionary *row, BOOL (^valid)(void), NSError **e) {
+    @synchronized(NSFileManager.defaultManager) {
+        if(!valid || !valid() || ![row[@"kind"] isEqual:@"video-backup"]) { Fail(e,@"视频恢复上下文无效"); return nil; }
+        NSURL *d=Directory(root,a,e); if(!d) return nil;
+        NSArray *rows=Load(d,a,e); if(!rows || ![rows containsObject:row]) { Fail(e,@"草稿已变化或索引损坏，未恢复"); return nil; }
+        NSArray *urls=WUDraftMediaURLs(root,a,row,e); if(urls.count!=1) return nil;
+        NSData *data=ReadSource(urls[0],64*1024*1024);
+        if(!WULocalVideoContainer(data.bytes,data.length)) { Fail(e,@"视频容器不完整、含外部引用或暂不支持，原稿保留"); return nil; }
+        NSArray *files=[NSFileManager.defaultManager contentsOfDirectoryAtURL:d includingPropertiesForKeys:nil options:0 error:e];
+        if(!files || files.count>=4096) { Fail(e,@"保留资源数量已满，未删除资源"); return nil; }
+        unsigned long long used=data.length;
+        for(NSURL *u in files) { struct stat st; if(lstat(u.path.fileSystemRepresentation,&st) || !S_ISREG(st.st_mode) || st.st_size<0) { Fail(e,@"目录含不安全文件，未恢复"); return nil; } used+=(unsigned long long)st.st_size; }
+        if(used>512ULL*1024*1024 || !valid()) { Fail(e,@"账号失效或保留资源已达512MiB，未恢复"); return nil; }
+        const uint8_t *p=data.bytes; BOOL mov=data.length>=12 && !memcmp(p+4,"ftyp",4) && !memcmp(p+8,"qt  ",4);
+        NSURL *copy=[d URLByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingPathExtension:mov?@"mov":@"mp4"]];
+        if(![data writeToURL:copy options:NSDataWritingWithoutOverwriting error:e]) return nil;
+        NSData *check=ReadSource(copy,64*1024*1024);
+        if(!check || ![Hash(check) isEqual:Hash(data)] || !valid()) { Fail(e,@"编辑副本校验失败或账号失效；备份未改动"); return nil; }
+        return copy; // Host may edit/delete this copy; immutable indexed backup remains untouched.
+    }
+}
 NSData *WUDraftMediaReadSource(NSURL *url, NSUInteger limit) { return ReadSource(url,MIN(limit,(NSUInteger)64*1024*1024)); }
 BOOL WUDraftMediaPut(NSURL *root, NSString *a, NSString *uuid, NSString *text, NSString *kind, NSArray *sources, NSError **e) {
     return WUDraftMediaPutChecked(root,a,uuid,text,kind,sources,nil,e);
@@ -91,7 +113,7 @@ BOOL WUDraftMediaPutChecked(NSURL *root, NSString *a, NSString *uuid, NSString *
         for(id source in sources) {
             { // NSError ** writeback must outlive this iteration; no nested autorelease pool.
                 NSData *data=nil;
-                if(images && [source isKindOfClass:NSData.class]) data=source;
+                if([source isKindOfClass:NSData.class]) data=[source copy];
                 else if([source isKindOfClass:NSURL.class]) data=ReadSource(source,64*1024*1024);
                 if(!data.length || data.length>64*1024*1024) return Fail(e,@"源媒体不可读、为空或超过64MiB；未提交索引");
                 used+=data.length; if(used>512ULL*1024*1024) return Fail(e,@"本账号保留资源达512MiB；未自动删除，未提交索引");
@@ -103,7 +125,7 @@ BOOL WUDraftMediaPutChecked(NSURL *root, NSString *a, NSString *uuid, NSString *
                 [resources addObject:@{@"file":file,@"bytes":@(data.length),@"sha256":hash}];
             }
         }
-        NSString *name=text.length?[text substringToIndex:MIN(text.length,80)]:(images?@"图片草稿":@"视频备份（不可恢复）");
+        NSString *name=text.length?[text substringToIndex:MIN(text.length,80)]:(images?@"图片草稿":@"视频草稿");
         NSDictionary *row=@{@"id":uuid,@"name":name,@"text":text,@"kind":kind,@"resources":resources};
         if(index==NSNotFound) [rows insertObject:row atIndex:0]; else rows[index]=row;
         // Index is the commit point. Failed/new/old resources are retained under a hard quota.

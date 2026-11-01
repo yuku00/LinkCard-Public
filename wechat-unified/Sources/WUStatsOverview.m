@@ -37,7 +37,7 @@
 - (void)finish {
     NSArray *rank=[self.rows sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a,NSDictionary *b){ NSComparisonResult c=[b[@"count"] compare:a[@"count"]]; return c==NSOrderedSame?[a[@"id"] compare:b[@"id"] options:NSLiteralSearch]:c; }];
     BOOL complete=!self.partial && self.index==self.sessions.count;
-    NSDictionary *result=@{@"overview":@YES,@"rank":rank,@"complete":@(complete),@"scanned":@(self.scanned),@"pages":@(self.pages),@"sessions":@(self.sessions.count),@"processed":@(self.index),@"timezone":self.zone.name};
+    NSDictionary *result=@{@"overview":@YES,@"rank":rank,@"myGroups":WUStatsMyGroupRanking(self.rows),@"complete":@(complete),@"scanned":@(self.scanned),@"pages":@(self.pages),@"sessions":@(self.sessions.count),@"processed":@(self.index),@"timezone":self.zone.name};
     void (^notify)(NSDictionary *,NSString *)=self.update; self.update=nil; self.binding=nil; self.child=nil; self.cancelled=YES;
     if(notify) notify(result,complete?@"完成：仅宿主已加载、可分类会话的本地可见范围":@"部分排行：达到总预算或存在未完成会话，不能代表全账号最常聊");
 }
@@ -58,7 +58,7 @@
         }
         job.pages+=[result[@"pages"] unsignedIntegerValue]; job.scanned+=[result[@"scanned"] unsignedIntegerValue];
         job.partial|=![result[@"complete"] boolValue];
-        [job.rows addObject:@{@"id":row[@"username"],@"kind":row[@"kind"],@"count":result[@"total"],@"complete":result[@"complete"]}];
+        [job.rows addObject:@{@"id":row[@"username"],@"kind":row[@"kind"],@"count":result[@"total"],@"selfCount":result[@"details"][@"summary"][@"self"][@"authoredCount"]?:@0,@"complete":result[@"complete"]}];
         job.index++; job.child=nil;
         dispatch_async(dispatch_get_main_queue(),^{ if(!job.cancelled) [job step]; });
     }];

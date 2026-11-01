@@ -1,6 +1,7 @@
 #import "MomentsCacheLogic.h"
 #import "RepositoryLogic.h"
 #import "DraftMediaLogic.h"
+#import "LocalVideoContainer.h"
 #include <unistd.h>
 #include <math.h>
 #include <string.h>
@@ -19,8 +20,34 @@ NSDictionary *WUMCacheNormalize(id tid, id username, id text) {
     while([tid length]>1 && [tid hasPrefix:@"0"]) tid=[tid substringFromIndex:1];
     return @{@"tid":[tid copy],@"username":[username copy],@"text":[text copy]};
 }
+static BOOL Comment(id r) {
+    if(![r isKindOfClass:NSDictionary.class] || [r count]!=5 || !Text(r[@"id"],80) || ![r[@"id"] length] || !Text(r[@"author"],256) || ![r[@"author"] length] || !Text(r[@"text"],1000) || !Text(r[@"replyTo"],256)) return NO;
+    id t=r[@"time"]; return [t isKindOfClass:NSNumber.class] && isfinite([t doubleValue]) && [t doubleValue]>=0 && [t doubleValue]<=253402300799.0 && floor([t doubleValue])==[t doubleValue];
+}
+NSArray *WUMCacheMergeComments(NSArray *old, NSArray *observed, NSError **e) {
+    if(![old isKindOfClass:NSArray.class] || ![observed isKindOfClass:NSArray.class] || old.count>50 || observed.count>50) { Fail(e); return nil; }
+    NSMutableDictionary *rows=[NSMutableDictionary dictionary];
+    for(NSArray *page in @[old,observed]) {
+        NSMutableDictionary *seen=[NSMutableDictionary dictionary];
+        for(id r in page) {
+            if(!Comment(r)) { Fail(e); return nil; }
+            NSArray *key=@[r[@"author"],r[@"id"]];
+            if(seen[key] && ![seen[key] isEqual:r]) { Fail(e); return nil; }
+            NSDictionary *copy=[[NSDictionary alloc] initWithDictionary:r copyItems:YES]; seen[key]=copy; rows[key]=copy;
+        }
+    }
+    if(rows.count>50) { Fail(e); return nil; }
+    NSArray *result=[rows.allValues sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b){
+        double at=[a[@"time"] doubleValue],bt=[b[@"time"] doubleValue];
+        if(at!=bt) { if(at==0) return NSOrderedDescending; if(bt==0) return NSOrderedAscending; return at<bt?NSOrderedAscending:NSOrderedDescending; }
+        NSComparisonResult c=[a[@"author"] compare:b[@"author"] options:NSLiteralSearch]; return c==NSOrderedSame?[a[@"id"] compare:b[@"id"] options:NSLiteralSearch]:c;
+    }];
+    NSData *json=[NSJSONSerialization dataWithJSONObject:result options:0 error:e];
+    if(!json || json.length>6000) { Fail(e); return nil; }
+    return result; // Missing observations never delete old comments or claim server deletion.
+}
 static BOOL Row(id r) {
-    if(![r isKindOfClass:NSDictionary.class] || [r count]!=8 || !Text(r[@"id"],36) || ![[NSUUID alloc] initWithUUIDString:r[@"id"]] || ![r[@"favorite"] isKindOfClass:NSNumber.class] || ![r[@"status"] isEqual:@"seen"]) return NO;
+    if(![r isKindOfClass:NSDictionary.class] || [r count]!=(r[@"comments"]?9:8) || (r[@"comments"] && !WUMCacheMergeComments(@[],r[@"comments"],NULL)) || !Text(r[@"id"],36) || ![[NSUUID alloc] initWithUUIDString:r[@"id"]] || ![r[@"favorite"] isKindOfClass:NSNumber.class] || ![r[@"status"] isEqual:@"seen"]) return NO;
     NSDictionary *n=WUMCacheNormalize(r[@"tid"],r[@"username"],r[@"text"]);
     if(!n || ![n[@"tid"] isEqual:r[@"tid"]]) return NO;
     for(NSString *k in @[@"first",@"last"]) if(![r[k] isKindOfClass:NSNumber.class] || !isfinite([r[k] doubleValue]) || [r[k] doubleValue]<=0) return NO;
@@ -54,6 +81,19 @@ static BOOL Save(NSURL *d, NSString *a, NSArray *rows, NSError **e) {
         NSString *s=[[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding];
         [items addObject:@{@"id":r[@"id"],@"name":@"曾见朋友圈",@"parts":@[@{@"kind":@"text",@"text":s}]}];
     } return WURepositorySave(d,a,items,e);
+}
+BOOL WUMCacheSaveComments(NSURL *d, NSString *a, NSString *user, NSString *tid, NSArray *observed, NSTimeInterval now, BOOL (^valid)(void), NSError **e) {
+    @synchronized(NSFileManager.defaultManager) {
+        if(!valid || !valid() || !isfinite(now) || now<=0) return Fail(e);
+        NSArray *old=Load(d,a,e); if(!old) return NO;
+        NSMutableArray *rows=[old mutableCopy];
+        NSUInteger i=[rows indexOfObjectPassingTest:^BOOL(NSDictionary *r, NSUInteger idx, BOOL *stop){ return [r[@"username"] isEqual:user] && [r[@"tid"] isEqual:tid]; }];
+        if(i==NSNotFound) return Fail(e); // Comments cannot create an unseen parent moment.
+        NSDictionary *r=rows[i]; NSArray *merged=WUMCacheMergeComments(r[@"comments"]?:@[],observed,e); if(!merged) return NO;
+        if([merged isEqual:r[@"comments"]]) return valid();
+        NSMutableDictionary *next=[r mutableCopy]; next[@"comments"]=merged; next[@"last"]=@(MAX(now,[r[@"last"] doubleValue])); rows[i]=next;
+        if(!valid()) return Fail(e); return Save(d,a,rows,e);
+    }
 }
 NSArray *WUMCacheLoad(NSURL *d, NSString *a, NSError **e) { @synchronized(NSFileManager.defaultManager) { return Load(d,a,e); } }
 static NSDictionary *Observe(NSURL *d, NSString *a, NSDictionary *item, NSString *uuid, NSTimeInterval now, BOOL (^valid)(void), NSError **e) {
@@ -91,16 +131,28 @@ BOOL WUMCacheClean(NSURL *d, NSString *a, NSUInteger days, NSTimeInterval now, N
 
 NSDictionary *WUMCacheObserve(NSURL *d, NSString *a, NSDictionary *item, NSTimeInterval now, NSError **e) { return Observe(d,a,item,nil,now,nil,e); }
 BOOL WUMCacheStore(NSURL *text, NSURL *media, NSString *a, NSDictionary *item, NSArray *images, NSTimeInterval now, BOOL (^valid)(void), NSError **e) {
+    return WUMCacheStoreMedia(text,media,a,item,@"images",images,now,[NSSet set],valid,e);
+}
+BOOL WUMCacheStoreMedia(NSURL *text, NSURL *media, NSString *a, NSDictionary *item, NSString *kind, NSArray *images, NSTimeInterval now, NSSet *leasedIDs, BOOL (^valid)(void), NSError **e) {
     @synchronized(NSFileManager.defaultManager) {
+        BOOL video=[kind isEqual:@"video-backup"];
+        if(![leasedIDs isKindOfClass:NSSet.class] || ![images isKindOfClass:NSArray.class] || (!video && ![kind isEqual:@"images"]) || (video && images.count!=1)) return Fail(e);
         if(!valid || !valid() || !Safe(media,a,e) || images.count>9) return Fail(e);
         NSArray *rows=Load(text,a,e), *resources=WUDraftMediaLoad(media,a,e); if(!rows || !resources) return NO;
         NSString *uuid=nil; for(NSDictionary *r in rows) if([r[@"tid"] isEqual:item[@"tid"]] && [r[@"username"] isEqual:item[@"username"]]) uuid=r[@"id"];
         if(!uuid && rows.count>=200) return Fail(e);
         uuid=uuid?:NSUUID.UUID.UUIDString;
-        BOOL exists=NO; for(NSDictionary *r in resources) if([r[@"id"] isEqual:uuid]) exists=YES;
-        for(id image in images) if(![image isKindOfClass:NSData.class] || ![image length] || [image length]>8*1024*1024) return Fail(e);
+        BOOL exists=NO, upgrade=NO;
+        for(NSDictionary *r in resources) if([r[@"id"] isEqual:uuid]) { exists=YES; upgrade=video && [r[@"kind"] isEqual:@"images"]; }
+        if(upgrade && [leasedIDs containsObject:uuid]) {
+            if(e) *e=[NSError errorWithDomain:@"WUMomentsCache" code:4 userInfo:@{NSLocalizedDescriptionKey:@"旧媒体正在浏览，保留原缓存；关闭后再次访问可补入本地视频"}]; return NO;
+        }
+        for(id image in images) {
+            if(![image isKindOfClass:NSData.class] || ![image length] || [image length]>(video?64u:8u)*1024u*1024u) return Fail(e);
+            if(video && !WULocalVideoContainer([image bytes],[image length])) return Fail(e);
+        }
         if(!valid() || !Save(text,a,rows,e)) return Fail(e);
-        if(images.count && !exists && !WUDraftMediaPutChecked(media,a,uuid,@"曾见朋友圈图片",@"images",images,valid,e)) return NO;
+        if(images.count && (!exists || upgrade) && !WUDraftMediaPutChecked(media,a,uuid,video?@"曾见朋友圈视频":@"曾见朋友圈图片",kind,images,valid,e)) return NO;
         // Media first: a failed source/copy never overwrites the old text record.
         // A text commit failure leaves indexed owned media for an explicit later cleanup.
         return Observe(text,a,item,uuid,now,valid,e)!=nil;

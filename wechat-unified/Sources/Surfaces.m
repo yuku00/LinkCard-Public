@@ -2,7 +2,7 @@
 #import "InteractionLogic.h"
 #import <QuartzCore/QuartzCore.h>
 static NSHashTable<UIView *> *styled;
-static char baselineKey,childrenKey,cardKey;
+static char childrenKey,cardKey;
 static NSMutableSet<NSString *> *cardRoles;
 static void Restore(UIView *v);
 void WURestoreMessageSurface(UIView *cell) {
@@ -11,19 +11,9 @@ void WURestoreMessageSurface(UIView *cell) {
     objc_setAssociatedObject(cell,&cardKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 static IMP searchLayout,referLayout,plusLayout,toastLayout,timeLayout,swipeLayout;
-static void Restore(UIView *v) {
-    NSDictionary *b=objc_getAssociatedObject(v,&baselineKey); if(!b) return;
-    if(WUSurfaceValueOwned(@(v.layer.cornerRadius),b[@"appliedRadius"])) v.layer.cornerRadius=[b[@"radius"] doubleValue];
-    if(WUSurfaceValueOwned(@(v.clipsToBounds),b[@"appliedClip"])) v.clipsToBounds=[b[@"clip"] boolValue];
-    if(WUSurfaceValueOwned(v.backgroundColor?:NSNull.null,b[@"appliedBg"])) v.backgroundColor=b[@"bg"]==NSNull.null?nil:b[@"bg"];
-    objc_setAssociatedObject(v,&baselineKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-}
+static void Restore(UIView *v) { WURestoreConfiguredSurface(v); }
 static void WUStyleSurface(UIView *v,NSString *key,CGFloat radius) {
-    if(!WUEnabled(key)||!v.window||CGRectIsEmpty(v.bounds)) return;
-    CGFloat applied=MIN(radius,MIN(v.bounds.size.width,v.bounds.size.height)/2);
-    UIColor *color=[UIColor.secondarySystemGroupedBackgroundColor resolvedColorWithTraitCollection:v.traitCollection];
-    objc_setAssociatedObject(v,&baselineKey,@{@"radius":@(v.layer.cornerRadius),@"clip":@(v.clipsToBounds),@"bg":v.backgroundColor?:NSNull.null,@"appliedRadius":@(applied),@"appliedClip":@YES,@"appliedBg":color},OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    v.layer.cornerRadius=applied; v.clipsToBounds=YES; v.backgroundColor=color; [styled addObject:v];
+    WUApplyConfiguredSurface(v,key,radius,YES); if(WUEnabled(key)) [styled addObject:v];
 }
 BOOL WUCardSurfaceAvailable(NSString *key) { return [cardRoles containsObject:key]; }
 void WURefreshMessageSurface(UIView *cell,NSString *role) {
@@ -34,7 +24,7 @@ void WURefreshMessageSurface(UIView *cell,NSString *role) {
     if(![target isKindOfClass:UIImageView.class] || target==cell || ![target isDescendantOfView:cell]) return;
     [cardRoles addObject:role];
     WUStyleSurface(target,role,14);
-    if(objc_getAssociatedObject(target,&baselineKey)) objc_setAssociatedObject(cell,&cardKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if(WUEnabled(role)) objc_setAssociatedObject(cell,&cardKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 static void Search(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))searchLayout)(v,s); WUStyleSurface(v,@"searchSurface",14); }
 static void Refer(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))referLayout)(v,s); WUStyleSurface(v,@"referSurface",12); }

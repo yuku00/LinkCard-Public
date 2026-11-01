@@ -127,6 +127,7 @@ static void Reuse(UIView *v,SEL s) { ResetPage(v); WUEmojiPage *p=Page(v); p.inv
 @interface WUGroupsController : UITableViewController
 @property(nonatomic,copy) NSString *account;
 @property(nonatomic,copy) NSArray<NSString *> *identifiers;
+- (void)renameGroup:(NSString *)identifier;
 @end
 @implementation WUGroupsController
 - (void)viewDidLoad {
@@ -159,7 +160,7 @@ static void Reuse(UIView *v,SEL s) { ResetPage(v); WUEmojiPage *p=Page(v); p.inv
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return @[@"官方添加的单个表情",@"已打开面板中的表情（点按移动）",@"聊天工具栏 · 手动选择动作",@"首页会话分组"][s]; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
     if(![self current]) return @"账号不可核验或已经切换，请关闭后重新打开；不会使用上个账号的配置。";
-    if(s==0) return emojiReady?@"分组按账号保存；左滑删除分组仅移除映射，不删媒体。先打开添加的单个表情面板。只有识别到添加占位且全部MD5可核验时才筛选；整包、最近使用保持原样。":@"此宿主缺少官方表情列表或生命周期签名，当前不可启用。";
+    if(s==0) return emojiReady?@"分组按账号保存；长按自定义分组可改名或前后排序，左滑删除仅移除映射，不删媒体。先打开添加的单个表情面板。只有识别到添加占位且全部MD5可核验时才筛选；整包、最近使用保持原样。":@"此宿主缺少官方表情列表或生命周期签名，当前不可启用。";
     if(s==1) return @"仅当前账号宿主列表的MD5，不复制媒体、不读取聊天数据库。没有可核验列表时不提供手工假数据入口。";
     if(s==3) return @"全部、私信、群聊、其他及自定义组；宿主签名与原会话快照通过后才筛选。";
     return @"默认不选任何动作；聊天页头工具按钮仅列出所选且可用动作。无AI、自动回复或Dock入口；仓库必须手动打开并确认目标才发送。";
@@ -219,6 +220,53 @@ static void Reuse(UIView *v,SEL s) { ResetPage(v); WUEmojiPage *p=Page(v); p.inv
         }]];
     }
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]]; [self presentViewController:a animated:YES completion:nil];
+}
+- (void)renameGroup:(NSString *)identifier {
+    if(![self current] || !self.viewIfLoaded.window || self.presentedViewController) return;
+    NSString *account=self.account; NSUInteger gen=WUContextGeneration();
+    NSDictionary *found=nil;
+    for(NSDictionary *g in EmojiState(account)[@"groups"]) if([g[@"id"] isEqual:identifier]) { found=g; break; }
+    if(!found) return;
+    NSString *name=found[@"name"];
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"重命名表情分组" message:@"仅修改名称，不改变表情归属；1–40字符。" preferredStyle:UIAlertControllerStyleAlert];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field){ field.text=name; }];
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __weak WUGroupsController *weak=self; __weak UIAlertController *input=alert;
+    [alert addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        WUGroupsController *owner=weak;
+        if(!owner.viewIfLoaded.window || ![owner current] || gen!=WUContextGeneration() ||
+           ![account isEqual:owner.account] || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+        NSDictionary *next=WURenameEmojiGroup(EmojiState(account),identifier,input.textFields.firstObject.text);
+        if(next) [owner save:next];
+        else dispatch_async(dispatch_get_main_queue(),^{ if([owner current]) [owner notice:@"未保存：名称为空、超过40字符，或分组已不存在。原设置保留。"]; });
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+- (UIContextMenuConfiguration *)tableView:(UITableView *)table contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)path point:(CGPoint)point {
+    if(![self current] || path.section!=0 || path.row<4) return nil;
+    NSArray *groups=EmojiState(self.account)[@"groups"];
+    if((NSUInteger)(path.row-4)>=groups.count) return nil;
+    NSDictionary *group=groups[path.row-4]; NSString *identifier=group[@"id"], *account=self.account;
+    NSUInteger gen=WUContextGeneration(); __weak WUGroupsController *weak=self;
+    return [UIContextMenuConfiguration configurationWithIdentifier:identifier previewProvider:nil actionProvider:^UIMenu *(NSArray<UIMenuElement *> *suggested){
+        BOOL (^active)(void)=^BOOL { WUGroupsController *v=weak; return v.viewIfLoaded.window && [v current] && [account isEqual:v.account] && gen==WUContextGeneration() && UIApplication.sharedApplication.applicationState==UIApplicationStateActive; };
+        NSMutableArray<UIMenuElement *> *actions=[NSMutableArray array];
+        [actions addObject:[UIAction actionWithTitle:@"重命名" image:[UIImage systemImageNamed:@"pencil"] identifier:nil handler:^(UIAction *a){ if(active()) [weak renameGroup:identifier]; }]];
+        for(NSNumber *offset in @[@(-1),@1]) {
+            NSInteger step=offset.integerValue;
+            UIAction *move=[UIAction actionWithTitle:step<0?@"前移一位":@"后移一位" image:[UIImage systemImageNamed:step<0?@"arrow.up":@"arrow.down"] identifier:nil handler:^(UIAction *a){
+                if(!active()) return;
+                NSDictionary *state=EmojiState(account); NSArray *current=state[@"groups"];
+                NSUInteger index=[current indexOfObjectPassingTest:^BOOL(NSDictionary *g,NSUInteger i,BOOL *stop){ return [g[@"id"] isEqual:identifier]; }];
+                if(index==NSNotFound) return;
+                NSDictionary *next=WUMoveEmojiGroup(state,identifier,(NSInteger)index+step);
+                if(next) [weak save:next];
+            }];
+            if((step<0 && path.row==4) || (step>0 && (NSUInteger)(path.row-4)==groups.count-1)) move.attributes=UIMenuElementAttributesDisabled;
+            [actions addObject:move];
+        }
+        return [UIMenu menuWithTitle:group[@"name"] children:actions];
+    }];
 }
 - (BOOL)tableView:(UITableView *)t canEditRowAtIndexPath:(NSIndexPath *)p { return [self current] && p.section==0 && p.row>=4; }
 - (void)tableView:(UITableView *)t commitEditingStyle:(UITableViewCellEditingStyle)style forRowAtIndexPath:(NSIndexPath *)p {

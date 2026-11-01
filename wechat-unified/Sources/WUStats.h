@@ -42,6 +42,12 @@ FOUNDATION_EXPORT BOOL WUStatsTimeInRange(NSNumber *time, NSDictionary * _Nullab
 // NOT unique. Same local ID across sources is NOT merged without a server ID.
 // type: text/image/voice/video/emoji/link/file/location/system/pat/redpacket/transfer/other.
 // Group sender must be an explicit member ID; never use room ID as sender.
+FOUNDATION_EXPORT NSArray<NSString *> *WUStatsOptionalSections(void);
+FOUNDATION_EXPORT NSArray<NSString *> *WUStatsSectionOrder(id _Nullable stored);
+FOUNDATION_EXPORT NSArray<NSDictionary *> *WUStatsMyGroupRanking(NSArray<NSDictionary *> *rows);
+// Input is the accumulator's validated, deduplicated, date-filtered normalized records.
+FOUNDATION_EXPORT NSDictionary *WUStatsDetails(NSArray<NSDictionary *> *records, NSString *account, NSString *peer, BOOL group, NSTimeZone *zone);
+
 @interface WUStatsAccumulator : NSObject
 - (instancetype)initWithTimeZone:(NSTimeZone *)zone group:(BOOL)group;
 - (BOOL)addRecords:(NSArray<NSDictionary *> *)records; // NO on malformed record
