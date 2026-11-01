@@ -1,4 +1,5 @@
 #import "GroupLogic.h"
+#import "HomeLogic.h"
 static BOOL Text(id v, NSUInteger max) { return [v isKindOfClass:NSString.class] && [v length]>0 && [v length]<=max; }
 BOOL WUValidMD5(NSString *v) {
     if(![v isKindOfClass:NSString.class] || v.length!=32) return NO;
@@ -25,8 +26,9 @@ static BOOL ValidEmoji(id s) {
 BOOL WUValidAccountOptions(id v) {
     if(![v isKindOfClass:NSDictionary.class] || [v count]>24) return NO;
     for(id a in v) {
-        id s=v[a]; if(!Text(a,256) || ![s isKindOfClass:NSDictionary.class] || [s count]>2) return NO;
-        for(id key in s) if(![@[@"emoji",@"toolbar"] containsObject:key]) return NO;
+        id s=v[a]; if(!Text(a,256) || ![s isKindOfClass:NSDictionary.class] || [s count]>3) return NO;
+        for(id key in s) if(![@[@"emoji",@"toolbar",@"home"] containsObject:key]) return NO;
+        if(s[@"home"] && !WUValidHomeGroups(s[@"home"])) return NO;
         if(s[@"emoji"] && !ValidEmoji(s[@"emoji"])) return NO;
         if(s[@"toolbar"] && (![s[@"toolbar"] isKindOfClass:NSArray.class] || ![s[@"toolbar"] isEqual:WUToolbarActions(s[@"toolbar"])])) return NO;
     }

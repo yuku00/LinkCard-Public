@@ -78,7 +78,7 @@ NSArray *WUHookStatus(void) {
     for(NSString *k in [[hooks allKeys] sortedArrayUsingSelector:@selector(compare:)]) [out addObject:[NSString stringWithFormat:@"%@ — %@",k,hooks[k]]];
     return out;
 }
-static void Install(void) { WUInstallAds(); WUInstallTimeline(); WUInstallAppearance(); WUInstallSurfaces(); WUInstallThemes(); WUInstallMessages(); WUInstallGroups(); WUInstallSettings(); }
+static void Install(void) { WUInstallAds(); WUInstallTimeline(); WUInstallAppearance(); WUInstallSurfaces(); WUInstallThemes(); WUInstallMessages(); WUInstallGroups(); WUInstallHomeGroups(); WUInstallSettings(); }
 __attribute__((constructor)) static void Start(void) {
     if(![NSBundle.mainBundle.bundleIdentifier isEqual:@"com.tencent.xin"]) return;
     dispatch_async(dispatch_get_main_queue(), ^{

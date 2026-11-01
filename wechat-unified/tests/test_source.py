@@ -79,6 +79,18 @@ class Guardrails(unittest.TestCase):
         self.assertIn('if(self.tools) [items removeObject:self.tools]',messages)
         self.assertIn('WUValidAccountOptions',core)
         self.assertIn('data.length>65536',core)
+    def test_home_host_snapshot_and_restore(self):
+        home=(ROOT/'Sources/HomeGroups.m').read_text()
+        for required in ['MMSessionInfo', 'MainSessionMgr', 'CurrentManager()', 'setTotalTopSessionCount:', 'WUHomeProjection', 'self.source[i]', 'self.originalHeaderFrame', 'gen!=WUContextGeneration()', 'self.manager==CurrentManager()', 'self.queued', 'setNormalSessions:']:
+            self.assertIn(required,home)
+        for forbidden in ['dataSource=', 'object_setIvar', 'setValue:', 'DeleteMsg', 'didSelectRowAtIndexPath:)(']:
+            self.assertNotIn(forbidden,home)
+        self.assertIn('WURefreshHome(v)',(ROOT/'Sources/Appearance.m').read_text())
+        self.assertIn('tests/home_logic.m',(ROOT/'tools/build.sh').read_text())
+    def test_stats_only_selected_menu(self):
+        messages=(ROOT/'Sources/Messages.m').read_text()
+        self.assertNotIn('[items addObject:self.stats]',messages)
+        self.assertIn('selected containsObject:@"stats"',messages)
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()
         for word in ['未实现','无伪开关','便捷朋友圈','ActionBar','全部 AI','未执行']:

@@ -140,7 +140,7 @@ static NSHashTable *chatActions;
     NSMutableArray *items=[v.navigationItem.rightBarButtonItems mutableCopy]?:[NSMutableArray array];
     if(self.tools) [items removeObject:self.tools];
     if(self.search) [items removeObject:self.search]; if(self.recall) [items removeObject:self.recall]; if(self.stats) [items removeObject:self.stats];
-    if([WUValue(@"enabled") boolValue]) { if(!self.stats) self.stats=[[UIBarButtonItem alloc] initWithTitle:@"统计" style:UIBarButtonItemStylePlain target:self action:@selector(openStats)]; [items addObject:self.stats]; }
+    // Statistics is available only through the account-selected tools menu.
     if(WUEnabled(@"chatSearch") && Has(v,@"onSearchItem","v",@[])) { if(!self.search) self.search=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"magnifyingglass"] style:UIBarButtonItemStylePlain target:self action:@selector(openSearch)]; self.search.accessibilityLabel=@"搜索当前会话聊天记录"; [items addObject:self.search]; }
     if(WUEnabled(@"multiRevoke") && Has(v,@"getSelectedMsgs","@",@[]) && RevokeSelector(Service(@"CMessageMgr"))) { if(!self.recall) self.recall=[[UIBarButtonItem alloc] initWithTitle:@"撤回所选" style:UIBarButtonItemStylePlain target:self action:@selector(recallSelected)]; [items addObject:self.recall]; }
     NSString *account=Account(), *session=Session(v); NSUInteger gen=generation;

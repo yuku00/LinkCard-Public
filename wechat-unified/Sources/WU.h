@@ -25,4 +25,7 @@ NSDictionary *WUAccountOptions(NSString *account);
 BOOL WUSaveAccountOption(NSString *account, NSString *key, id value);
 void WUInstallGroups(void);
 void WUShowGroups(UIViewController *owner);
+void WUInstallHomeGroups(void);
+void WURefreshHome(UIViewController *owner);
+void WUShowHomeGroups(UIViewController *owner);
 FOUNDATION_EXPORT NSString *const WUChanged;

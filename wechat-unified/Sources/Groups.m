@@ -5,7 +5,7 @@ NSDictionary *WUAccountOptions(NSString *account) {
     id accounts=WUValue(@"accounts"); return accounts[account]?:@{};
 }
 BOOL WUSaveAccountOption(NSString *account, NSString *key, id value) {
-    if(!NSThread.isMainThread || !account.length || ![account isEqual:WUCurrentAccount()] || ![@[@"emoji",@"toolbar"] containsObject:key]) return NO;
+    if(!NSThread.isMainThread || !account.length || ![account isEqual:WUCurrentAccount()] || ![@[@"emoji",@"toolbar",@"home"] containsObject:key]) return NO;
     NSMutableDictionary *accounts=[WUValue(@"accounts") mutableCopy]?:[NSMutableDictionary dictionary];
     NSMutableDictionary *options=[accounts[account] mutableCopy]?:[NSMutableDictionary dictionary]; options[key]=value; accounts[account]=options;
     return WUValidAccountOptions(accounts) && WUSave(@"accounts",accounts);
@@ -151,20 +151,22 @@ static void Reuse(UIView *v,SEL s) { ResetPage(v); WUEmojiPage *p=Page(v); p.inv
 - (BOOL)save:(NSDictionary *)state {
     if(![self current] || !WUSaveAccountOption(self.account,@"emoji",state)) { [self notice:@"未保存：账号变化、数据超限或写盘失败。原分组保留。请关闭后重新打开。 "]; return NO; } return YES;
 }
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 3; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 4; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s {
     if(![self current]) return 0;
-    return s==0?4+[EmojiState(self.account)[@"groups"] count]:(s==1?self.identifiers.count:3);
+    return s==3?1:(s==0?4+[EmojiState(self.account)[@"groups"] count]:(s==1?self.identifiers.count:3));
 }
-- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return @[@"官方添加的单个表情",@"已打开面板中的表情（点按移动）",@"聊天工具栏 · 手动选择动作"][s]; }
+- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return @[@"官方添加的单个表情",@"已打开面板中的表情（点按移动）",@"聊天工具栏 · 手动选择动作",@"首页会话分组"][s]; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
     if(![self current]) return @"账号不可核验或已经切换，请关闭后重新打开；不会使用上个账号的配置。";
     if(s==0) return emojiReady?@"分组按账号保存；左滑删除分组仅移除映射，不删媒体。先打开添加的单个表情面板。只有识别到添加占位且全部MD5可核验时才筛选；整包、最近使用保持原样。":@"此宿主缺少官方表情列表或生命周期签名，当前不可启用。";
     if(s==1) return @"仅当前账号宿主列表的MD5，不复制媒体、不读取聊天数据库。没有可核验列表时不提供手工假数据入口。";
-    return @"默认不选任何动作；聊天页头工具按钮仅列出所选且可用动作。无仓库、AI、自动回复或Dock入口。首页电报分组暂不可用：现有证据未闭合原生session用户名/私信分类及置顶计数的一致性协议，未猜类型/偏移，也未修改首页数组/表头/手势。";
+    if(s==3) return @"全部、私信、群聊、其他及自定义组；宿主签名与原会话快照通过后才筛选。";
+    return @"默认不选任何动作；聊天页头工具按钮仅列出所选且可用动作。无仓库、AI、自动回复或Dock入口。";
 }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0;
+    if(p.section==3) { cell.textLabel.text=@"首页电报分组"; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; return cell; }
     NSDictionary *state=EmojiState(self.account);
     if(p.section==0) {
         if(p.row==0) { cell.textLabel.text=@"启用单个表情分组"; UISwitch *sw=[UISwitch new]; sw.on=[state[@"enabled"] boolValue]; sw.enabled=emojiReady; [sw addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventValueChanged]; cell.accessoryView=sw; }
@@ -193,6 +195,7 @@ static void Reuse(UIView *v,SEL s) { ResetPage(v); WUEmojiPage *p=Page(v); p.inv
 }
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p {
     [t deselectRowAtIndexPath:p animated:YES]; if(![self current]) return;
+    if(p.section==3) { WUShowHomeGroups(self); return; }
     if(p.section==2) {
         NSString *key=@[@"search",@"stats",@"settings"][p.row]; NSMutableArray *actions=[WUToolbarActions(WUAccountOptions(self.account)[@"toolbar"]) mutableCopy];
         if([actions containsObject:key]) [actions removeObject:key]; else [actions addObject:key];

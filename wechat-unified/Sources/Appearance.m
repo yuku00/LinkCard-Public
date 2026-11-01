@@ -38,6 +38,7 @@ static void Walk(UIView *v) {
 static void Home(UIViewController *v,SEL s) {
     RestoreTables(); ((void(*)(id,SEL))homeLayout)(v,s);
     if(WUEnabled(@"separators")) Walk(v.view);
+    WURefreshHome(v);
 }
 void WUInstallAppearance(void) {
     static dispatch_once_t once; dispatch_once(&once, ^{
