@@ -1,4 +1,8 @@
-# WebClip Manager — build6 WebClips 只读权限候选
+# WebClip Manager — build8 启动回归恢复
+
+> 当前版本以 [build8 恢复说明](Docs/BUILD8-STARTUP-RECOVERY.md) 为准：恢复 build6 容器签名，保留系统 HOME；UIKit 首页先手动采集并复制当前进程诊断，再打开完整主界面。未声称解决 iOS16.6 真机闪退或 EPERM；删除继续禁用。下方 build6 及更早内容为历史记录。
+
+## build6 历史记录
 
 > 当前状态以 [build6 证据、变更及最少测试步骤](Docs/BUILD6-READ-ACCESS.md) 为准。用户已确认 build5 在 iPhone14 / iOS16.6 / TrollStore2.1 启动、SwiftUI 和手动刷新正常；未解决的是 WebClips 目录读取拒绝，不是启动闪退。build6 保留已成功的启动架构与原六项权限，仅增加 Safari storage 候选、POSIX 只读访问与脱敏错误诊断。真实读取效果待设备确认，删除禁用。下面初始开发时期的构建/授权状态仅是历史记录，不代表当前结论。
 

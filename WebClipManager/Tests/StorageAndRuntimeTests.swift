@@ -4,7 +4,7 @@ import Darwin
 
 final class StorageAndRuntimeTests: XCTestCase {
     func testActualFoundationPathsAreAppExclusive() {
-        XCTAssertTrue(AppPaths.ready)
+        XCTAssertTrue(AppPaths.prepare())
         let paths = LocalPathDiagnostics.capture()
         XCTAssertTrue(paths.homeMatches)
         XCTAssertTrue(paths.documentsMatch)
@@ -28,7 +28,7 @@ final class StorageAndRuntimeTests: XCTestCase {
         let report = try XCTUnwrap(RuntimePermissions.capture())
         XCTAssertTrue(["available", "unknown"].contains(report.entitlementAPI))
         XCTAssertTrue(["available", "unknown"].contains(report.sandboxAPI))
-        XCTAssertEqual(report.entitlements.count, 9)
+        XCTAssertEqual(report.entitlements.count, 7)
         XCTAssertEqual(Set(report.entitlements.keys), Set(report.expectedComparison.keys))
         for value in report.entitlements.values {
             XCTAssertTrue(["unknown", "absent", "boolean:true", "boolean:false", "string:org.example.WebClipManager", "string:redacted", "unexpected-type"].contains(value))

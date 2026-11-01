@@ -1,39 +1,73 @@
 import XCTest
 import SwiftUI
 import UIKit
+import Darwin
 @testable import WebClipManager
 
 final class StartupIsolationTests: XCTestCase {
-    func testLogRejectsSharedHomeAndUsesOnlyAppSubdirectory() {
-        XCTAssertNil(StartupLog.logURL(documents: URL(fileURLWithPath: "/var/mobile/Documents")))
-        XCTAssertNil(StartupLog.logURL(documents: URL(fileURLWithPath: "/var/tmp")))
-        let container = URL(fileURLWithPath: "/private/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Documents")
-        XCTAssertNil(StartupLog.logURL(documents: container))
-        let log = StartupLog.logURL(documents: AppPaths.documents)
-        XCTAssertNotNil(log)
-        XCTAssertEqual(log?.lastPathComponent, "startup-build7.log")
-        XCTAssertEqual(log?.deletingLastPathComponent(), AppPaths.documents)
+    func testPrepareDoesNotChangeOSEnvironment() {
+        func environment() -> [String: String] {
+            var result: [String: String] = [:]
+            for key in ["HOME", "CFFIXED_USER_HOME", "TMPDIR"] {
+                result[key] = getenv(key).map { String(cString: $0) } ?? "<absent>"
+            }
+            return result
+        }
+        let before = environment()
+        let home = NSHomeDirectory()
+        let temporary = NSTemporaryDirectory()
+        AppPaths.prepare()
+        XCTAssertEqual(environment(), before)
+        XCTAssertEqual(NSHomeDirectory(), home)
+        XCTAssertEqual(NSTemporaryDirectory(), temporary)
     }
 
     @MainActor
-    func testUIKitControllerDoesNotInstantiateHostingController() {
+    func testUIKitLogAndDiagnosticButtonWorkWithoutPathsOrSwiftUI() {
+        let ready = AppPaths.ready
+        AppPaths.ready = false
+        defer { AppPaths.ready = ready }
         let controller = StartupViewController()
         controller.loadViewIfNeeded()
         XCTAssertNil(controller.presentedViewController)
         XCTAssertTrue(controller.children.isEmpty)
+        XCTAssertTrue(controller.logView.isSelectable)
+        XCTAssertFalse(controller.logView.isEditable)
+        XCTAssertTrue(controller.copyButton.isEnabled)
+        XCTAssertTrue(controller.diagnosticsButton.isEnabled)
+        XCTAssertFalse(controller.logView.text.contains("sandboxChecks"))
+        controller.diagnosticsButton.sendActions(for: .touchUpInside)
+        XCTAssertTrue(controller.logView.text.contains("sandboxChecks"))
+        XCTAssertTrue(controller.logView.text.contains("fixedPaths"))
+        XCTAssertTrue(controller.logView.text.contains("openErrno"))
+        XCTAssertFalse(AppPaths.ready)
+        XCTAssertNil(controller.presentedViewController)
+        controller.copyButton.sendActions(for: .touchUpInside)
+        XCTAssertEqual(UIPasteboard.general.string, controller.logView.text)
     }
+
     @MainActor
-    func testOriginalViewsRenderWithoutAutomaticReading() {
-        let model = Model()
+    func testHomeButtonPresentsCompleteRootViewWithoutAutomaticScan() throws {
+        let before = ProcessInfo.processInfo.environment
         let window = UIWindow(frame: UIScreen.main.bounds)
-        let host = UIHostingController(rootView: ManagerView(model: model))
-        window.rootViewController = host
+        let startup = StartupViewController()
+        window.rootViewController = startup
         window.makeKeyAndVisible()
-        host.view.layoutIfNeeded()
+        defer { window.isHidden = true }
+        startup.loadViewIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.3))
-        XCTAssertEqual(model.readState, "notRead")
-        XCTAssertFalse(model.busy)
-        XCTAssertTrue(model.scan.clips.isEmpty)
-        window.isHidden = true
+        let priorScans = StartupLog.exportText.components(separatedBy: "S9_REFRESH_ENTERED").count
+        startup.openButton.sendActions(for: .touchUpInside)
+        let host = try XCTUnwrap(startup.presentedViewController as? UIHostingController<RootView>)
+        host.view.layoutIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(1.0))
+        XCTAssertTrue(StartupLog.exportText.contains("S6_ROOT_ON_APPEAR"))
+        XCTAssertTrue(StartupLog.exportText.contains("S6_MANAGER_ON_APPEAR_NO_SCAN"))
+        XCTAssertTrue(StartupLog.exportText.contains("S7_PRESENT_COMPLETED"))
+        XCTAssertEqual(StartupLog.exportText.components(separatedBy: "S9_REFRESH_ENTERED").count, priorScans)
+        for key in ["HOME", "CFFIXED_USER_HOME", "TMPDIR"] {
+            XCTAssertEqual(ProcessInfo.processInfo.environment[key], before[key])
+        }
+        host.dismiss(animated: false)
     }
 }

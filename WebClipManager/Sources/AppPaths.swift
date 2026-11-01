@@ -1,19 +1,14 @@
 import Foundation
 import Darwin
 
-// Non-container launch receives HOME=/var/mobile and TMPDIR=/var/tmp.
-// Never derive application writes from those shared directories.
+// Use the container and temporary directory supplied by the OS. Never rebind HOME.
 enum AppPaths {
     static let identifier = "org.example.WebClipManager"
-    #if targetEnvironment(simulator)
-    // Simulator already supplies an app-exclusive container; do not move XCTest's home.
     static let root = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath()
-    #else
-    static let root = URL(fileURLWithPath: "/private/var/mobile/Library/Application Support/" + identifier)
-    #endif
     static var ready = false
+    static private(set) var preparationStatus = "notChecked"
     static let documents = root.appendingPathComponent("Documents", isDirectory: true)
-    static let temporary = root.appendingPathComponent("tmp", isDirectory: true)
+    static let temporary = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
 
     static func isOwnedPath(_ url: URL, root: URL) -> Bool {
         let path = url.standardizedFileURL.path
@@ -32,39 +27,16 @@ enum AppPaths {
         return true
     }
 
-    // Walk without following symlinks; create only the app root and descendants.
-    private static func directory(_ url: URL) throws {
-        var fd = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
-        guard fd >= 0 else { throw POSIXError(.EACCES) }
-        defer { close(fd) }
-        var path = ""
-        for part in url.pathComponents.dropFirst() {
-            path += "/" + part
-            let owned = path == root.path || path.hasPrefix(root.path + "/")
-            if owned && mkdirat(fd, part, 0o700) != 0 && errno != EEXIST { throw POSIXError(.EACCES) }
-            let next = openat(fd, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
-            guard next >= 0 else { throw POSIXError(.EACCES) }
-            close(fd); fd = next
-            if owned {
-                var st = stat()
-                guard fstat(fd, &st) == 0, st.st_uid == geteuid(), fchmod(fd, 0o700) == 0 else { throw POSIXError(.EACCES) }
-            }
-        }
-    }
-
+    // Validation only: no mkdir/chmod and no environment mutation during startup.
     @discardableResult static func prepare() -> Bool {
-        do {
-            for url in [root, documents, temporary, root.appendingPathComponent("Library/Preferences"), root.appendingPathComponent("Library/Caches")] { try directory(url) }
-            guard setenv("HOME", root.path, 1) == 0,
-                  setenv("CFFIXED_USER_HOME", root.path, 1) == 0,
-                  setenv("TMPDIR", temporary.path + "/", 1) == 0 else { return false }
-            // Foundation may have cached its paths. Fail closed rather than staging
-            // fileExporter documents or logs into a shared home/temp directory.
-            let home = URL(fileURLWithPath: NSHomeDirectory()).resolvingSymlinksInPath()
-            let temp = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
-            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.resolvingSymlinksInPath()
-            ready = home.path == root.path && temp.path == temporary.path && docs?.path == documents.path
-        } catch { ready = false }
+        let components = root.pathComponents
+        let isContainer = components.count >= 5 && components.suffix(3).first == "Data"
+            && components.suffix(2).first == "Application"
+            && UUID(uuidString: root.lastPathComponent) != nil
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.resolvingSymlinksInPath()
+        ready = isContainer && docs?.path == documents.path
+            && isOwnedPath(documents, root: root) && isOwnedPath(temporary, root: root)
+        preparationStatus = ready ? "OSContainerValidated" : "OSContainerValidationFailed; file import/export disabled"
         return ready
     }
 }
