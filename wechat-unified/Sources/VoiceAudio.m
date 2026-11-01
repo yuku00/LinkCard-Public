@@ -24,7 +24,7 @@ static OSStatus Read(void *ctx, SInt64 position, UInt32 count, void *out, UInt32
     *actual=(UInt32)MIN((NSUInteger)count,data.length-(NSUInteger)position);
     if(*actual) memcpy(out,(const char *)data.bytes+position,*actual); return noErr;
 }
-static SInt64 Size(void *ctx) { return (SInt64)[(__bridge NSData *)ctx length]; }
+static SInt64 VoiceDataSize(void *ctx) { return (SInt64)[(__bridge NSData *)ctx length]; }
 NSDictionary *WUVoiceDecode(NSData *data) {
     if(data.length<12 || data.length>8*1024*1024) return nil;
     const uint8_t *p=data.bytes;
@@ -32,7 +32,7 @@ NSDictionary *WUVoiceDecode(NSData *data) {
     BOOL known=(!memcmp(p,"RIFF",4) && !memcmp(p+8,"WAVE",4)) || !memcmp(p,"caff",4) || !memcmp(p+4,"ftyp",4);
     if(!known) return nil;
     AudioFileID file=NULL; ExtAudioFileRef ext=NULL; NSDictionary *result=nil;
-    if(AudioFileOpenWithCallbacks((__bridge void *)data,Read,NULL,Size,NULL,0,&file)) return nil;
+    if(AudioFileOpenWithCallbacks((__bridge void *)data,Read,NULL,VoiceDataSize,NULL,0,&file)) return nil;
     if(ExtAudioFileWrapAudioFileID(file,false,&ext)) { AudioFileClose(file); return nil; }
     AudioStreamBasicDescription source={0}; UInt32 size=sizeof(source);
     if(ExtAudioFileGetProperty(ext,kExtAudioFileProperty_FileDataFormat,&size,&source)) goto done;
