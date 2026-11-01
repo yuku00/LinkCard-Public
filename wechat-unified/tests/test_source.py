@@ -120,6 +120,19 @@ class Guardrails(unittest.TestCase):
         self.assertNotIn('text.delegate=',moments)
         self.assertNotIn('AddMsg',moments)
         self.assertIn('tests/moments_logic.m',(ROOT/'tools/build.sh').read_text())
+    def test_voice_real_clock_and_bounded_decode(self):
+        voice=(ROOT/'Sources/Voice.m').read_text()
+        audio=(ROOT/'Sources/VoiceAudio.m').read_text()
+        for required in ['currentPlayTime', 'seekToTime:', 'WUVoiceSeekMS', 'WUVoiceLease', 'WUContextGeneration()', 'self.request!=request', 'clockOwner.facade==Facade()', 'self.message', 'didMoveToWindow', 'UIApplicationWillResignActiveNotification']:
+            # Completion uses b rather than self inside its weak capture.
+            self.assertIn(required.replace('self.request!=request','b.request!=request'),voice)
+        self.assertEqual(voice.count('displayLinkWithTarget:'),1)
+        self.assertIn('[self.link invalidate]',voice)
+        for forbidden in ['setValue:', 'object_setIvar', 'setVoiceTime', 'arc4random', 'becomeFirstResponder', 'sendVoice']:
+            self.assertNotIn(forbidden,voice)
+        for required in ['ExtAudioFileRead', 'kAudioFormatFlagsNativeFloatPacked', 'O_NOFOLLOW', 'S_ISREG', '8*1024*1024', 'source.mSampleRate*180', 'if(!known) return nil']:
+            self.assertIn(required,audio)
+        self.assertIn('tests/voice_logic.m',(ROOT/'tools/build.sh').read_text())
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()
         for word in ['未实现','无伪开关','便捷朋友圈','ActionBar','全部 AI','未执行']:

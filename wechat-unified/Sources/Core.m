@@ -19,7 +19,7 @@ static NSDictionary *ReadConfig(NSString *name) {
     if (n != d.length) return nil;
     id x = [NSJSONSerialization JSONObjectWithData:d options:0 error:NULL];
     if (![x isKindOfClass:NSDictionary.class] || ![x[@"schema"] isEqual:@1]) return nil;
-    for (NSString *k in @[@"enabled", @"ads", @"momentsAds", @"miniSplashAds", @"keywords", @"inputBorder", @"noticeBorder", @"separators", @"convenientMoments", @"chatSearch", @"callbackConfirm", @"antiRevoke", @"multiRevoke", @"repeatEmoticon", @"mergeGroup", @"mergePrivate", @"mergeBottom", @"redReminder", @"themes", @"sunMoon", @"searchSurface", @"referSurface", @"plusSurface", @"toastSurface",@"timeSurface",@"swipeSurface"])
+    for (NSString *k in @[@"voiceProgress", @"voiceRealDuration", @"voiceCarry", @"voiceCountdown", @"voiceWaveform", @"voiceAlways", @"voicePulse", @"voiceSeek", @"enabled", @"ads", @"momentsAds", @"miniSplashAds", @"keywords", @"inputBorder", @"noticeBorder", @"separators", @"convenientMoments", @"chatSearch", @"callbackConfirm", @"antiRevoke", @"multiRevoke", @"repeatEmoticon", @"mergeGroup", @"mergePrivate", @"mergeBottom", @"redReminder", @"themes", @"sunMoon", @"searchSurface", @"referSurface", @"plusSurface", @"toastSurface",@"timeSurface",@"swipeSurface"])
         if (x[k] && ![x[k] isKindOfClass:NSNumber.class]) return nil;
     if (x[@"words"] && (![x[@"words"] isKindOfClass:NSString.class] || [x[@"words"] length] > 2048)) return nil;
     for(NSString *k in @[@"themePack",@"bubblePack"]) if(x[k] && (![x[k] isKindOfClass:NSString.class] || ([x[k] length] && ![[NSUUID alloc] initWithUUIDString:x[k]]))) return nil;
@@ -42,7 +42,7 @@ id WUValue(NSString *key) { @synchronized(NSProcessInfo.processInfo) { return sn
 BOOL WUEnabled(NSString *key) { return [WUValue(@"enabled") boolValue] && [WUValue(key) boolValue]; }
 BOOL WUSave(NSString *key, id value) {
     NSCAssert(NSThread.isMainThread, @"UI configuration is main-thread owned");
-    if(![@[@"enabled",@"ads",@"momentsAds",@"miniSplashAds",@"keywords",@"words",@"inputBorder",@"noticeBorder",@"separators",@"convenientMoments",@"chatSearch",@"callbackConfirm",@"antiRevoke",@"multiRevoke",@"repeatEmoticon",@"mergeGroup",@"mergePrivate",@"mergeBottom",@"redReminder",@"themes",@"sunMoon",@"themePack",@"bubblePack",@"searchSurface",@"referSurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"accounts"] containsObject:key]) return NO;
+    if(![@[@"voiceProgress",@"voiceRealDuration",@"voiceCarry",@"voiceCountdown",@"voiceWaveform",@"voiceAlways",@"voicePulse",@"voiceSeek",@"enabled",@"ads",@"momentsAds",@"miniSplashAds",@"keywords",@"words",@"inputBorder",@"noticeBorder",@"separators",@"convenientMoments",@"chatSearch",@"callbackConfirm",@"antiRevoke",@"multiRevoke",@"repeatEmoticon",@"mergeGroup",@"mergePrivate",@"mergeBottom",@"redReminder",@"themes",@"sunMoon",@"themePack",@"bubblePack",@"searchSurface",@"referSurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"accounts"] containsObject:key]) return NO;
     BOOL pack=[@[@"themePack",@"bubblePack"] containsObject:key];
     if(pack) { if(![value isKindOfClass:NSString.class] || ([value length] && ![[NSUUID alloc] initWithUUIDString:value])) return NO; }
     else if([key isEqual:@"accounts"]) { if(!WUValidAccountOptions(value)) return NO; }
@@ -78,7 +78,7 @@ NSArray *WUHookStatus(void) {
     for(NSString *k in [[hooks allKeys] sortedArrayUsingSelector:@selector(compare:)]) [out addObject:[NSString stringWithFormat:@"%@ — %@",k,hooks[k]]];
     return out;
 }
-static void Install(void) { WUInstallAds(); WUInstallTimeline(); WUInstallAppearance(); WUInstallSurfaces(); WUInstallThemes(); WUInstallMessages(); WUInstallGroups(); WUInstallHomeGroups(); WUInstallSettings(); }
+static void Install(void) { WUInstallVoice(); WUInstallAds(); WUInstallTimeline(); WUInstallAppearance(); WUInstallSurfaces(); WUInstallThemes(); WUInstallMessages(); WUInstallGroups(); WUInstallHomeGroups(); WUInstallSettings(); }
 __attribute__((constructor)) static void Start(void) {
     if(![NSBundle.mainBundle.bundleIdentifier isEqual:@"com.tencent.xin"]) return;
     dispatch_async(dispatch_get_main_queue(), ^{

@@ -1,6 +1,20 @@
-# 功能状态（独立广告增量待CI；非全项目完成）
+# 2026-11-01 语音显示链增量（源码已落盘，待本轮CI）
+
+新增独立 Voice / VoiceAudio / VoiceLogic：VoiceMessageCellView布局和移出窗口、VoiceMessageViewModel setIsPlaying: 只经统一Hook所有权与精确签名门控。读取MMContext当前MsgPlayingFacade的32位整数currentPlayTime；seek仅接受void/unsigned int参数，单位毫秒，证据为0x5cdd44存w0与0x5cda68按总毫秒乘比例后传w2，不以double秒调用。仅正在播放且cell/model/message/账号/generation/服务实例仍一致时松手seek；随后以真实时钟确认，不伪改进度。不自动播放或发送，不改原消息/模型/对端时长。
+
+系统AudioToolbox从受限本地文件的只读内存回调解码WAV/CAF/M4A到明确的32位float PCM，按实际读到的帧数与采样率计算时长、48桶全声道绝对峰值。最大文件8MB、音频180秒、8–48kHz、1–2声道；不上传音频，不写解码临时文件。未播放常显、播放脉冲（尊重减少动态效果）、分秒与倒数（默认关）有真实执行链；其余子选项默认开，总语音功能默认关。单CADisplayLink仅活动播放时存在；后台/关闭/离页/复用/代次变化取消，自有叠加层移除，不抢键盘。
+
+**准确缺口：常见微信SILK/AMR仍未适配PCM解码。** 0x5cb210仅证实旧库调用SilkAudioCodec与m_decodedData，不能证明当前宿主PCM采样率/声道/格式契约；本轮不硬编码猜24kHz、不把未知裸数据送系统错误解码。此类消息只能展示已确认的真实播放毫秒时间，明确显示总时长/波形不可用，禁止seek；因此不是完整WCPulse语音支持，也不称截图八项对所有微信语音完成。支持系统容器也须当前宿主getVoicePath存在且文件就绪；签名或路径不匹配明确不可用。保持键盘未加入：无足够可靠入口，不强行becomeFirstResponder。无真机验收。
+
+新增真实生成WAV的系统解码测试、PCM峰值/静音/双声道/边界/毫秒seek/格式化/生命周期失效断言及结构检查，保留全部已有测试。CI与最终产物结果后补BUILD-RESULT。继续排除全部AI、ActionBar/Dock、红包详情、在线主题、视频解析；未reset本地旧HEAD，不上传转储或用户媒体。
+
+---
+
+# 功能状态（独立广告增量CI已通过；非全项目完成）
 
 ## 2026-11-01 独立广告场景增量
+
+实际CI `41279290907` completed/success；commit `55b1eb447321d73cd1c94c64f526da14442172f2` 从16ca9c7快进1次/12条自主路径。43/43发布白名单blob一致；18项结构检查、14项广告原生断言、实际生产Ads.m运行期Hook fixture及全部旧测试通过。artifact `13072367167` 已下载；ZIP digest、dylib SHA256、arm64 MH_DYLIB与82页嵌入ad-hoc签名哈希独立核验。ZIP146011字节/dylib356720字节；未安装或注入宿主。此段及BUILD-RESULT为本地构建后交付补记，不为文档重跑CI。
 
 新增两个默认关闭的独立开关，原公众号五入口保持不变。朋友圈仅Hook `WCAdvertiseDataHelper -IsAdvertiseDataValid:dataItem:`，运行时必须为 BOOL + 两个对象参数；原实现先行，只在原值YES、参数均非空、dataItem精确为已存在的WCDataItem类时改NO。未知对象、子类、缺参数、关闭时返回原值。不修改正常动态过滤、广告列表、存储、推送或序列化；此为广告有效性入口的最小实现，不保证当前宿主所有广告均经过它。
 

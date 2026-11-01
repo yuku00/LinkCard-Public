@@ -52,6 +52,7 @@ static NSHashTable *pendingAlerts;
 static void CancelPending(void) {
     generation++;
     WUCancelMoments();
+    WUCancelVoice();
     for(UIAlertController *a in pendingAlerts.allObjects) [a dismissViewControllerAnimated:NO completion:nil];
     [pendingAlerts removeAllObjects];
 }
