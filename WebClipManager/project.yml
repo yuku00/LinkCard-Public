@@ -19,6 +19,7 @@ targets:
       - path: Assets.xcassets
         buildPhase: resources
       - path: ThirdParty
+        type: folder
         buildPhase: resources
       - path: NOTICE
         buildPhase: resources

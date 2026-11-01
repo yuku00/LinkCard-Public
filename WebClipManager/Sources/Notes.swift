@@ -45,7 +45,7 @@ final class NotesModel: ObservableObject {
     @Published var notes: [ImportedNote] = []
     @Published var selected: Set<UUID> = []
     @Published var busy = false
-    @Published var status = "build11 尚未接通设备 Notes 辅助进程；可导入文本文件。"
+    @Published var status = "当前候选尚未接通设备 Notes 辅助进程；可导入文本文件。"
     @Published var failures: [String] = []
     func loadAppleNotes() async {
         status = "设备 Notes 读取尚未接通；本次不访问数据库。可使用文本导入。"
