@@ -97,7 +97,7 @@ NSDictionary *WUThemeReadDescriptor(NSData *d,NSError **error) {
     for(id k in aliases) { if(!WUThemeSafePath(k)||!WUThemeSafePath(aliases[k])||[aliases[k] length]>240||clean[ResourceKey(k)]) return Invalid(error,@"别名路径无效或规范名重复"); clean[ResourceKey(k)]=ResourceKey(aliases[k]); }
     id catalogs=v[@"catalogAssets"]?:@{};
     if(![catalogs isKindOfClass:NSDictionary.class]||[catalogs count]>64) return Invalid(error,@"catalogAssets须为CAR相对路径到资源名数组的字典");
-    for(id path in catalogs) { id names=catalogs[path]; if(!WUThemeSafePath(path)||![path.pathExtension.lowercaseString isEqual:@"car"]||![names isKindOfClass:NSArray.class]||![names count]||[names count]>256) return Invalid(error,@"CAR资源名列表无效"); for(id name in names) if(!WUThemeSafePath(name)) return Invalid(error,@"CAR资源名无效"); }
+    for(NSString *path in catalogs) { id names=catalogs[path]; if(!WUThemeSafePath(path)||![path.pathExtension.lowercaseString isEqual:@"car"]||![names isKindOfClass:NSArray.class]||![names count]||[names count]>256) return Invalid(error,@"CAR资源名列表无效"); for(id name in names) if(!WUThemeSafePath(name)) return Invalid(error,@"CAR资源名无效"); }
     NSMutableDictionary *result=[v mutableCopy]; result[@"aliases"]=clean; return result;
 }
 NSArray *WUSurfaceRoles(void) { return @[@"inputBorder",@"noticeBorder",@"searchSurface",@"referSurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"fileSurface",@"emoticonSurface"]; }

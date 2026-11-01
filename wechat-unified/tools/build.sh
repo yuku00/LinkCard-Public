@@ -3,6 +3,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build
 python3 tests/test_source.py
+SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=16.6 \
+  -fobjc-arc -fobjc-arc-exceptions -fblocks -fsyntax-only -Wall -Wextra -Werror \
+  -Wno-unused-parameter -Wno-nullability-completeness Sources/*.m
 python3 tests/make_theme_fixtures.py > build/theme-fixtures.json
 sh tests/run_ui_tests.sh
 cp test-results/theme-primitives.txt test-results/theme-catalog.txt build/
