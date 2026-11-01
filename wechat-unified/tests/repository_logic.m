@@ -34,6 +34,9 @@ int main(void) { @autoreleasepool {
     NSMutableArray *parts=[NSMutableArray array]; for(NSUInteger i=0;i<51;i++) [parts addObject:text]; bad[@"parts"]=parts; CHECK(!WURepositoryValid(@[bad]));
     CHECK([WURepositoryLoad(dir,@"a",&e) isEqual:@[]]); CHECK(WURepositorySave(dir,@"a",@[entry],&e));
     CHECK([WURepositoryLoad(dir,@"a",&e) isEqual:@[entry]]); CHECK([WURepositoryLoad(dir,@"b",&e) isEqual:@[]]);
+    NSMutableArray *oversize=[NSMutableArray array];
+    for(NSUInteger i=0;i<120;i++) { NSString *body=[[NSString stringWithFormat:@"%lu:",(unsigned long)i] stringByPaddingToLength:10000 withString:@"X" startingAtIndex:0]; [oversize addObject:@{@"id":NSUUID.UUID.UUIDString,@"name":@"large",@"parts":@[@{@"kind":@"text",@"text":body}]}]; }
+    CHECK(!WURepositorySave(dir,@"a",oversize,&e)); CHECK([WURepositoryLoad(dir,@"a",&e) isEqual:@[entry]]);
     CHECK(WURepositorySave(dir,@"b",@[],&e)); CHECK([WURepositoryLoad(dir,@"a",&e) isEqual:@[entry]]);
     CHECK(!WURepositorySave(dir,@"a",@[bad],&e)); CHECK([WURepositoryLoad(dir,@"a",&e) isEqual:@[entry]]);
     CHECK(!WURepositorySave(dir,@"",@[],&e)); CHECK(!WURepositoryLoad(dir,@"",&e));

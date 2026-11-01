@@ -2,7 +2,7 @@
 #import <objc/runtime.h>
 #include <string.h>
 static BOOL Text(id x, NSUInteger n) { return [x isKindOfClass:NSString.class] && [x length] && [x length]<=n; }
-static BOOL UInt(id x) { return [x isKindOfClass:NSNumber.class] && [x doubleValue]>=0 && [x doubleValue]<=(double)UINT32_MAX && [x doubleValue]==[x unsignedIntValue]; }
+static BOOL RepoUInt(id x) { return [x isKindOfClass:NSNumber.class] && [x doubleValue]>=0 && [x doubleValue]<=(double)UINT32_MAX && [x doubleValue]==[x unsignedIntValue]; }
 static BOOL Part(id p) {
     if(![p isKindOfClass:NSDictionary.class]) return NO;
     if([p[@"kind"] isEqual:@"text"]) return [p count]==2 && Text(p[@"text"],10000);
@@ -10,7 +10,7 @@ static BOOL Part(id p) {
     id m=p[@"identity"];
     if(![m isKindOfClass:NSDictionary.class] || [m count]!=7) return NO;
     for(NSString *key in @[@"from",@"to",@"real"]) if(![m[key] isKindOfClass:NSString.class] || [m[key] length]>256) return NO;
-    return Text(m[@"from"],256) && Text(m[@"to"],256) && UInt(m[@"local"]) && [m[@"local"] unsignedIntValue]>0 && UInt(m[@"type"]) && UInt(m[@"time"]) && [m[@"id"] isKindOfClass:NSNumber.class] && [m[@"id"] doubleValue]>=0;
+    return Text(m[@"from"],256) && Text(m[@"to"],256) && RepoUInt(m[@"local"]) && [m[@"local"] unsignedIntValue]>0 && RepoUInt(m[@"type"]) && RepoUInt(m[@"time"]) && [m[@"id"] isKindOfClass:NSNumber.class] && [m[@"id"] doubleValue]>=0;
 }
 BOOL WURepositoryValid(id items) {
     if(![items isKindOfClass:NSArray.class] || [items count]>200) return NO;
