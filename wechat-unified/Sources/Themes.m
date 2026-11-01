@@ -96,11 +96,12 @@ static UIImage *Replacement(NSString *name,UIImage *original,UITraitCollection *
     }
 }
 static IMP namedIMP,warnIMP,bundleIMP,uiNamedIMP,uiBundleIMP;
-static UIImage *UINamed(id o,SEL s,NSString *n) { UIImage *im=((id(*)(id,SEL,id))uiNamedIMP)(o,s,n); return Replacement(n,im,UITraitCollection.currentTraitCollection)?:im; }
-static UIImage *UIBundle(id o,SEL s,NSString *n,NSBundle *bundle,UITraitCollection *traits) { UIImage *im=((id(*)(id,SEL,id,id,id))uiBundleIMP)(o,s,n,bundle,traits); if(bundle && bundle!=NSBundle.mainBundle) return im; return Replacement(n,im,traits?:UITraitCollection.currentTraitCollection)?:im; }
-static UIImage *Named(id o,SEL s,NSString *n) { UIImage *im=((id(*)(id,SEL,id))namedIMP)(o,s,n); return Replacement(n,im,UITraitCollection.currentTraitCollection)?:im; }
-static UIImage *Warn(id o,SEL s,NSString *n,BOOL warn) { UIImage *im=((id(*)(id,SEL,id,BOOL))warnIMP)(o,s,n,warn); return Replacement(n,im,UITraitCollection.currentTraitCollection)?:im; }
-static UIImage *Bundle(id o,SEL s,NSString *n,id bundle) { UIImage *im=((id(*)(id,SEL,id,id))bundleIMP)(o,s,n,bundle); return Replacement(n,im,UITraitCollection.currentTraitCollection)?:im; }
+static _Thread_local NSUInteger resourceDepth;
+static UIImage *UINamed(id o,SEL s,NSString *n) { BOOL outer=resourceDepth++==0; @try { UIImage *im=((id(*)(id,SEL,id))uiNamedIMP)(o,s,n); return outer?(Replacement(n,im,UITraitCollection.currentTraitCollection)?:im):im; } @finally { resourceDepth--; } }
+static UIImage *UIBundle(id o,SEL s,NSString *n,NSBundle *bundle,UITraitCollection *traits) { BOOL outer=resourceDepth++==0; @try { UIImage *im=((id(*)(id,SEL,id,id,id))uiBundleIMP)(o,s,n,bundle,traits); if(!outer || (bundle && bundle!=NSBundle.mainBundle)) return im; return Replacement(n,im,traits?:UITraitCollection.currentTraitCollection)?:im; } @finally { resourceDepth--; } }
+static UIImage *Named(id o,SEL s,NSString *n) { BOOL outer=resourceDepth++==0; @try { UIImage *im=((id(*)(id,SEL,id))namedIMP)(o,s,n); return outer?(Replacement(n,im,UITraitCollection.currentTraitCollection)?:im):im; } @finally { resourceDepth--; } }
+static UIImage *Warn(id o,SEL s,NSString *n,BOOL warn) { BOOL outer=resourceDepth++==0; @try { UIImage *im=((id(*)(id,SEL,id,BOOL))warnIMP)(o,s,n,warn); return outer?(Replacement(n,im,UITraitCollection.currentTraitCollection)?:im):im; } @finally { resourceDepth--; } }
+static UIImage *Bundle(id o,SEL s,NSString *n,id bundle) { BOOL outer=resourceDepth++==0; @try { UIImage *im=((id(*)(id,SEL,id,id))bundleIMP)(o,s,n,bundle); if(!outer || (bundle && bundle!=NSBundle.mainBundle)) return im; return Replacement(n,im,UITraitCollection.currentTraitCollection)?:im; } @finally { resourceDepth--; } }
 void WUInstallThemes(void) {
     static dispatch_once_t once; dispatch_once(&once, ^{ images=[NSCache new]; originals=[NSMapTable weakToStrongObjectsMapTable]; images.totalCostLimit=24*1024*1024; images.countLimit=160; Reload();
         [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ RestoreVisibleImages(); Reload(); }];
