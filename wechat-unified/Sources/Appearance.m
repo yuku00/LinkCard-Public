@@ -25,7 +25,10 @@ static void Decorate(UIView *v,NSString *key) {
 }
 static BOOL Visible(UIView *v) {
     if(!v.window || !v.window.isKeyWindow || CGRectIsEmpty(v.bounds)) return NO;
-    for(UIView *p=v;p;p=p.superview) if(p.hidden || p.alpha<0.01) return NO;
+    for(UIView *p=v;p;p=p.superview) {
+        if(p.hidden || p.alpha<0.01) return NO;
+        if(p.clipsToBounds && !CGRectIntersectsRect([v convertRect:v.bounds toView:p],p.bounds)) return NO;
+    }
     return CGRectIntersectsRect([v convertRect:v.bounds toView:v.window],v.window.bounds);
 }
 static BOOL Editing(UIView *v,NSUInteger depth) {
@@ -40,6 +43,7 @@ static void RefreshInput(UIView *v) {
     NSUInteger effect=WUInputEffect(WUEnabled(@"inputBorder"),pulseReady && WUEnabled(@"inputPulse"),chat && Visible(v),Editing(v,8),!inputSuspended && UIApplication.sharedApplication.applicationState==UIApplicationStateActive,UIAccessibilityIsReduceMotionEnabled());
     if(!effect) { Remove(v); return; }
     CAShapeLayer *l=objc_getAssociatedObject(v,&layerKey);
+    if(l && l.superlayer!=v.layer) { Remove(v); l=nil; }
     if(!l) { l=[CAShapeLayer layer]; l.name=@"org.wechatunified.input"; l.fillColor=UIColor.clearColor.CGColor; [v.layer addSublayer:l]; objc_setAssociatedObject(v,&layerKey,l,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [decorated addObject:v]; }
     [CATransaction begin]; [CATransaction setDisableActions:YES];
     l.frame=v.bounds; l.path=[UIBezierPath bezierPathWithRoundedRect:CGRectInset(v.bounds,1,1) cornerRadius:10].CGPath;
