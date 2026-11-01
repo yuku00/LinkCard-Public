@@ -1,6 +1,11 @@
-# 2026-11-01 统计增量：本轮待CI
+# 2026-11-01 统计增量：首轮真实CI及产物独立核验通过
 
-以8f7148897e63baa07108a90e8f933644ef3b1a53 / CI41300366511为旧成功基线；已核对远端head与release-state一致。本地27结构回归通过，保留31 XCTest及全部原生回归，尚无本轮原生测试/arm64编译结果。两个新统计.m已加入发布白名单，iOS Sources/*.m及test_stats显式链接均覆盖。仅发布既有增量，不重复开发、不开放未知日期排序捷径。
+- commit `f4d0bfce26713c88904fec2195f5f32f492c0131`；CI https://github.com/yuku00/LinkCard-Public/actions/runs/41302211055 completed/success；job124835349691。由旧成功8f7148897e63baa07108a90e8f933644ef3b1a53一次非强制快进至既有wechat-unified/initial-20261101分支。成功补记前334/334白名单文件匹配远端，本地HEAD cb0704e4dd738be7733937889f87bb7013f07744保留未reset。
+- 本地及CI 27结构检查通过，31 XCTest实际执行0失败，全部旧原生回归通过；包含日期/DST/非单调扫描、同秒边界、访问日志失败原子性/隔离/代次、排行50会话上限/共享100页预算/取消。未删旧测试，未开启生产descendingTimeVerified；无真实CI失败需要修复。iOS arm64/min16.6编译链接及codesign --verify --strict成功。生产mock与合成数据测试不是宿主验收。
+- artifact `13081337713`，下载前384399字节（小于50MB）；没有安装依赖或产物。ZIP SHA256 `b4cf9ecf04314037c177d7bf0bd4a0afd2ae3c4855e9d295fdd4ce35008ac7b9`；dylib732592字节，SHA256 `adc0e353e3d31f55b021085e5278c77b2b37ae378523ebe37b57b6971dcd3b6a`。GitHub digest/SHA256SUMS匹配，64-bit arm64 MH_DYLIB；独立校验嵌入CodeDirectory SHA256 174页（每页4096字节）及特殊槽，ad-hoc不是分发身份或宿主兼容保证。
+- 证据：artifacts/ci-41302211055.log、ci-artifacts-41302211055.json、verification-41302211055.json、stats-final-audit-summary.json；产物artifacts/WeChatUnified-41302211055.zip与run-41302211055/WeChatUnified.dylib。使用自己的本地api.html、环境token、严格TLS，无凭据输出或真实数据上传。
+- 本轮只闭合既有统计增量，补Visits/Overview发布白名单及提交说明，原Sources/*.m iOS编译链和test_stats显式三单元链接覆盖。不扩功能、不重研codec；生产日期排序未证实，保守扫描并标部分。最多50已加载可分类会话、共享100页/20000条，不代表全账号完整历史；访问只计启用后。未执行真实微信/用户聊天/注入/收发删除。AI/Dock/红包详情/在线主题/视频解析保持排除。
+- 本记录及STATUS为成功后本地补记，不为文档重跑CI；产物内STATUS为构建时待验版本，下方为历史记录。
 
 # 2026-11-01 输入交互/可逆卡片：本轮待CI
 
