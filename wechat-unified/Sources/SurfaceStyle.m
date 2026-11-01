@@ -2,6 +2,10 @@
 #import "ThemeCatalog.h"
 #import "ThemePrimitives.h"
 #import "InteractionLogic.h"
+@protocol WUStyledText <NSObject>
+@property(nonatomic,strong) UIFont *font;
+@property(nonatomic,strong) UIColor *textColor;
+@end
 static char styleBaselineKey;
 static NSHashTable<UIView *> *styledViews;
 static UIColor *HexColor(id value) { double c[4]; return [value isKindOfClass:NSString.class]&&WUParseRGBA([value UTF8String],c)?[UIColor colorWithRed:c[0] green:c[1] blue:c[2] alpha:c[3]]:nil; }
@@ -20,8 +24,8 @@ static id Current(UIView *v,NSString *k) {
     if([k isEqual:@"background"]) return v.backgroundColor?:NSNull.null;
     if([k isEqual:@"tint"]) return v.tintColor?:NSNull.null;
     if([k isEqual:@"opacity"]) return @(v.alpha);
-    if([k isEqual:@"font"]&&[v respondsToSelector:@selector(font)]) return [(id)v font]?:NSNull.null;
-    if([k isEqual:@"text"]&&[v respondsToSelector:@selector(textColor)]) return [(id)v textColor]?:NSNull.null;
+    if([k isEqual:@"font"]&&[v respondsToSelector:@selector(font)]) return [(id<WUStyledText>)v font]?:NSNull.null;
+    if([k isEqual:@"text"]&&[v respondsToSelector:@selector(textColor)]) return [(id<WUStyledText>)v textColor]?:NSNull.null;
     return NSNull.null;
 }
 static void Set(UIView *v,NSString *k,id x) {
@@ -33,8 +37,8 @@ static void Set(UIView *v,NSString *k,id x) {
     else if([k isEqual:@"background"]) v.backgroundColor=x;
     else if([k isEqual:@"tint"]) v.tintColor=x;
     else if([k isEqual:@"opacity"]) v.alpha=[x doubleValue];
-    else if([k isEqual:@"font"]) [(id)v setFont:x];
-    else if([k isEqual:@"text"]) [(id)v setTextColor:x];
+    else if([k isEqual:@"font"]) [(id<WUStyledText>)v setFont:x];
+    else if([k isEqual:@"text"]) [(id<WUStyledText>)v setTextColor:x];
 }
 void WURestoreConfiguredSurface(UIView *v) {
     NSDictionary *state=objc_getAssociatedObject(v,&styleBaselineKey); if(!state) return;
@@ -66,7 +70,7 @@ void WUApplyConfiguredSurface(UIView *v,NSString *role,CGFloat radius,BOOL backg
     for(UIView *text in textViews) {
         NSMutableDictionary *props=[NSMutableDictionary dictionary]; UIColor *color=WUSurfaceColor(role,@"text",text.traitCollection,nil); if(color) props[@"text"]=color;
         if(s[@"fontSize"]||s[@"fontName"]||s[@"fontWeight"]) {
-            UIFont *old=[(id)text font]; CGFloat size=s[@"fontSize"]?[s[@"fontSize"] doubleValue]:(old.pointSize?:17);
+            UIFont *old=[(id<WUStyledText>)text font]; CGFloat size=s[@"fontSize"]?[s[@"fontSize"] doubleValue]:(old.pointSize?:17);
             UIFont *font=s[@"fontName"]?[UIFont fontWithName:s[@"fontName"] size:size]:nil;
             if(!font) font=s[@"fontWeight"]?[UIFont systemFontOfSize:size weight:[s[@"fontWeight"] doubleValue]]:([old fontWithSize:size]?:[UIFont systemFontOfSize:size]); if(font) props[@"font"]=font;
         }

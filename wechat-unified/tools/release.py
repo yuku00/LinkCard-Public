@@ -28,6 +28,7 @@ def upload():
     allowed += ['Sources/PluginHub.h','Sources/PluginHub.m','Sources/PluginHubLogic.h','Sources/PluginHubLogic.m','tests/plugin_hub_logic.m']
     allowed += ['Sources/ThemeCatalog.h','Sources/ThemeCatalog.m','Sources/ThemeColors.m','Sources/ThemePrimitives.h','Sources/ThemeLibrary.h','Sources/ThemeLibrary.m','Sources/ThemeRendering.h','Sources/ThemeRendering.m','Sources/SurfaceStyle.m','Sources/SurfaceSettings.m','tests/theme_primitives.c','tests/theme_catalog.m','tests/surface_style_ios.m','tests/run_ui_tests.sh','tests/make_theme_fixtures.py','tests/fixtures/themes/README.md']
     allowed += ['Sources/WUStatsDetails.m','Sources/DraftVideoRestore.m','Sources/LocalVideoContainer.h','Sources/MomentsCacheComments.h','tests/WUStatsCompletionTests.m','tests/voice_pack_files.m','tests/moments_data_completion.m','tests/draft_video_restore.m','tests/local_video_container.c','tools/test_data_completion.sh']
+    allowed += ['tools/ui-harness/generate.py','tools/ui-harness/run.py','tools/ui-harness/self_check.py','tools/ui-harness/Host.m','tools/ui-harness/SurfaceHarness.xcscheme.in']
     # Exact manifest closure only: no SDK repository/history, binaries or private media.
     vendor=json.loads((ROOT/'Vendor/manifest.json').read_text())
     for name,digest in vendor['sha256'].items():
