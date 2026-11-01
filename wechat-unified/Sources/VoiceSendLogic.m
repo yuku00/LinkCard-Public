@@ -5,9 +5,7 @@
 #import <objc/message.h>
 #include <string.h>
 #include <stdlib.h>
-@protocol WUVoiceConstruct <NSObject>
-- (instancetype)initWithMsgType:(unsigned int)type nsFromUsr:(NSString *)account;
-@end
+#import "MessageConstruction.h"
 BOOL WUVoiceExactSignature(id o, NSString *name, const char *result, NSArray<NSString *> *args) {
     @try {
         SEL s=NSSelectorFromString(name); Method m=o?class_getInstanceMethod(object_getClass(o),s):NULL;
@@ -55,9 +53,8 @@ uint32_t WUVoiceMeasuredMS(NSData *data) {
         BOOL attempted=NO;
         @try {
             if(!NSThread.isMainThread || !current || !current() || !self.account.length || !self.target.length || !self.data.length || !self.milliseconds || self.milliseconds>60000 || !WUVoiceExactSignature(manager,@"AddLocalMsg:MsgWrap:","v",@[@"@",@"@"]) || !WUVoiceExactSignature(audio,@"ResendVoiceMsg:MsgWrap:","v",@[@"@",@"@"])) { self.status=@"失败：上下文或语音服务不可用，未提交"; return self.status; }
-            id<WUVoiceConstruct> allocated=[cls alloc];
-            if(!WUVoiceExactSignature(allocated,@"initWithMsgType:nsFromUsr:","@",@[@"I",@"@"])) { self.status=@"失败：消息构造ABI不可用，未提交"; return self.status; }
-            id message=[allocated initWithMsgType:34 nsFromUsr:self.account];
+            id message=WUCreateMessage(cls,34,self.account);
+            if(!message) { self.status=@"失败：消息构造ABI不可用或初始化失败，未提交"; return self.status; }
             NSArray *objects=@[@"setM_nsContent:",@"setM_nsFromUsr:",@"setM_nsToUsr:",@"setM_dtVoice:"];
             NSArray *numbers=@[@"setM_uiVoiceTime:",@"setM_uiVoiceFormat:",@"setM_uiVoiceEndFlag:",@"setM_uiCreateTime:"];
             for(NSString *s in objects) if(!WUVoiceExactSignature(message,s,"v",@[@"@"])) { self.status=@"失败：消息对象字段ABI不可用，未提交"; return self.status; }

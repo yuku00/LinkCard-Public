@@ -12,19 +12,6 @@ concurrency:
   group: wechat-unified-${{ github.ref }}
   cancel-in-progress: false
 jobs:
-  p0-red-baseline:
-    runs-on: macos-15
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Prove actual production P0 symptom failures
-        working-directory: wechat-unified
-        run: python3 tests/test_p0.py --expect-red
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: P0-red-baseline-${{ github.sha }}
-          path: wechat-unified/build/*tests*.txt
   build:
     runs-on: macos-15
     timeout-minutes: 15

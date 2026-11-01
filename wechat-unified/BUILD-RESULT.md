@@ -1,3 +1,7 @@
+# 2026-11-01 两项P0修复（红基线已证实，绿回归待本轮CI）
+
+红基线 commit 5478dd0c4f33e649783dd53555b252b972f9694c / run 41305087598 / job 124843744812 在 macOS 实际执行：生产 WUSaveAccountOption→WUSave→磁盘重载18检查11失败；同一构造类 I/q/i/Q 的复读就绪与普通语音/语音包分别失败1/5/6/6项，编译错误不计为红。现仅修 momentsCache 共享入口白名单及消息构造适配，严格核对 Method/NSMethodSignature，协议类型化 ARC init，范围/异常失败不提交。新测试覆盖 I/q/i/Q、替换self/释放、初始化异常、同一mock三路径；语音后续字段ABI与回执、默认关闭不变。绿CI和产物尚待验证，不代表真实微信或完整功能通过。
+
 # 2026-11-01 统计增量：首轮真实CI及产物独立核验通过
 
 - commit `f4d0bfce26713c88904fec2195f5f32f492c0131`；CI https://github.com/yuku00/LinkCard-Public/actions/runs/41302211055 completed/success；job124835349691。由旧成功8f7148897e63baa07108a90e8f933644ef3b1a53一次非强制快进至既有wechat-unified/initial-20261101分支。成功补记前334/334白名单文件匹配远端，本地HEAD cb0704e4dd738be7733937889f87bb7013f07744保留未reset。

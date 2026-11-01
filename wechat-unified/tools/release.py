@@ -22,7 +22,7 @@ def upload():
     allowed += ['Sources/MomentsCache.m','Sources/MomentsCacheLogic.h','Sources/MomentsCacheLogic.m','tests/moments_cache_logic.m']
     allowed += ['Sources/VoiceSendLogic.h','Sources/VoiceSendLogic.m','tests/voice_send_logic.m']
     allowed += ['Sources/VoicePackLogic.h','Sources/VoicePackLogic.m','Sources/VoicePacks.h','Sources/VoicePacks.m','tests/voice_pack_logic.m']
-    allowed += ['tests/test_p0.py','tests/p0_config.m','tests/p0_message.m']
+    allowed += ['tests/test_p0.py','tests/p0_config.m','tests/p0_message.m','tests/message_construction.m','Sources/MessageConstruction.h','Sources/MessageConstruction.m']
     allowed += ['Sources/InteractionLogic.h','Sources/InteractionLogic.m','tests/interaction_logic.m']
     # Exact manifest closure only: no SDK repository/history, binaries or private media.
     vendor=json.loads((ROOT/'Vendor/manifest.json').read_text())

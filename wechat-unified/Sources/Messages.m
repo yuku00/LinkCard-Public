@@ -263,9 +263,7 @@ static void ChatDisappeared(UIViewController *v,SEL s,BOOL animated) {
     ((void(*)(id,SEL,BOOL))chatDisappearOriginal)(v,s,animated);
 }
 
-@protocol WUMessageConstruct <NSObject>
-- (instancetype)initWithMsgType:(long long)type nsFromUsr:(NSString *)from;
-@end
+#import "MessageConstruction.h"
 static BOOL NumberSetter(id o, NSString *s) {
     for(NSString *t in @[@"I",@"i",@"Q",@"q"]) if(Has(o,s,"v",@[t])) return YES;
     return NO;
@@ -276,7 +274,7 @@ static void SetNumber(id o, NSString *s, uint64_t n) {
 }
 static BOOL RepeatReady(id wrap) {
     Class c=NSClassFromString(@"CMessageWrap");
-    if(!WUMatches(class_getInstanceMethod(c,NSSelectorFromString(@"initWithMsgType:nsFromUsr:")),"@",@[@"q",@"@"]) || !Has(wrap,@"copyToMsg:","v",@[@"@"]) || !Has(Service(@"CMessageMgr"),@"AddEmoticonMsg:MsgWrap:","v",@[@"@",@"@"])) return NO;
+    if(!WUMessageCanConstruct(c) || !Has(wrap,@"copyToMsg:","v",@[@"@"]) || !Has(Service(@"CMessageMgr"),@"AddEmoticonMsg:MsgWrap:","v",@[@"@",@"@"])) return NO;
     for(NSString *s in @[@"setM_nsFromUsr:",@"setM_nsToUsr:",@"setM_nsRealChatUsr:"]) if(!WUMatches(class_getInstanceMethod(c,NSSelectorFromString(s)),"v",@[@"@"])) return NO;
     for(NSString *s in @[@"setM_uiCreateTime:",@"setM_uiMesLocalID:",@"setM_n64MesSvrID:"]) if(!NumberSetter(wrap,s)) return NO;
     return YES;
@@ -336,8 +334,7 @@ static NSDictionary *GroupInfo(id model, NSString *session, NSString *account) {
             WUCellActions *state=weak; if(!state) return; state.submitting=YES;
             @try {
                 // Fresh object, copy only via the host protocol, then clear original identity.
-                id<WUMessageConstruct> allocated=[NSClassFromString(@"CMessageWrap") alloc];
-                id message=[allocated initWithMsgType:47 nsFromUsr:account];
+                id message=WUCreateMessage(NSClassFromString(@"CMessageWrap"),47,account);
                 if(!message) { Notice(v,@"无法构造新表情消息，未提交。"); return; }
                 ((void(*)(id,SEL,id))objc_msgSend)(source,NSSelectorFromString(@"copyToMsg:"),message);
                 ((void(*)(id,SEL,id))objc_msgSend)(message,NSSelectorFromString(@"setM_nsFromUsr:"),account);
@@ -430,7 +427,7 @@ BOOL WUMessageAvailable(NSString *key) {
         if([key isEqual:@"convenientMoments"]) return chatAppearOriginal && WUMomentsAvailable();
         if([key isEqual:@"callbackConfirm"]) return callbackOriginal!=NULL;
         if([key isEqual:@"multiRevoke"]) return chatAppearOriginal && WUMatches(class_getInstanceMethod(base,NSSelectorFromString(@"getSelectedMsgs")),"@",@[]) && RevokeSelector(Service(@"CMessageMgr"));
-        if([key isEqual:@"repeatEmoticon"]) return cellLayoutOriginal && WUMatches(class_getInstanceMethod(msg,NSSelectorFromString(@"initWithMsgType:nsFromUsr:")),"@",@[@"q",@"@"]) && Has(Service(@"CMessageMgr"),@"AddEmoticonMsg:MsgWrap:","v",@[@"@",@"@"]);
+        if([key isEqual:@"repeatEmoticon"]) return cellLayoutOriginal && WUMessageCanConstruct(msg) && Has(Service(@"CMessageMgr"),@"AddEmoticonMsg:MsgWrap:","v",@[@"@",@"@"]);
         if([key hasPrefix:@"merge"]) return cellLayoutOriginal && WUMatches(class_getInstanceMethod(NSClassFromString(@"CommonMessageCellView"),NSSelectorFromString(@"viewModel")),"@",@[]);
         if([key isEqual:@"redReminder"]) return arrivalOriginal!=NULL;
     } @catch(NSException *e) {}

@@ -5,7 +5,7 @@ NSDictionary *WUAccountOptions(NSString *account) {
     id accounts=WUValue(@"accounts"); return accounts[account]?:@{};
 }
 BOOL WUSaveAccountOption(NSString *account, NSString *key, id value) {
-    if(!NSThread.isMainThread || !account.length || ![account isEqual:WUCurrentAccount()] || ![@[@"emoji",@"toolbar",@"home"] containsObject:key]) return NO;
+    if(!NSThread.isMainThread || !account.length || ![account isEqual:WUCurrentAccount()] || ![@[@"emoji",@"toolbar",@"home",@"momentsCache"] containsObject:key]) return NO;
     NSMutableDictionary *accounts=[WUValue(@"accounts") mutableCopy]?:[NSMutableDictionary dictionary];
     NSMutableDictionary *options=[accounts[account] mutableCopy]?:[NSMutableDictionary dictionary]; options[key]=value; accounts[account]=options;
     return WUValidAccountOptions(accounts) && WUSave(@"accounts",accounts);

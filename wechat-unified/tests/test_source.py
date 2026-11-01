@@ -4,6 +4,19 @@ import re, unittest
 ROOT=Path(__file__).resolve().parents[1]
 SRC='\n'.join(p.read_text() for p in sorted((ROOT/'Sources').glob('*')))
 class Guardrails(unittest.TestCase):
+    def test_shared_message_constructor_and_runtime_regressions(self):
+        messages=(ROOT/'Sources/Messages.m').read_text()
+        voice=(ROOT/'Sources/VoiceSendLogic.m').read_text()
+        helper=(ROOT/'Sources/MessageConstruction.m').read_text()
+        self.assertIn('WUCreateMessage(NSClassFromString(@"CMessageWrap"),47,account)',messages)
+        self.assertIn('WUCreateMessage(cls,34,self.account)',voice)
+        self.assertEqual(messages.count('WUMessageCanConstruct('),2)
+        self.assertNotIn('WUVoiceConstruct',voice)
+        self.assertNotIn('WUMessageConstruct',messages)
+        self.assertNotIn('objc_msgSend',helper)
+        self.assertNotIn('[NSInvocation ',helper)
+        self.assertIn('tests/test_p0.py',(ROOT/'tools/build.sh').read_text())
+        self.assertIn('tests/message_construction.m',(ROOT/'tools/build.sh').read_text())
     def test_independent_ad_scope_and_reward_passthrough(self):
         ads=(ROOT/'Sources/Ads.m').read_text()
         hooks=re.findall(r'WUHook\(@"([^"]+)",@"([^"]+)"',ads)
