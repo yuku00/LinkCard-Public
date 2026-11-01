@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 mkdir -p build
 python3 tests/test_source.py
 python3 tests/test_github_transport.py
+bash tools/test_message_entries.sh
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=16.6 \
   -fobjc-arc -fobjc-arc-exceptions -fblocks -fsyntax-only -Wall -Wextra -Werror \
@@ -15,6 +16,8 @@ xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/dictati
 build/dictation-logic-tests | tee build/dictation-logic-tests.txt
 rm build/dictation-logic-tests
 python3 tests/test_dictation_native.py
+python3 tests/test_image_entry_contract.py
+python3 tests/test_image_entry_native.py
 WU_REQUIRE_APPLE_TESTS=1 sh tests/native/run.sh | tee build/native-tests.txt
 xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/interaction_logic.m Sources/InteractionLogic.m -framework Foundation -o build/interaction-tests
 build/interaction-tests | tee build/interaction-tests.txt
@@ -84,7 +87,7 @@ xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" \
   -Wall -Wextra -Werror -Wno-unused-parameter -Wno-nullability-completeness \
   -O2 \
   -install_name @rpath/WeChatUnified.dylib \
-  Sources/*.m build/native-boot-ios.o build/codec-iphoneos/libWUOffline.a -Wl,-dead_strip -framework Photos -framework AVKit -framework AVFoundation -framework AudioToolbox -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework UniformTypeIdentifiers -lz \
+  Sources/*.m build/native-boot-ios.o build/codec-iphoneos/libWUOffline.a -Wl,-dead_strip -framework SafariServices -framework Photos -framework AVKit -framework AVFoundation -framework AudioToolbox -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework UniformTypeIdentifiers -lz \
   -o build/WeChatUnified.dylib
 bash tools/test_stats.sh
 xcrun strip -x build/WeChatUnified.dylib

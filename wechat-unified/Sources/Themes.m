@@ -1,4 +1,5 @@
 #import "WU.h"
+#import "MessageEntries.h"
 #import "ThemeArchive.h"
 #import "ThemeCatalog.h"
 #import "ThemeLibrary.h"
@@ -132,6 +133,27 @@ static UIImage *Replacement(NSString *name,UIImage *original,UITraitCollection *
             id baseline=original?[originals objectForKey:original]:nil; [originals setObject:baseline?:original?:NSNull.null forKey:result]; [imageEpochs setObject:@(resourceEpoch) forKey:result];
             [images setObject:result forKey:cache cost:(NSUInteger)(result.size.width*result.size.height*result.scale*result.scale*4)]; return result;
         } return nil;
+    }
+}
+
+UIImage *WUThemeRepeatIcon(NSString *userIcon,BOOL themed,UITraitCollection *traits) {
+    if(!NSThread.isMainThread || ![WUValue(@"enabled") boolValue]) return nil;
+    // Same selection invalidation, resource candidates, renderer and bounded NSCache as host theme images.
+    if(SelectionChanged()) { RestoreVisibleImages(); Reload(); }
+    if(themed) { UIImage *image=Replacement(@"wu_repeat_icon",nil,traits,CGSizeMake(25,25),UIColor.labelColor); if(image) return image; }
+    if(!PackID(userIcon)) return nil;
+    NSString *support=NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory,NSUserDomainMask,YES).firstObject;
+    if(!support.length) return nil;
+    NSString *base=[support.stringByResolvingSymlinksInPath stringByAppendingPathComponent:@"WeChatUnified/RepeatIcons"];
+    NSString *path=[base stringByAppendingPathComponent:userIcon];
+    if(![path isEqual:path.stringByResolvingSymlinksInPath]) return nil;
+    CGFloat scale=traits.displayScale?:UIScreen.mainScreen.scale;
+    NSString *key=[NSString stringWithFormat:@"repeat-user|%@|%.2f|%ld",userIcon,scale,(long)traits.userInterfaceStyle];
+    @synchronized(images) {
+        UIImage *image=[images objectForKey:key]; if(image) return image;
+        image=WUThemeRenderFile(path,CGSizeMake(25,25),scale,UIColor.labelColor);
+        if(image) [images setObject:image forKey:key cost:(NSUInteger)(image.size.width*image.size.height*image.scale*image.scale*4)];
+        return image;
     }
 }
 

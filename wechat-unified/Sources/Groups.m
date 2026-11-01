@@ -155,7 +155,7 @@ static void Reuse(UIView *v,SEL s) { ResetPage(v); WUEmojiPage *p=Page(v); p.inv
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 4; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s {
     if(![self current]) return 0;
-    return s==3?1:(s==0?4+[EmojiState(self.account)[@"groups"] count]:(s==1?self.identifiers.count:8));
+    return s==3?1:(s==0?4+[EmojiState(self.account)[@"groups"] count]:(s==1?self.identifiers.count:10));
 }
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return @[@"官方添加的单个表情",@"已打开面板中的表情（点按移动）",@"聊天工具栏 · 手动选择动作",@"首页会话分组"][s]; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
@@ -163,7 +163,7 @@ static void Reuse(UIView *v,SEL s) { ResetPage(v); WUEmojiPage *p=Page(v); p.inv
     if(s==0) return emojiReady?@"分组按账号保存；长按自定义分组可改名或前后排序，左滑删除仅移除映射，不删媒体。先打开添加的单个表情面板。只有识别到添加占位且全部MD5可核验时才筛选；整包、最近使用保持原样。":@"此宿主缺少官方表情列表或生命周期签名，当前不可启用。";
     if(s==1) return @"仅当前账号宿主列表的MD5，不复制媒体、不读取聊天数据库。没有可核验列表时不提供手工假数据入口。";
     if(s==3) return @"全部、私信、群聊、其他及自定义组；宿主签名与原会话快照通过后才筛选。";
-    return @"默认不选任何动作；聊天页头工具按钮仅列出所选且可用动作。无AI、自动回复或Dock入口；仓库必须手动打开并确认目标才发送。";
+    return @"默认不选任何动作；聊天页头工具按钮仅列出所选且可用动作。无AI、自动回复或Dock入口；仓库必须手动打开并确认目标才发送。链接入口使用微信原长按菜单→多选，再点聊天工具；不自动改写气泡链接。";
 }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0;
@@ -176,7 +176,7 @@ static void Reuse(UIView *v,SEL s) { ResetPage(v); WUEmojiPage *p=Page(v); p.inv
     } else if(p.section==1) {
         NSString *md5=self.identifiers[p.row]; cell.textLabel.text=md5; NSString *gid=state[@"membership"][md5]; cell.detailTextLabel.text=@"未分组";
         for(NSDictionary *g in state[@"groups"]) if([gid isEqual:g[@"id"]]) cell.detailTextLabel.text=g[@"name"];
-    } else { NSString *key=@[@"search",@"stats",@"settings",@"moments",@"repository",@"emojiSave",@"voiceForward",@"voicePacks"][p.row]; cell.textLabel.text=@[@"当前会话搜索",@"当前会话统计",@"整合设置",@"半屏朋友圈（需启用）",@"消息仓库（手动管理/发送）",@"所选原表情保存图库（先在聊天多选一个）",@"所选普通语音转发（单条、确认收件人）",@"本地语音包（所选保存/试听/确认发送）"][p.row]; if([WUToolbarActions(WUAccountOptions(self.account)[@"toolbar"]) containsObject:key]) cell.accessoryType=UITableViewCellAccessoryCheckmark; }
+    } else { NSString *key=@[@"search",@"stats",@"settings",@"moments",@"repository",@"emojiSave",@"voiceForward",@"voicePacks",@"messageLinks",@"imageEmoji"][p.row]; cell.textLabel.text=@[@"当前会话搜索",@"当前会话统计",@"整合设置",@"半屏朋友圈（需启用）",@"消息仓库（手动管理/发送）",@"所选原表情保存图库（先在聊天多选一个）",@"所选普通语音转发（单条、确认收件人）",@"本地语音包（所选保存/试听/确认发送）",@"所选消息链接（需开启增强识别）",@"所选图片 → 微信表情编辑（当前缓存，可能非原图）"][p.row]; if([WUToolbarActions(WUAccountOptions(self.account)[@"toolbar"]) containsObject:key]) cell.accessoryType=UITableViewCellAccessoryCheckmark; }
     return cell;
 }
 - (void)toggle:(UISwitch *)sw { NSMutableDictionary *s=[EmojiState(self.account) mutableCopy]; s[@"enabled"]=@(sw.on); if(![self save:s]) sw.on=!sw.on; }
@@ -198,7 +198,7 @@ static void Reuse(UIView *v,SEL s) { ResetPage(v); WUEmojiPage *p=Page(v); p.inv
     [t deselectRowAtIndexPath:p animated:YES]; if(![self current]) return;
     if(p.section==3) { WUShowHomeGroups(self); return; }
     if(p.section==2) {
-        NSString *key=@[@"search",@"stats",@"settings",@"moments",@"repository",@"emojiSave",@"voiceForward",@"voicePacks"][p.row]; NSMutableArray *actions=[WUToolbarActions(WUAccountOptions(self.account)[@"toolbar"]) mutableCopy];
+        NSString *key=@[@"search",@"stats",@"settings",@"moments",@"repository",@"emojiSave",@"voiceForward",@"voicePacks",@"messageLinks",@"imageEmoji"][p.row]; NSMutableArray *actions=[WUToolbarActions(WUAccountOptions(self.account)[@"toolbar"]) mutableCopy];
         if([actions containsObject:key]) [actions removeObject:key]; else [actions addObject:key];
         if(!WUSaveAccountOption(self.account,@"toolbar",actions)) [self notice:@"保存失败，原选择保留。"]; return;
     }

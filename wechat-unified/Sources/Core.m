@@ -4,6 +4,7 @@
 #import "GroupLogic.h"
 #import "PluginHubLogic.h"
 #import "ThemeCatalog.h"
+#import "RepeatOptions.h"
 #import <fcntl.h>
 #import <unistd.h>
 #import <sys/stat.h>
@@ -23,10 +24,11 @@ static NSDictionary *ReadConfig(NSString *name) {
     if (n != d.length) return nil;
     id x = [NSJSONSerialization JSONObjectWithData:d options:0 error:NULL];
     if (![x isKindOfClass:NSDictionary.class] || ![x[@"schema"] isEqual:@1]) return nil;
-    for (NSString *k in @[@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress", @"voiceRealDuration", @"voiceCarry", @"voiceCountdown", @"voiceWaveform", @"voiceAlways", @"voicePulse", @"voiceSeek", @"enabled", @"ads", @"momentsAds", @"miniSplashAds", @"keywords", @"inputBorder", @"inputPulse", @"hideHomeSearch", @"fileSurface", @"emoticonSurface", @"noticeBorder", @"separators", @"convenientMoments", @"chatSearch", @"callbackConfirm", @"antiRevoke", @"multiRevoke", @"repeatEmoticon", @"mergeGroup", @"mergePrivate", @"mergeBottom", @"redReminder", @"themes", @"sunMoon", @"searchSurface", @"referSurface", @"plusSurface", @"toastSurface",@"timeSurface",@"swipeSurface"])
+    for (NSString *k in @[@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress", @"voiceRealDuration", @"voiceCarry", @"voiceCountdown", @"voiceWaveform", @"voiceAlways", @"voicePulse", @"voiceSeek", @"enabled", @"ads", @"momentsAds", @"miniSplashAds", @"keywords", @"inputBorder", @"inputPulse", @"hideHomeSearch", @"fileSurface", @"emoticonSurface", @"noticeBorder", @"separators", @"convenientMoments", @"chatSearch", @"callbackConfirm", @"antiRevoke", @"multiRevoke", @"enhancedLinks", @"repeatEmoticon", @"mergeGroup", @"mergePrivate", @"mergeBottom", @"redReminder", @"themes", @"sunMoon", @"searchSurface", @"referSurface", @"plusSurface", @"toastSurface",@"timeSurface",@"swipeSurface"])
         if (x[k] && ![x[k] isKindOfClass:NSNumber.class]) return nil;
     if (x[@"words"] && (![x[@"words"] isKindOfClass:NSString.class] || [x[@"words"] length] > 2048)) return nil;
     for(NSString *k in @[@"themePack",@"bubblePack"]) if(x[k] && (![x[k] isKindOfClass:NSString.class] || ([x[k] length] && ![[NSUUID alloc] initWithUUIDString:x[k]]))) return nil;
+    if(x[@"repeatOptions"] && !WUValidRepeatOptions(x[@"repeatOptions"])) return nil;
     if(x[@"accounts"] && !WUValidAccountOptions(x[@"accounts"])) return nil;
     if(x[@"native"] && !WUNativeValidOptions(x[@"native"])) return nil;
     if(x[@"pluginHub"] && !WUHubValidOptions(x[@"pluginHub"])) return nil;
@@ -50,9 +52,10 @@ id WUValue(NSString *key) { @synchronized(NSProcessInfo.processInfo) { return sn
 BOOL WUEnabled(NSString *key) { return [WUValue(@"enabled") boolValue] && [WUValue(key) boolValue]; }
 BOOL WUSave(NSString *key, id value) {
     NSCAssert(NSThread.isMainThread, @"UI configuration is main-thread owned");
-    if(![@[@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress",@"voiceRealDuration",@"voiceCarry",@"voiceCountdown",@"voiceWaveform",@"voiceAlways",@"voicePulse",@"voiceSeek",@"enabled",@"ads",@"momentsAds",@"miniSplashAds",@"keywords",@"words",@"inputBorder",@"inputPulse",@"hideHomeSearch",@"fileSurface",@"emoticonSurface",@"noticeBorder",@"separators",@"convenientMoments",@"chatSearch",@"callbackConfirm",@"antiRevoke",@"multiRevoke",@"repeatEmoticon",@"mergeGroup",@"mergePrivate",@"mergeBottom",@"redReminder",@"themes",@"sunMoon",@"themePack",@"bubblePack",@"searchSurface",@"referSurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"accounts",@"pluginHub",@"themeOptions",@"surfaceStyles",@"native"] containsObject:key]) return NO;
+    if(![@[@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress",@"voiceRealDuration",@"voiceCarry",@"voiceCountdown",@"voiceWaveform",@"voiceAlways",@"voicePulse",@"voiceSeek",@"enabled",@"ads",@"momentsAds",@"miniSplashAds",@"keywords",@"words",@"inputBorder",@"inputPulse",@"hideHomeSearch",@"fileSurface",@"emoticonSurface",@"noticeBorder",@"separators",@"convenientMoments",@"chatSearch",@"callbackConfirm",@"antiRevoke",@"multiRevoke",@"enhancedLinks", @"repeatEmoticon",@"mergeGroup",@"mergePrivate",@"mergeBottom",@"redReminder",@"themes",@"sunMoon",@"themePack",@"bubblePack",@"searchSurface",@"referSurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"accounts",@"pluginHub",@"themeOptions",@"surfaceStyles",@"native",@"repeatOptions"] containsObject:key]) return NO;
     BOOL pack=[@[@"themePack",@"bubblePack"] containsObject:key];
     if(pack) { if(![value isKindOfClass:NSString.class] || ([value length] && ![[NSUUID alloc] initWithUUIDString:value])) return NO; }
+    else if([key isEqual:@"repeatOptions"]) { if(!WUValidRepeatOptions(value)) return NO; }
     else if([key isEqual:@"accounts"]) { if(!WUValidAccountOptions(value)) return NO; }
     else if([key isEqual:@"native"]) { if(!WUNativeValidOptions(value)) return NO; }
     else if([key isEqual:@"pluginHub"]) { if(!WUHubValidOptions(value)) return NO; }

@@ -8,6 +8,11 @@
 #import "VoiceSendLogic.h"
 #import "VoicePacks.h"
 #import "WUNativeAction.h"
+#import "MessageEntries.h"
+#import "WUImageEntry.h"
+#import "RepeatOptions.h"
+static void OpenSelectedLinks(UIViewController *owner);
+static void DownloadRepeat(UIView *cell);
 static void OpenVoicePacks(UIViewController *owner);
 #import <Photos/Photos.h>
 static void ForwardSelectedVoice(UIViewController *owner);
@@ -64,6 +69,8 @@ static NSHashTable *pendingAlerts;
 static void CancelPending(void) {
     generation++;
     WUNativeCancelActions();
+    WUCancelMessageEntries();
+    WUCancelImageEntries();
     WUCancelMoments();
     WUCancelVoice();
     for(UIAlertController *a in pendingAlerts.allObjects) [a dismissViewControllerAnimated:NO completion:nil];
@@ -163,18 +170,21 @@ static NSHashTable *chatActions;
     NSArray *selected=WUToolbarActions(WUAccountOptions(account)[@"toolbar"]);
     NSMutableArray *menu=[NSMutableArray array]; __weak WUChatActions *weak=self;
     if([WUValue(@"enabled") boolValue] && account.length && session.length) for(NSString *key in selected) {
+        if([key isEqual:@"messageLinks"] && (!WUEnabled(@"enhancedLinks") || !Has(v,@"getSelectedMsgs","@",@[]))) continue;
         if([key isEqual:@"search"] && !Has(v,@"onSearchItem","v",@[])) continue;
         if([key isEqual:@"stats"] && !StatsReady(Service(@"CMessageMgr"))) continue;
         if([key isEqual:@"moments"] && (!WUEnabled(@"convenientMoments") || !WUMomentsAvailable())) continue;
-        NSString *title=@{@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"repository":@"消息仓库",@"voiceForward":@"所选语音转发",@"voicePacks":@"本地语音包",@"emojiSave":@"所选表情保存图库",@"moments":@"半屏朋友圈"}[key];
+        NSString *title=@{@"messageLinks":@"所选消息链接",@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"repository":@"消息仓库",@"voiceForward":@"所选语音转发",@"voicePacks":@"本地语音包",@"emojiSave":@"所选表情保存图库",@"imageEmoji":@"所选图片 → 微信表情编辑",@"moments":@"半屏朋友圈"}[key];
         [menu addObject:[UIAction actionWithTitle:title image:nil identifier:nil handler:^(UIAction *action){
             WUChatActions *target=weak; UIViewController *owner=target.owner;
             @try {
                 if(!owner.viewIfLoaded.window || owner.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(owner)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:key]) return;
                 if([key isEqual:@"settings"]) WUShowSettings(owner);
+                else if([key isEqual:@"messageLinks"]) OpenSelectedLinks(owner);
                 else if([key isEqual:@"voicePacks"]) OpenVoicePacks(owner);
                 else if([key isEqual:@"voiceForward"]) ForwardSelectedVoice(owner);
                 else if([key isEqual:@"emojiSave"]) SaveSelectedEmoticon(owner);
+                else if([key isEqual:@"imageEmoji"]) WUOpenSelectedImageEditor(owner);
                 else if([key isEqual:@"repository"]) OpenRepository(owner);
                 else if([key isEqual:@"stats"]) OpenStats(owner);
                 else if([key isEqual:@"moments"]) { if(!WUOpenMoments(owner)) Notice(owner,@"半屏朋友圈当前不可用，未打开全屏替代页面。"); }
@@ -261,7 +271,7 @@ static void ChatAppeared(UIViewController *v,SEL s,BOOL animated) {
 static void ChatDisappeared(UIViewController *v,SEL s,BOOL animated) {
     UIViewController *presented=v.presentedViewController;
     BOOL ownStats=[presented isKindOfClass:UINavigationController.class] && [[(UINavigationController *)presented topViewController] isKindOfClass:NSClassFromString(@"WUStatsController")];
-    if(!ownStats && !WUNativeOwnsController(presented) && !WUIsMomentsSheet(presented) && !WUIsRepositoryController(presented) && !WUIsVoicePacksController(presented)) CancelPending();
+    if(!WUImageEntryOwnsNavigation(v) && !ownStats && !WUMessageEntriesOwnsController(presented) && !WUNativeOwnsController(presented) && !WUIsMomentsSheet(presented) && !WUIsRepositoryController(presented) && !WUIsVoicePacksController(presented)) CancelPending();
     ((void(*)(id,SEL,BOOL))chatDisappearOriginal)(v,s,animated);
 }
 
@@ -306,10 +316,18 @@ static NSDictionary *GroupInfo(id model, NSString *session, NSString *account) {
 }
 - (void)update {
     UIView *cell=self.cell; [self restore]; UIViewController *v=Chat(cell); id wrap=Wrap(cell);
-    BOOL show=cell.window && v && WUEnabled(@"repeatEmoticon") && Num(wrap,@"m_uiMessageType")==47 && RepeatReady(wrap);
+    NSDictionary *repeatOptions=WUValue(@"repeatOptions")?:WURepeatDefaults();
+    BOOL show=cell.window && v && WUEnabled(@"repeatEmoticon") && ([repeatOptions[@"normalRepeat"] boolValue] || [repeatOptions[@"longDownload"] boolValue]) && Num(wrap,@"m_uiMessageType")==47 && RepeatReady(wrap);
     if(!show) { [self.repeat removeFromSuperview]; self.repeat=nil; }
     else {
-        if(!self.repeat) { self.repeat=[UIButton buttonWithType:UIButtonTypeSystem]; [self.repeat setImage:[UIImage systemImageNamed:@"arrow.triangle.2.circlepath"] forState:UIControlStateNormal]; self.repeat.accessibilityLabel=@"常规复读此表情（需要确认）"; self.repeat.layer.cornerRadius=6; self.repeat.backgroundColor=UIColor.secondarySystemBackgroundColor; [self.repeat addTarget:self action:@selector(repeatMessage) forControlEvents:UIControlEventTouchUpInside]; [cell addSubview:self.repeat]; }
+        if(!self.repeat) { self.repeat=[UIButton buttonWithType:UIButtonTypeSystem]; [self.repeat setImage:[UIImage systemImageNamed:@"arrow.triangle.2.circlepath"] forState:UIControlStateNormal]; self.repeat.accessibilityLabel=@"常规复读此表情（需要确认）"; self.repeat.layer.cornerRadius=6; self.repeat.backgroundColor=UIColor.secondarySystemBackgroundColor; [self.repeat addTarget:self action:@selector(repeatMessage) forControlEvents:UIControlEventTouchUpInside]; UILongPressGestureRecognizer *press=[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(downloadRepeat:)]; press.minimumPressDuration=0.5; press.cancelsTouchesInView=YES; [self.repeat addGestureRecognizer:press]; [cell addSubview:self.repeat]; }
+        BOOL imageButton=[repeatOptions[@"imageButton"] boolValue];
+        UIImage *icon=imageButton?(WUThemeRepeatIcon(repeatOptions[@"userIcon"],[repeatOptions[@"themeIcon"] boolValue],cell.traitCollection)?:[UIImage systemImageNamed:@"arrow.triangle.2.circlepath"]):nil;
+        [self.repeat setImage:icon forState:UIControlStateNormal]; [self.repeat setTitle:imageButton?nil:@"复读" forState:UIControlStateNormal];
+        self.repeat.titleLabel.font=[UIFont systemFontOfSize:10]; self.repeat.clipsToBounds=YES;
+        self.repeat.accessibilityLabel=[repeatOptions[@"normalRepeat"] boolValue]?@"常规复读此表情（需要确认）":@"表情标签（点按复读已关闭）";
+        self.repeat.accessibilityHint=[repeatOptions[@"longDownload"] boolValue]?@"长按可选择文件保存位置，下载原表情":@"长按下载已关闭";
+        for(UIGestureRecognizer *gesture in self.repeat.gestureRecognizers) if([gesture isKindOfClass:UILongPressGestureRecognizer.class]) gesture.enabled=[repeatOptions[@"longDownload"] boolValue];
         self.repeat.alpha=1; self.repeat.frame=CGRectMake(MAX(0,CGRectGetWidth(cell.bounds)-31),MAX(0,(CGRectGetHeight(cell.bounds)-25)/2),25,25);
     }
     NSString *session=Session(v); BOOL group=[session hasSuffix:@"@chatroom"];
@@ -325,8 +343,12 @@ static NSDictionary *GroupInfo(id model, NSString *session, NSString *account) {
     if(![head isKindOfClass:UIView.class]) return;
     self.head=head; self.name=[name isKindOfClass:UIView.class]?name:nil; self.headHidden=self.head.hidden; self.nameHidden=self.name.hidden; self.changed=YES; self.head.hidden=YES; self.name.hidden=YES;
 }
+- (void)downloadRepeat:(UILongPressGestureRecognizer *)gesture {
+    if(gesture.state!=UIGestureRecognizerStateBegan || self.submitting) return;
+    @try { DownloadRepeat(self.cell); } @catch(__unused NSException *e) { Notice(Chat(self.cell),@"表情上下文已失效，未下载。"); }
+}
 - (void)repeatMessage {
-    if(self.submitting || !WUEnabled(@"repeatEmoticon")) return;
+    if(self.submitting || !WUEnabled(@"repeatEmoticon") || ![(WUValue(@"repeatOptions")?:WURepeatDefaults())[@"normalRepeat"] boolValue]) return;
     UIView *cell=self.cell; UIViewController *v=Chat(cell);
     @try {
         id source=Wrap(cell); NSDictionary *frozen=Info(source); NSString *account=Account(), *session=Session(v);
@@ -354,9 +376,9 @@ static NSDictionary *GroupInfo(id model, NSString *session, NSString *account) {
 }
 @end
 static IMP cellLayoutOriginal, cellReuseOriginal, cellModelOriginal, cellWindowOriginal;
-static void CellModel(UIView *cell, SEL s, id model) { WURestoreMessageSurface(cell); ((void(*)(id,SEL,id))cellModelOriginal)(cell,s,model); }
-static void CellWindow(UIView *cell, SEL s) { WURestoreMessageSurface(cell); ((void(*)(id,SEL))cellWindowOriginal)(cell,s); [cell setNeedsLayout]; }
 static char cellKey;
+static void CellModel(UIView *cell, SEL s, id model) { WUCellActions *actions=objc_getAssociatedObject(cell,&cellKey); [actions.repeat removeFromSuperview]; actions.repeat=nil; WURestoreMessageSurface(cell); ((void(*)(id,SEL,id))cellModelOriginal)(cell,s,model); }
+static void CellWindow(UIView *cell, SEL s) { WURestoreMessageSurface(cell); ((void(*)(id,SEL))cellWindowOriginal)(cell,s); [cell setNeedsLayout]; }
 static void CellLayout(UIView *cell, SEL s) {
     WURestoreMessageSurface(cell);
     WUCellActions *a=objc_getAssociatedObject(cell,&cellKey); [a restore]; ((void(*)(id,SEL))cellLayoutOriginal)(cell,s);
@@ -428,6 +450,7 @@ BOOL WUMessageAvailable(NSString *key) {
         if([key isEqual:@"antiRevoke"]) return revokeOriginal && LookupReady(Service(@"CMessageMgr"));
         if([key isEqual:@"convenientMoments"]) return chatAppearOriginal && WUMomentsAvailable();
         if([key isEqual:@"callbackConfirm"]) return callbackOriginal!=NULL;
+        if([key isEqual:@"enhancedLinks"]) return chatAppearOriginal && WUMatches(class_getInstanceMethod(base,NSSelectorFromString(@"getSelectedMsgs")),"@",@[]);
         if([key isEqual:@"multiRevoke"]) return chatAppearOriginal && WUMatches(class_getInstanceMethod(base,NSSelectorFromString(@"getSelectedMsgs")),"@",@[]) && RevokeSelector(Service(@"CMessageMgr"));
         if([key isEqual:@"repeatEmoticon"]) return cellLayoutOriginal && WUMessageCanConstruct(msg) && Has(Service(@"CMessageMgr"),@"AddEmoticonMsg:MsgWrap:","v",@[@"@",@"@"]);
         if([key hasPrefix:@"merge"]) return cellLayoutOriginal && WUMatches(class_getInstanceMethod(NSClassFromString(@"CommonMessageCellView"),NSSelectorFromString(@"viewModel")),"@",@[]);
@@ -578,6 +601,9 @@ static void OpenRepository(UIViewController *owner) {
     WUShowRepository(owner,binding);
 }
 
+
+#include "MessageEntryBindings.inc"
+
 // Evidence: WCPulse 0xb8514 / 0xb8760-68 (NO,NO), 0x12be34 raw Photos resource.
 static char emojiSaveKey;
 static void SaveSelectedEmoticon(UIViewController *owner) {
@@ -585,7 +611,7 @@ static void SaveSelectedEmoticon(UIViewController *owner) {
     id selected=Obj(owner,@"getSelectedMsgs");
     if(![selected isKindOfClass:NSArray.class] || [selected count]!=1) { Notice(owner,@"请先用微信长按菜单进入多选，仅选择一个表情，再打开此工具。不会读取未选择的消息。"); return; }
     id wrap=[selected firstObject]; NSDictionary *identity=Info(wrap);
-    if(!account.length || !session.length || [identity[@"type"] unsignedIntValue]!=47 || !InSession(identity,account,session)) { Notice(owner,@"仅支持当前会话选中的单个表情；图片转表情尚未接入。"); return; }
+    if(!account.length || !session.length || [identity[@"type"] unsignedIntValue]!=47 || !InSession(identity,account,session)) { Notice(owner,@"仅支持当前会话选中的单个表情；图片请使用“所选图片 → 微信表情编辑”工具。"); return; }
     NSString *md5=Str(wrap,@"m_nsEmoticonMD5") ?: Str(Obj(wrap,@"m_extendInfoWithMsgType"),@"m_nsEmoticonMD5");
     Class util=NSClassFromString(@"EmoticonUtil"); NSString *selector=@"pathOfEmoticonForMd5:needUpdateTime:ignoreWxAM:";
     if(!WUValidMD5(md5) || !Has(util,selector,"@",@[@"@",@"B",@"B"])) { Notice(owner,@"原表情路径接口或签名不匹配，当前不可用；不会使用缩略图替代。"); return; }
