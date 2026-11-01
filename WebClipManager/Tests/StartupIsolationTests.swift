@@ -8,10 +8,11 @@ final class StartupIsolationTests: XCTestCase {
         XCTAssertNil(StartupLog.logURL(documents: URL(fileURLWithPath: "/var/mobile/Documents")))
         XCTAssertNil(StartupLog.logURL(documents: URL(fileURLWithPath: "/var/tmp")))
         let container = URL(fileURLWithPath: "/private/var/mobile/Containers/Data/Application/11111111-2222-3333-4444-555555555555/Documents")
-        let log = StartupLog.logURL(documents: container)
+        XCTAssertNil(StartupLog.logURL(documents: container))
+        let log = StartupLog.logURL(documents: AppPaths.documents)
         XCTAssertNotNil(log)
-        XCTAssertEqual(log?.lastPathComponent, "startup-build5.log")
-        XCTAssertEqual(log?.deletingLastPathComponent().lastPathComponent, "WebClipManager")
+        XCTAssertEqual(log?.lastPathComponent, "startup-build7.log")
+        XCTAssertEqual(log?.deletingLastPathComponent(), AppPaths.documents)
     }
 
     @MainActor

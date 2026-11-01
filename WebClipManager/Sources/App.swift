@@ -179,7 +179,7 @@ struct ManagerView: View {
             } message: {
                 Text("不会执行删除，也不会仅移除目录冒充系统删除。请从主屏幕手动删除；受管理项目可能需联系管理员。")
             }
-            .fileExporter(isPresented: $model.export, document: model.document, contentType: .data,
+            .fileExporter(isPresented: Binding(get: { model.export && AppPaths.ready }, set: { model.export = $0 }), document: model.document, contentType: .data,
                           defaultFilename: "WebClips-\(Int(Date().timeIntervalSince1970)).webclipbackup") { result in
                 switch result {
                 case .success: model.status = "系统文件导出完成；请查看逐项结果确认覆盖范围"

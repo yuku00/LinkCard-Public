@@ -71,11 +71,14 @@ final class NotesModel: ObservableObject {
         guard !busy else { return }
         busy = true
         defer { busy = false }
+        NotesReadDiagnostic.record(state: "reading")
         do {
             let batch = try await Task.detached { try AppleNotesStore.load() }.value
             notes = batch.notes; selected = Set(notes.map(\.id)); failures = []
             status = batch.summary
+            NotesReadDiagnostic.record(state: "readable")
         } catch {
+            NotesReadDiagnostic.record(state: "failed", error: error)
             status = "读取未完成；原批次保留。\(error.localizedDescription)"
         }
     }
@@ -186,13 +189,13 @@ struct NotesView: View {
                         exporting = true
                     }
                 } message: { Text("共 \(model.selected.count) 篇（包括搜索隐藏项）。文本可能包含隐私；选择 iCloud 等位置可能由系统同步。") }
-                .fileImporter(isPresented: $importing, allowedContentTypes: [.plainText, UTType(filenameExtension: "md") ?? .plainText], allowsMultipleSelection: true) { result in
+                .fileImporter(isPresented: Binding(get: { importing && AppPaths.ready }, set: { importing = $0 }), allowedContentTypes: [.plainText, UTType(filenameExtension: "md") ?? .plainText], allowsMultipleSelection: true) { result in
                     switch result {
                     case .success(let urls): Task { await model.load(urls) }
                     case .failure: model.status = "文件选择未完成；当前批次未改变"
                     }
                 }
-                .fileExporter(isPresented: $exporting, documents: documents, contentType: markdown ? (UTType(filenameExtension: "md") ?? .plainText) : .plainText) { result in
+                .fileExporter(isPresented: Binding(get: { exporting && AppPaths.ready }, set: { exporting = $0 }), documents: documents, contentType: markdown ? (UTType(filenameExtension: "md") ?? .plainText) : .plainText) { result in
                     switch result {
                     case .success(let urls): model.status = "系统导出器已保存 \(urls.count) 个文件；请到所选位置核对正文"
                     case .failure: model.status = "导出未完成，原始文件与当前批次均未改变"

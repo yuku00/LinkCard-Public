@@ -1,47 +1,39 @@
 import Foundation
+import Darwin
 
-// Diagnostic build only. Never pass URLs, titles, counts or error descriptions here.
+// Only fixed stage markers are accepted. Export uses this process's memory,
+// never a URL or arbitrary on-disk contents (including a substituted symlink).
 enum StartupLog {
     private static let lock = NSLock()
+    private static var lines: [String] = []
+    private static let stages: Set<String> = ["S0_MAIN", "S1_DID_FINISH_LAUNCHING", "S2_WINDOW_VISIBLE_REQUESTED", "S3_UIKIT_DID_APPEAR", "S4_SWIFTUI_REQUESTED", "S5_HOST_CREATED", "S6_ROOT_ON_APPEAR", "S6_MANAGER_ON_APPEAR_NO_SCAN", "S7_PRESENT_COMPLETED", "S8_SCAN_BUTTON", "S9_REFRESH_ENTERED", "S10_REPOSITORY_SCAN_ENTERED", "S11_SCAN_RETURNED", "S11_SCAN_THROWN"]
     static func logURL(documents: URL) -> URL? {
-        // Fail closed if installation unexpectedly gives us /var/mobile/Documents.
-        let base = documents.resolvingSymlinksInPath().standardizedFileURL
-        let parts = base.pathComponents
-        guard parts.count >= 6,
-              parts.suffix(5).first == "Containers",
-              parts[parts.count - 4] == "Data",
-              parts[parts.count - 3] == "Application",
-              UUID(uuidString: parts[parts.count - 2]) != nil,
-              parts.last == "Documents" else { return nil }
-        let target = base.appendingPathComponent("WebClipManager", isDirectory: true)
-            .appendingPathComponent("startup-build5.log")
-        guard target.resolvingSymlinksInPath().standardizedFileURL.path == target.path else { return nil }
-        return target
+        guard documents.standardizedFileURL.path == AppPaths.documents.path,
+              AppPaths.isOwnedPath(documents, root: AppPaths.root) else { return nil }
+        let target = documents.appendingPathComponent("startup-build7.log")
+        return AppPaths.isOwnedPath(target, root: AppPaths.root) ? target : nil
     }
-    static var url: URL? {
-        guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
-        return logURL(documents: documents)
+    static var url: URL? { AppPaths.ready ? logURL(documents: AppPaths.documents) : nil }
+    static var exportText: String {
+        lock.lock(); defer { lock.unlock() }
+        return lines.joined(separator: "\n")
     }
     static func record(_ stage: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        let fm = FileManager.default
+        guard stages.contains(stage) else { return }
+        lock.lock(); defer { lock.unlock() }
+        let line = "[WCM-STARTUP] build=7 \(stage)"
+        lines.append(line)
+        if lines.count > 128 { lines.removeFirst() }
         guard let target = url else { return }
-        do {
-            try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let bytes = (try? target.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            if !fm.fileExists(atPath: target.path) || bytes > 65536 {
-                try Data().write(to: target, options: .atomic)
-            }
-            let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
-            let line = "[WCM-STARTUP] \(Date().timeIntervalSince1970) build=\(build) \(stage)\n"
-            let handle = try FileHandle(forWritingTo: target)
-            defer { try? handle.close() }
-            try handle.seekToEnd()
-            try handle.write(contentsOf: Data(line.utf8))
-            try handle.synchronize()
-        } catch {
-            // A failed log write must not terminate the app; no sensitive error output.
+        let fd = open(target.path, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { return }
+        defer { close(fd) }
+        var st = stat()
+        guard fstat(fd, &st) == 0, st.st_uid == geteuid(), (st.st_mode & S_IFMT) == S_IFREG, st.st_nlink == 1 else { return }
+        if st.st_size > 65536 { guard ftruncate(fd, 0) == 0 else { return } }
+        let data = Data((line + "\n").utf8)
+        data.withUnsafeBytes { buffer in
+            if let base = buffer.baseAddress { _ = Darwin.write(fd, base, buffer.count) }
         }
     }
 }

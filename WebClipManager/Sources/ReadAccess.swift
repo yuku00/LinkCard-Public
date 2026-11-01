@@ -63,7 +63,8 @@ struct AccessSnapshot: Codable, Sendable {
 enum ReadAccess {
     // Fixed system paths only, including the real parent of /var. Never enumerate user data here.
     static let diagnosticPaths = ["/", "/var", "/var/mobile", "/var/mobile/Library", "/var/mobile/Library/WebClips",
-        "/private", "/private/var", "/private/var/mobile", "/private/var/mobile/Library", "/private/var/mobile/Library/WebClips"]
+        "/private", "/private/var", "/private/var/mobile", "/private/var/mobile/Library", "/private/var/mobile/Library/WebClips",
+        "/private/var/mobile/Containers/Shared/AppGroup"]
 
     static func failure(_ operation: String, _ code: Int32) -> NSError {
         NSError(domain: NSPOSIXErrorDomain, code: Int(code), userInfo: ["operation": operation])

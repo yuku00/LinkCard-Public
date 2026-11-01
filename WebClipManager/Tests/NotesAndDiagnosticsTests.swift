@@ -35,7 +35,7 @@ final class NotesAndDiagnosticsTests: XCTestCase {
         let report = DiagnosticReport.capture(readState: "SECRET-TITLE-URL", osVersion: "16.6")
         let data = try report.encoded()
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
-        XCTAssertEqual(Set(object.keys), Set(["schemaVersion", "osVersion", "webClipsReadState", "uiWebClipClassPresent", "selectorPresence", "deletionEnabled", "build"]))
+        XCTAssertEqual(Set(object.keys), Set(["schemaVersion", "osVersion", "webClipsReadState", "uiWebClipClassPresent", "selectorPresence", "deletionEnabled", "build", "runtimePermissions", "localPaths", "notesRead"]))
         XCTAssertEqual(report.webClipsReadState, "notRead")
         XCTAssertFalse(report.deletionEnabled)
         XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("SECRET"))

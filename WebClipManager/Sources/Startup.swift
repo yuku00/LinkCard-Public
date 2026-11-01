@@ -5,7 +5,6 @@ final class StartupDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         StartupLog.record("S1_DID_FINISH_LAUNCHING")
-        StartupLog.record("OS " + ProcessInfo.processInfo.operatingSystemVersionString)
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = StartupViewController()
         self.window = window
@@ -20,7 +19,7 @@ final class StartupViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         let title = UILabel()
-        title.text = "UIKit 启动成功 · build 6（只读权限调试）"
+        title.text = "UIKit 启动成功 · build 7（非容器只读调试）"
         title.font = .preferredFont(forTextStyle: .title2)
         title.numberOfLines = 0
         let detail = UILabel()
@@ -32,6 +31,8 @@ final class StartupViewController: UIViewController {
         open.addTarget(self, action: #selector(openInterface), for: .touchUpInside)
         let export = UIButton(type: .system)
         export.setTitle("导出启动阶段日志", for: .normal)
+        export.isEnabled = AppPaths.ready
+        if !AppPaths.ready { detail.text = (detail.text ?? "") + "\n\n专属数据路径未验证：所有文件导入/导出及日志落盘已禁用；仍可打开界面查看只读诊断。" }
         export.addTarget(self, action: #selector(exportLog), for: .touchUpInside)
         let stack = UIStackView(arrangedSubviews: [title, detail, open, export])
         stack.axis = .vertical
@@ -55,8 +56,8 @@ final class StartupViewController: UIViewController {
         present(host, animated: true) { StartupLog.record("S7_PRESENT_COMPLETED") }
     }
     @objc private func exportLog() {
-        guard let log = StartupLog.url, FileManager.default.fileExists(atPath: log.path) else { return }
-        let controller = UIActivityViewController(activityItems: [log], applicationActivities: nil)
+        guard AppPaths.ready else { return }
+        let controller = UIActivityViewController(activityItems: [StartupLog.exportText], applicationActivities: nil)
         controller.popoverPresentationController?.sourceView = view
         controller.popoverPresentationController?.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
         present(controller, animated: true)

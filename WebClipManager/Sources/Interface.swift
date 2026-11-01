@@ -53,6 +53,9 @@ struct DiagnosticReport: Codable {
     let build: String
     let fileAccess: AccessSnapshot?
     let readFailure: AccessError?
+    let runtimePermissions: RuntimePermissions?
+    let localPaths: LocalPathDiagnostics
+    let notesRead: NotesReadDiagnostic
 
     static func capture(readState: String, osVersion: String, fileAccess: AccessSnapshot? = nil, readFailure: AccessError? = nil) -> DiagnosticReport {
         let cls: AnyClass? = NSClassFromString("UIWebClip")
@@ -65,11 +68,13 @@ struct DiagnosticReport: Codable {
             class_getClassMethod($0, NSSelectorFromString("webClipWithIdentifier:")) != nil
         } ?? false
         let allowed = ["notRead", "reading", "readable", "partial", "failed"]
-        return DiagnosticReport(schemaVersion: 2, osVersion: osVersion,
+        return DiagnosticReport(schemaVersion: 3, osVersion: osVersion,
             webClipsReadState: allowed.contains(readState) ? readState : "notRead",
             uiWebClipClassPresent: cls != nil, selectorPresence: presence, deletionEnabled: false,
             build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown",
-            fileAccess: fileAccess, readFailure: readFailure)
+            fileAccess: fileAccess, readFailure: readFailure,
+            runtimePermissions: RuntimePermissions.capture(), localPaths: LocalPathDiagnostics.capture(),
+            notesRead: NotesReadDiagnostic.capture())
     }
     func encoded() throws -> Data {
         let encoder = JSONEncoder()
@@ -113,19 +118,30 @@ struct DiagnosticsView: View {
                             Text(report.selectorPresence[key] == true ? "存在" : "未发现").foregroundStyle(.secondary)
                         }
                     }
+                    Text("Notes：\(report.notesRead.state)")
+                    Text("专属数据路径：\(report.localPaths.dedicatedStorageReady ? "已验证" : "未验证，文件导入/导出禁用")")
+                    if let runtime = report.runtimePermissions {
+                        Text("自身权限 API：\(runtime.entitlementAPI) · Seatbelt API：\(runtime.sandboxAPI)")
+                        ForEach(runtime.entitlements.keys.sorted(), id: \.self) { key in
+                            Text("\(key)：\(runtime.entitlements[key] ?? "unknown") [\(runtime.expectedComparison[key] ?? "unknown")]").font(.caption)
+                        }
+                    }
+                    DisclosureGroup("完整脱敏诊断（可选择文字）") {
+                        Text((try? String(decoding: report.encoded(), as: UTF8.self)) ?? "编码失败").font(.caption).textSelection(.enabled)
+                    }
                     Text("删除执行：禁用")
                 }
                 Section {
                     Button { do { document = BackupDocument(data: try report.encoded()); exporting = true } catch { feedback = "报告编码失败" } } label: {
                         Label("导出脱敏诊断 JSON", systemImage: "square.and.arrow.up")
                     }
-                    Text("仅含状态、构建号、uid/euid/gid/egid、固定系统路径的打开结果/errno/属主/模式、NSError 域与代码。不含书签 URL、标题、目录标识、设备标识、数量或错误原文。错误码不能单独证明是 POSIX 或 MAC/sandbox；接口存在不等于删除可用。")
+                    Text("实际自身签名九项白名单及期望比较、固定路径 Seatbelt 检查、专属本地路径匹配状态、Notes 读取状态；另含状态、构建号、uid/euid/gid/egid、固定系统路径的打开结果/errno/属主/模式、NSError 域与代码。不含书签 URL、标题、目录标识、设备标识、数量或错误原文。错误码不能单独证明是 POSIX 或 MAC/sandbox；接口存在不等于删除可用。")
                         .font(.footnote).foregroundStyle(.secondary)
                     if !feedback.isEmpty { Text(feedback).font(.footnote) }
                 }
             }
         }.listStyle(.insetGrouped).navigationTitle("诊断").task { refresh() }
-            .fileExporter(isPresented: $exporting, document: document, contentType: .json, defaultFilename: "WebClip-diagnostics.json") { result in
+            .fileExporter(isPresented: Binding(get: { exporting && AppPaths.ready }, set: { exporting = $0 }), document: document, contentType: .json, defaultFilename: "WebClip-diagnostics.json") { result in
                 switch result {
                 case .success: feedback = "诊断已导出"
                 case .failure: feedback = "诊断导出未完成"
