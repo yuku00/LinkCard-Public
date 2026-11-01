@@ -18,7 +18,18 @@ enum AppPaths {
     static func isOwnedPath(_ url: URL, root: URL) -> Bool {
         let path = url.standardizedFileURL.path
         let base = root.standardizedFileURL.path
-        return path.hasPrefix(base + "/") && url.resolvingSymlinksInPath().standardizedFileURL.path == path
+        guard path.hasPrefix(base + "/"), url.resolvingSymlinksInPath().standardizedFileURL.path == path else { return false }
+        // Foundation may leave a symlink unresolved when the final leaf does not
+        // exist. Inspect every existing ancestor, not only the prospective leaf.
+        var current = ""
+        for part in URL(fileURLWithPath: path).pathComponents.dropFirst() {
+            current += "/" + part
+            var st = stat()
+            if lstat(current, &st) == 0 {
+                if (st.st_mode & S_IFMT) == S_IFLNK { return false }
+            } else if errno != ENOENT { return false }
+        }
+        return true
     }
 
     // Walk without following symlinks; create only the app root and descendants.
