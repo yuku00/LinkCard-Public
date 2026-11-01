@@ -530,6 +530,21 @@ static void SaveSelectedEmoticon(UIViewController *owner) {
     if(!WUValidMD5(md5) || !Has(util,selector,"@",@[@"@",@"B",@"B"])) { Notice(owner,@"原表情路径接口或签名不匹配，当前不可用；不会使用缩略图替代。"); return; }
     id path=((id(*)(id,SEL,id,BOOL,BOOL))objc_msgSend)(util,NSSelectorFromString(selector),md5,NO,NO);
     if(![path isKindOfClass:NSString.class] || ![path length]) { Notice(owner,@"原表情文件尚未就绪；不会自动下载或改写原消息。"); return; }
+    // System authorization may resign active and invalidate the shared generation.
+    // First authorization is deliberately permission-only, never an implicit retry/write.
+    id usage=[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSPhotoLibraryAddUsageDescription"];
+    if(![usage isKindOfClass:NSString.class] || ![usage length]) { Notice(owner,@"宿主缺少添加照片权限声明，当前不可用，未保存。"); return; }
+    PHAuthorizationStatus authorization=[PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelAddOnly];
+    if(authorization==PHAuthorizationStatusNotDetermined) {
+        UIAlertController *permission=[UIAlertController alertControllerWithTitle:@"先授权添加照片" message:@"本次只请求系统添加照片权限，不保存任何内容。授权完成后，请再次打开此工具并确认保存；不会跨失效会话自动写入。" preferredStyle:UIAlertControllerStyleAlert];
+        [permission addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+        [permission addAction:[UIAlertAction actionWithTitle:@"请求权限" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){
+            if(!owner.viewIfLoaded.window || ![account isEqual:WUCurrentAccount()] || gen!=WUContextGeneration() || ![session isEqual:WUChatSession(owner)] || ![WUValue(@"enabled") boolValue]) return;
+            [PHPhotoLibrary requestAuthorizationForAccessLevel:PHAccessLevelAddOnly handler:^(PHAuthorizationStatus status){ /* Permission only. User must explicitly invoke the tool again. */ }];
+        }]];
+        [pendingAlerts addObject:permission]; [owner presentViewController:permission animated:YES completion:nil]; return;
+    }
+    if(authorization!=PHAuthorizationStatusAuthorized) { Notice(owner,@"没有添加照片权限，未保存。请在系统设置授权后再手动尝试。"); return; }
     NSMutableDictionary *prior=objc_getAssociatedObject(owner,&emojiSaveKey);
     if([prior[@"generation"] unsignedIntegerValue]!=gen) { prior=[NSMutableDictionary dictionaryWithObject:@(gen) forKey:@"generation"]; objc_setAssociatedObject(owner,&emojiSaveKey,prior,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
     if([prior[identity] unsignedIntegerValue]==gen) { Notice(owner,@"该选中表情本次页面已处理或正在保存。请先核对图库，不会重复提交。"); return; }
@@ -563,12 +578,12 @@ static void SaveSelectedEmoticon(UIViewController *owner) {
                         id usage=[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSPhotoLibraryAddUsageDescription"];
                         if(![usage isKindOfClass:NSString.class] || ![usage length]) { reply(NO); return; }
                         PHAuthorizationStatus status=[PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelAddOnly];
-                        if(status==PHAuthorizationStatusNotDetermined) [PHPhotoLibrary requestAuthorizationForAccessLevel:PHAccessLevelAddOnly handler:^(PHAuthorizationStatus s){ reply(s==PHAuthorizationStatusAuthorized); }];
-                        else reply(status==PHAuthorizationStatusAuthorized);
+                        reply(status==PHAuthorizationStatusAuthorized);
                     } writer:^(NSData *original, NSString *uti, void (^reply)(BOOL)){
                         @try {
                             __block BOOL added=NO;
                             [PHPhotoLibrary.sharedPhotoLibrary performChanges:^{
+                                @try {
                                 __block BOOL valid=NO;
                                 if(NSThread.isMainThread) valid=current(); else dispatch_sync(dispatch_get_main_queue(),^{ valid=current(); });
                                 if(!valid) return;
@@ -576,6 +591,7 @@ static void SaveSelectedEmoticon(UIViewController *owner) {
                                 options.originalFilename=[@"Emoticon." stringByAppendingString:[uti isEqual:@"com.compuserve.gif"]?@"gif":([uti isEqual:@"public.png"]?@"png":@"jpg")];
                                 PHAssetCreationRequest *request=[PHAssetCreationRequest creationRequestForAsset];
                                 [request addResourceWithType:PHAssetResourceTypePhoto data:original options:options]; added=request!=nil;
+                                } @catch(NSException *e) { added=NO; }
                             } completionHandler:^(BOOL success,NSError *error){ reply(added && success && !error); }];
                         } @catch(NSException *e) { reply(NO); }
                     } completion:^(NSString *result){

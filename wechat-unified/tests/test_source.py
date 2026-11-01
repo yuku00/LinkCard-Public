@@ -168,6 +168,9 @@ class Guardrails(unittest.TestCase):
         for forbidden in ['UIImagePNGRepresentation', 'UIImageJPEGRepresentation', 'WUHook(', 'sendMsg', 'removeItem', 'UIWebView', 'WKWebView']:
             self.assertNotIn(forbidden,ui+logic)
         self.assertIn('tests/emoticon_logic.m',(ROOT/'tools/build.sh').read_text())
+        self.assertIn('count!=GIFComplete(b,n)',logic)
+        self.assertIn('本次只请求系统添加照片权限',ui)
+        self.assertNotIn('requestAuthorizationForAccessLevel',ui.split('[save startData:')[1])
         self.assertIn('-framework Photos',(ROOT/'tools/build.sh').read_text())
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()

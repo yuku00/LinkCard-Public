@@ -2,11 +2,11 @@
 
 新增EmoticonLogic生产格式/文件验证和Messages真实选中消息入口。账号工具栏手动勾选“所选原表情保存图库”，在微信长按进入多选后只选一个47类表情，经工具菜单再次确认执行；不加全局菜单Hook，不遮挡原菜单，不读未选择聊天，不用设置页文件导入替代。复用既有账号/session/generation/总开关/前台及Hook所有权。需getSelectedMsgs、m_nsEmoticonMD5（或扩展对象）、EmoticonUtil类方法pathOfEmoticonForMd5:needUpdateTime:ignoreWxAM:精确对象/BOOL/BOOL ABI；原证据0xb8514/0xb8760–68的NO/NO参数，不改访问时间、不强制下载。签名不符/原资源缺失明确不可用。
 
-原文件只读描述符、O_NOFOLLOW、前后size/mtime及EOF核验，上限20MiB。仅接受完整GIF/PNG/JPEG；PNG逐块CRC、GIF块边界/终止符、ImageIO完整状态与逐帧解码，最多500帧/单帧1600万像素/合计6400万像素。直接传原始NSData给PHAssetCreationRequest addResource，不经UIImage重编码，不把微信特殊WxAM容器当GIF。Photos AddOnly权限、缺隐私声明保护、performChanges完成回调；实际添加资源且success无error才显示成功。拒绝/取消/失效/失败不报成功。每次确认一次性状态机，权限/结果重复回调只处理一次；同页面同generation同消息防重，失败需退出再进核对后手动重试。提交后无法撤销且无跨启动持久防重，不声称恰好一次。
+原文件只读描述符、O_NOFOLLOW、前后size/mtime及EOF核验，上限20MiB。仅接受完整GIF/PNG/JPEG；PNG逐块CRC、GIF块边界/终止符、ImageIO完整状态与逐帧解码，最多500帧/单帧1600万像素/合计6400万像素。直接传原始NSData给PHAssetCreationRequest addResource，不经UIImage重编码，不把微信特殊WxAM容器当GIF。Photos AddOnly权限、缺隐私声明保护、performChanges完成回调；首次授权独立为仅权限动作（系统弹窗会触发共享generation失效），明确要求返回后再次手动确认，绝不跨代次自动续写。实际添加资源且success无error才显示成功。拒绝/取消/失效/失败不报成功。每次确认一次性状态机，权限/结果重复回调只处理一次；同页面同generation同消息防重，失败需退出再进核对后手动重试。提交后无法撤销且无跨启动持久防重，不声称恰好一次。
 
 macOS原生测试运行真实生产格式/读取/保存状态机，Photos权限和写入通过mock，不访问真实图库；iOS专属Photos/UI代码只由CI编译链接，仍缺真机验收。保留所有旧测试，增加22项结构检查中的原资源保护，以及GIF双帧/PNG/JPEG、损坏/CRC/截断/超限/链接/权限拒绝/重复点击与回调/会话失效断言。本轮CI完成前不宣称测试已通过。
 
-**精确未完：** 图片转表情、公众号图片入库仍未实现，不是宣称无法实现。0xfc6890的startOfficialGIFAddWithData:md5:fromViewController:与presentOfficialStaticEmoticonPick:fromViewController:属于旧WCRefineEmoticonToolsHelper，不能当微信宿主接口直接调用；尚需其下游官方添加控制器/委托回调和准确ABI，以及聊天原图/公众号选中图片的原始NSData来源及宿主菜单注册闭环。0x27b738仅已有选择图片调用链线索，不读取或上传任意网页。不挂伪开关、不自动发送。WxAM解码、原长按菜单直接新增项、目标宿主多选菜单可见性、权限提示时序和真实图库动画保留均未验收。原图/原消息/系统Dock不修改；AI/红包详情/在线主题/视频解析排除保持。
+**精确未完：** 图片转表情、公众号图片入库仍未实现，不是宣称无法实现。0xfc6890的startOfficialGIFAddWithData:md5:fromViewController:与presentOfficialStaticEmoticonPick:fromViewController:属于旧WCRefineEmoticonToolsHelper，不能当微信宿主接口直接调用；尚需准确ABI与完成结果协议；本轮仅定向补核0xfc5e0c/0xfc65e8：GIF下游涉及AddEmoticonWrap/EmojiInfoObj/EmoticonUploadInfoObj、saveEmoticonToEmoticonDirForMd5:data:isCleanable:、EmoticonCustomManageAddLogic startAddEmoticonWithWrap:及delegate；静图是EmoticonPickViewController setM_image:与PushViewController:animated:。类/选择子已定位，但未验证初始化、字段整数宽度、委托方法与入库结果，不擅自调用或写宿主表情目录。聊天原图/公众号选中图片的原始NSData来源及宿主菜单注册仍缺闭环。0x27b738仅已有选择图片调用链线索，不读取或上传任意网页。不挂伪开关、不自动发送。WxAM解码、原长按菜单直接新增项、目标宿主多选菜单可见性、权限提示时序和真实图库动画保留均未验收。原图/原消息/系统Dock不修改；AI/红包详情/在线主题/视频解析排除保持。
 
 # 2026-11-01 图片草稿生产链与视频独立备份（视频恢复未完成）
 

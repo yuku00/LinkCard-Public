@@ -19,10 +19,10 @@ static BOOL PNGComplete(const unsigned char *b, NSUInteger n) {
         p+=12+len;
     } return NO;
 }
-static BOOL GIFComplete(const unsigned char *b, NSUInteger n) {
+static NSUInteger GIFComplete(const unsigned char *b, NSUInteger n) {
     NSUInteger p=13, frames=0; if(b[10]&128) p+=3*((NSUInteger)2<<(b[10]&7));
     while(p<n) { unsigned char tag=b[p++];
-        if(tag==0x3b) return frames>0 && p==n;
+        if(tag==0x3b) return p==n?frames:0;
         if(tag==0x21) { if(p>=n) return NO; p++; }
         else if(tag==0x2c) { if(n-p<9) return NO; unsigned char packed=b[p+8]; p+=9; if(packed&128) p+=3*((NSUInteger)2<<(packed&7)); if(p>=n || b[p]<2 || b[p]>8) return NO; p++; frames++; }
         else return NO;
@@ -52,6 +52,7 @@ NSString *WUEmoticonType(NSData *data) {
     CGImageSourceRef source=CGImageSourceCreateWithData((__bridge CFDataRef)data,(__bridge CFDictionaryRef)@{(id)kCGImageSourceShouldCache:@NO});
     if(!source) return nil;
     size_t count=CGImageSourceGetCount(source); BOOL ok=count>0 && count<=500 && CGImageSourceGetStatus(source)==kCGImageStatusComplete && [uti isEqual:(__bridge NSString *)CGImageSourceGetType(source)];
+    if([uti isEqual:@"com.compuserve.gif"] && count!=GIFComplete(b,n)) ok=NO;
     uint64_t pixels=0;
     for(size_t i=0;ok && i<count;i++) { @autoreleasepool {
         NSDictionary *p=CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source,i,NULL));

@@ -2,6 +2,7 @@
 #import <ImageIO/ImageIO.h>
 #import "EmoticonLogic.h"
 #include <unistd.h>
+#include <fcntl.h>
 static int checks;
 #define CHECK(x) do { checks++; if(!(x)) { fprintf(stderr,"FAILED line %d: %s\n",__LINE__,#x); abort(); } } while(0)
 static NSData *Image(NSString *type, NSUInteger frames) {
@@ -60,6 +61,7 @@ int main(void) { @autoreleasepool {
     [bad startData:[NSData data] current:^BOOL{ return YES; } permission:^(void (^reply)(BOOL)){ calls+=100; } writer:^(NSData *d,NSString *u,void (^reply)(BOOL)){ calls+=100; } completion:^(NSString *r){ CHECK([r isEqual:@"invalid"]); calls++; }]; CHECK(calls==1);
     WUEmoticonSave *cancel=[WUEmoticonSave new];
     [cancel startData:gif current:^BOOL{ return NO; } permission:^(void (^reply)(BOOL)){ calls+=100; } writer:^(NSData *d,NSString *u,void (^reply)(BOOL)){ calls+=100; } completion:^(NSString *r){ CHECK([r isEqual:@"cancelled"]); calls++; }]; CHECK(calls==2);
+    int fd=open(file.fileSystemRepresentation,O_WRONLY); CHECK(fd>=0); CHECK(ftruncate(fd,20*1024*1024+1)==0); close(fd); CHECK(!WUEmoticonRead(file));
     CHECK([NSData.data writeToFile:file atomically:YES]); CHECK(!WUEmoticonRead(file));
     CHECK([NSFileManager.defaultManager removeItemAtPath:dir error:NULL]);
     printf("Emoticon production format/transaction mock: %d assertions; no Photos writes\n",checks);
