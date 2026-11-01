@@ -52,8 +52,10 @@ static void Confirm(UIViewController *v, NSString *key, NSString *title, BOOL(^v
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [a addAction:[UIAlertAction actionWithTitle:@"确认" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){
         UIViewController *owner=weak; if(consumed) return; consumed=YES;
-        @try { NSString *now=Account(); if(!owner.viewIfLoaded.window || !WUEnabled(key) || ![account isEqual:now] || g!=generation || ![session isEqual:Session(owner)] || !valid()) return; commit(); }
-        @catch(NSException *e) { Notice(owner,@"操作结果未知，未自动重试。请在宿主核对。"); }
+        [owner dismissViewControllerAnimated:YES completion:^{
+            @try { NSString *now=Account(); if(!owner.viewIfLoaded.window || !WUEnabled(key) || ![account isEqual:now] || g!=generation || ![session isEqual:Session(owner)] || !valid()) return; commit(); }
+            @catch(NSException *e) { Notice(owner,@"操作结果未知，未自动重试。请在宿主核对。"); }
+        }];
     }]];
     [pendingAlerts addObject:a]; [v presentViewController:a animated:YES completion:nil];
 }
@@ -83,10 +85,10 @@ static char callbackPending;
 static void Callback(UIView *cell, SEL cmd) {
     if(!WUEnabled(@"callbackConfirm")) { ((void(*)(id,SEL))callbackOriginal)(cell,cmd); return; }
     @try {
-        UIViewController *v=Chat(cell); id wrap=Wrap(cell); NSDictionary *frozen=Info(wrap); __weak UIView *weak=cell;
+        UIViewController *v=Chat(cell); id wrap=Wrap(cell); NSDictionary *frozen=Info(wrap); NSString *callContent=Str(wrap,@"m_nsContent")?:@""; __weak UIView *weak=cell;
         if(!v || !wrap || ![frozen[@"id"] unsignedLongLongValue]) { Notice(v,@"回拨消息身份不可核验，已取消。"); return; }
         if([objc_getAssociatedObject(cell,&callbackPending) boolValue]) return;
-        Confirm(v,@"callbackConfirm",@"确认回拨这条通话记录？",^BOOL{ return weak.window && Wrap(weak)==wrap && [Info(wrap) isEqual:frozen]; },^{
+        Confirm(v,@"callbackConfirm",@"确认回拨这条通话记录？",^BOOL{ return weak.window && Wrap(weak)==wrap && [Info(wrap) isEqual:frozen] && [callContent isEqual:Str(wrap,@"m_nsContent")?:@""]; },^{
             UIView *target=weak; objc_setAssociatedObject(target,&callbackPending,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             @try { ((void(*)(id,SEL))callbackOriginal)(target,cmd); } @finally { objc_setAssociatedObject(target,&callbackPending,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
         });
@@ -282,6 +284,17 @@ static void CellReuse(UIView *cell, SEL s) {
     ((void(*)(id,SEL))cellReuseOriginal)(cell,s);
 }
 
+static UIViewController *ForegroundOwner(void) {
+    for(UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if(scene.activationState!=UISceneActivationStateForegroundActive || ![scene isKindOfClass:UIWindowScene.class]) continue;
+        for(UIWindow *window in [(UIWindowScene *)scene windows]) if(window.isKeyWindow) {
+            UIViewController *v=window.rootViewController;
+            while(v) { if(v.presentedViewController) { v=v.presentedViewController; continue; } if([v isKindOfClass:UINavigationController.class]) { v=[(UINavigationController *)v topViewController]; continue; } if([v isKindOfClass:UITabBarController.class]) { v=[(UITabBarController *)v selectedViewController]; continue; } break; }
+            return [v isKindOfClass:UIAlertController.class]?nil:v;
+        }
+    }
+    return nil;
+}
 static IMP arrivalOriginal;
 static NSMutableOrderedSet *redSeen;
 static NSString *redAccount;
@@ -301,9 +314,12 @@ static void Arrival(id self, SEL cmd, id sessionArg, id wrap) {
                 NSString *key=[NSString stringWithFormat:@"%@:%@",session,m[@"id"]]; if([redSeen containsObject:key]) return;
                 UIViewController *owner=nil;
                 for(WUChatActions *a in chatActions.allObjects) if(a.owner.viewIfLoaded.window && !a.owner.presentedViewController) { owner=a.owner; break; }
-                if(!owner) return;
+                if(!owner) owner=ForegroundOwner();
+                if(!owner || owner.presentedViewController) return;
+                NSString *chatName=@"一个会话"; id contacts=Service(@"CContactMgr");
+                if(Has(contacts,@"getContactByName:","@",@[@"@"])) { id contact=((id(*)(id,SEL,id))objc_msgSend)(contacts,NSSelectorFromString(@"getContactByName:"),session); NSString *name=Str(contact,@"m_nsRemark"); if(!name.length) name=Str(contact,@"m_nsNickName"); if(name.length) chatName=name; }
                 [redSeen addObject:key]; if(redSeen.count>512) [redSeen removeObjectAtIndex:0];
-                UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"红包消息提醒" message:@"收到新的红包消息。仅提醒，不自动领取、不查询金额或人数。" preferredStyle:UIAlertControllerStyleAlert];
+                UIAlertController *alert=[UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"「%@」红包消息提醒",chatName] message:@"收到新的红包消息。仅提醒，不自动领取、不查询金额或人数。" preferredStyle:UIAlertControllerStyleAlert];
                 [alert addAction:[UIAlertAction actionWithTitle:@"稍后" style:UIAlertActionStyleCancel handler:nil]];
                 // Only offer positioning when the actual message cell is already available.
                 __weak UIView *target=nil;
@@ -386,6 +402,7 @@ static void OpenStats(UIViewController *owner) {
                 [records addObject:@{@"sid":[m[@"id"] stringValue],@"lid":[m[@"local"] stringValue],@"sender":sender?:@"",@"time":m[@"time"],@"type":type,@"text":text?:@"",@"source":@"normal"}];
             }
             // Do not equate a short page or an untrusted LeftCount alone with end.
+            if(page.count && !minID) return nil;
             return @{@"records":[records copy],@"next":@{@"id":@(minID),@"time":@(minTime)},@"done":@(page.count==0 && left==0)};
         };
         WUStatsBindOwner(owner,binding); WUShowStats(owner);

@@ -108,4 +108,20 @@ static NSDictionary *R(NSString *sid,NSString *sender,int64_t time,NSString *typ
     [job start:^(NSDictionary *r,NSString *s){XCTAssertEqualObjects(r[@"complete"],@NO); XCTAssertTrue([s containsString:@"游标"]); [done fulfill];}]; XCTAssertEqual(mgr.calls,1u);
     [self waitForExpectations:@[done] timeout:5];
 }
+- (void)testZeroCursorStartsAtFirstRealPage {
+    CMessageMgr *mgr=[CMessageMgr new]; mgr.pages=@[@[R(@"1",@"a",100,@"text")],@[]];
+    WUStatsBinding *b=[self binding:mgr]; b.initialCursor=@{@"id":@0,@"time":@0};
+    b.decodePage=^NSDictionary *(NSArray *p,uint32_t left,NSDictionary *c){return @{@"records":p,@"done":@(p.count==0 && left==0),@"next":@{@"id":@20,@"time":@100}};};
+    WUStatsJob *job=[[WUStatsJob alloc] initWithBinding:b]; XCTestExpectation *done=[self expectationWithDescription:@"zero sentinel"];
+    [job start:^(NSDictionary *r,NSString *s){if(r){XCTAssertEqualObjects(r[@"total"],@1); XCTAssertEqualObjects(r[@"complete"],@YES); XCTAssertEqual(mgr.calls,2u); [done fulfill];}}];
+    [self waitForExpectations:@[done] timeout:5];
+}
+- (void)testCancellationDuringBackgroundSummary {
+    CMessageMgr *mgr=[CMessageMgr new]; mgr.pages=@[@[R(@"1",@"a",100,@"text")]];
+    WUStatsJob *job=[[WUStatsJob alloc] initWithBinding:[self binding:mgr]]; __block NSUInteger callbacks=0;
+    [job start:^(NSDictionary *r,NSString *s){callbacks++;}]; [job cancel];
+    XCTestExpectation *done=[self expectationWithDescription:@"cancel summary"];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,200*NSEC_PER_MSEC),dispatch_get_main_queue(),^{XCTAssertEqual(callbacks,0u); [done fulfill];});
+    [self waitForExpectations:@[done] timeout:5];
+}
 @end
