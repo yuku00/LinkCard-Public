@@ -57,6 +57,10 @@ jobs:
           python3 -c 'import plistlib; expected=plistlib.load(open("Config/TrollStore.entitlements","rb")); actual=plistlib.load(open("signed-entitlements.plist","rb")); assert actual == expected, "Signed entitlements mismatch"; print("Verified signed entitlements:", actual)'
           (cd package && zip -qry ../WebClipManager-TrollStore.ipa Payload)
           shasum -a 256 WebClipManager-TrollStore.ipa > WebClipManager-TrollStore.ipa.sha256
+          python3 Tools/verify_ipa.py WebClipManager-TrollStore.ipa > ipa-inspection.json
+          otool -l "$BIN" > macho-load-commands.txt
+          otool -L "$BIN" > macho-libraries.txt
+          xcodebuild -version > toolchain.txt
       - uses: actions/upload-artifact@v4
         if: ${{ inputs.sign_for_trollstore }}
         with:
@@ -66,6 +70,10 @@ jobs:
             WebClipManager-TrollStore.ipa.sha256
             signed-entitlements.plist
             ldid-provenance.json
+            ipa-inspection.json
+            macho-load-commands.txt
+            macho-libraries.txt
+            toolchain.txt
           retention-days: 7
       - uses: actions/upload-artifact@v4
         with:

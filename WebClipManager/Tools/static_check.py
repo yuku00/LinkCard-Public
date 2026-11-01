@@ -1,6 +1,8 @@
 """Static packaging/safety checks only; does not compile Swift or run XCTest."""
 from pathlib import Path
 import plistlib
+import json
+import struct
 import yaml
 
 root = Path(__file__).resolve().parents[1]
@@ -46,8 +48,27 @@ assert workflow['on']['workflow_dispatch']['inputs']['sign_for_trollstore']['def
 steps = workflow['jobs']['build']['steps']
 assert any('ldid -SConfig/TrollStore.entitlements' in s.get('run', '') and 'sign_for_trollstore' in s.get('if', '') for s in steps)
 assert any('assert actual == expected' in s.get('run', '') for s in steps)
+assert project['targets']['WebClipManager']['settings']['base']['ASSETCATALOG_COMPILER_APPICON_NAME'] == 'AppIcon'
+icon_root = root / 'Assets.xcassets/AppIcon.appiconset'
+icon_manifest = json.loads((icon_root / 'Contents.json').read_text())
+allowed_icons = set()
+for entry in icon_manifest['images']:
+    size = int(float(entry['size'].split('x')[0]) * int(entry['scale'][0]))
+    assert size in {20, 29, 40, 58, 60, 76, 80, 87, 120, 152, 167, 180, 1024}
+    assert entry['filename'] == f'AppIcon-{size}.png'
+    path = icon_root / entry['filename']
+    data = path.read_bytes()
+    assert data[:8] == b'\x89PNG\r\n\x1a\n'
+    width, height, depth, color = struct.unpack_from('>IIBB', data, 16)
+    assert (width, height, depth, color) == (size, size, 8, 2), 'Require opaque RGB icon'
+    allowed_icons.add(path)
+assert len(allowed_icons) == 13
 for path in root.rglob('*'):
     if path.is_file():
-        assert path.suffix not in {'.zip', '.ipa', '.webclipbackup', '.png', '.jpg', '.mobileprovision', '.p12'}
-print('PASS: YAML structure, manual-only workflow, minimal entitlement, source boundaries, no user archives/media')
+        assert not path.is_symlink()
+        if path.suffix.lower() == '.png':
+            assert path in allowed_icons, 'Only reviewed AppIcon PNGs may be included'
+        else:
+            assert path.suffix.lower() not in {'.zip', '.ipa', '.webclipbackup', '.jpg', '.jpeg', '.heic', '.sqlite', '.db', '.mobileprovision', '.p12'}
+print('PASS: YAML structure, manual-only workflow, minimal entitlement, source boundaries, reviewed AppIcons only; no user archives/media')
 print('NOT RUN: Swift compilation, XCTest, simulator, signing, installation, real-device permissions/deletion')
