@@ -52,7 +52,7 @@ BOOL WUSave(NSString *key, id value) {
     NSData *data=[NSJSONSerialization dataWithJSONObject:next options:0 error:NULL];
     NSData *old=[NSJSONSerialization dataWithJSONObject:snapshot options:0 error:NULL];
     if(!data || data.length>65536 || !old || !WriteConfig(old,@"backup.json") || !WriteConfig(data,@"config.json")) return NO;
-    @synchronized(NSProcessInfo.processInfo) { snapshot=[next copy]; }
+    @synchronized(NSProcessInfo.processInfo) { snapshot=[NSJSONSerialization JSONObjectWithData:data options:0 error:NULL]; }
     [NSNotificationCenter.defaultCenter postNotificationName:WUChanged object:nil]; return YES;
 }
 static const char *Unqualified(const char *t) { while(*t && strchr("rnNoORV",*t)) t++; return t; }

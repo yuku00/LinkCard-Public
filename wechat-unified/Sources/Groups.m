@@ -203,7 +203,7 @@ static void Reuse(UIView *v,SEL s) { ResetPage(v); WUEmojiPage *p=Page(v); p.inv
         if(p.row==0) return; if(p.row==1) { [self create]; return; }
         NSMutableDictionary *next=[s mutableCopy]; next[@"selected"]=p.row==2?@"__all__":(p.row==3?@"__ungrouped__":s[@"groups"][p.row-4][@"id"]); [self save:next]; return;
     }
-    if(p.row>=self.identifiers.count || self.presentedViewController) return;
+    if(p.row<0 || (NSUInteger)p.row>=self.identifiers.count || self.presentedViewController) return;
     NSString *md5=self.identifiers[p.row]; NSUInteger gen=WUContextGeneration();
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"移动表情分组" message:md5 preferredStyle:UIAlertControllerStyleAlert];
     __weak WUGroupsController *weak=self;
@@ -220,7 +220,7 @@ static void Reuse(UIView *v,SEL s) { ResetPage(v); WUEmojiPage *p=Page(v); p.inv
 - (BOOL)tableView:(UITableView *)t canEditRowAtIndexPath:(NSIndexPath *)p { return [self current] && p.section==0 && p.row>=4; }
 - (void)tableView:(UITableView *)t commitEditingStyle:(UITableViewCellEditingStyle)style forRowAtIndexPath:(NSIndexPath *)p {
     if(style!=UITableViewCellEditingStyleDelete || ![self current] || p.section!=0 || p.row<4) return;
-    NSDictionary *s=EmojiState(self.account); if(p.row-4>=[s[@"groups"] count]) return;
+    NSDictionary *s=EmojiState(self.account); if((NSUInteger)(p.row-4)>=[s[@"groups"] count]) return;
     [self save:WURemoveEmojiGroup(s,s[@"groups"][p.row-4][@"id"])];
 }
 @end

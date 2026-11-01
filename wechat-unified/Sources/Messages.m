@@ -391,6 +391,7 @@ void WUInstallMessages(void) {
             CancelPending(); for(WUChatActions *a in chatActions.allObjects) { @try { [a refresh]; } @catch(NSException *e) {} }
             for(WUCellActions *a in cellActions.allObjects) { [a restore]; if(!WUEnabled(@"repeatEmoticon")) { [a.repeat removeFromSuperview]; a.repeat=nil; } [a.cell setNeedsLayout]; }
         }];
+        [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(WUChatActions *a in chatActions.allObjects) { @try { [a refresh]; } @catch(NSException *e) {} } }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ CancelPending(); }];
     });
     WUHook(@"BaseMsgContentViewController",@"viewDidAppear:",NO,"v",@[@"B"],(IMP)ChatAppeared,&chatAppearOriginal);
