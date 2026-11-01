@@ -1,6 +1,16 @@
-# 2026-11-01 本地所选语音包：本轮构建待验证
+# 2026-11-01 本地所选语音包：后台同步取消补强待CI
 
-新增VoicePackLogic/VoicePacks、Messages真实所选入口及工具栏动作，复用VoiceSendLogic唯一发送提交器。当前尚未取得本轮CI结果；最后成功仍为2062fad70cecb31b915aced85000df7450157449 / CI41296334175，不将其旧产物冒充新包。新增生产原生存储/租约/配对/原子失败/单次提交回归，所有旧测试保留。外部导入与包导出未实现；无真实宿主、用户媒体、Photos或发送/删除操作，无安装。
+下述a071ccf/CI41297846590确已成功并核验；当前额外补实WillResignActive同步取消及从presenter关闭整条自有模态链，等待新的CI，旧产物不代表补强已编译。
+
+# 2026-11-01 本地所选语音包：前轮CI及产物独立核验通过
+
+- 最终CI https://github.com/yuku00/LinkCard-Public/actions/runs/41297846590 completed/success；commit `a071ccfca058d7fa483283197e33d26bd9f1a844`，job124822367590。首轮91123da5/CI41297524886同样成功，第二次补实模态展示前冻结所选载荷及宿主捕获异常失败关闭，不等宿主清选后再取数据。
+- 从指定2062fad70cecb31b915aced85000df7450157449非强制快进2次，14条工程白名单路径；无其他项目/workflow变化，成功后补记前329/329发布白名单一致。证据artifacts/voice-pack-final-audit.json。本地旧HEAD cb0704e4dd738be7733937889f87bb7013f07744未reset。
+- 26项结构测试、语音包生产原生1657断言（包含fixture逐字节解析，非1657个独立场景）、原语音发送4991断言及全部旧回归通过。新增覆盖真实所选原载荷与format保存、缺格式/版本/名称、坏媒体/61秒拒绝、账号隔离、稳定ID/重命名、跨版本拒发、两个Store实例共享试听/发送租约、切号/提交前取消、复制校验后真实rename失败保旧、坏索引拒覆、原单次提交器重复调用不双发。WUStats18项0失败；iOS arm64/min16.6/SDK18.5编译链接及严格codesign成功。日志artifacts/ci-41297846590.log。UI仅编译/结构门控，非宿主交互验收。
+- artifact `13080266420`，下载前确认357247字节（小于50MB）；未安装。ZIP SHA256 `5a81a34807fad46efdcd3c207cecda877001df181a92c4312a4a73c273b844d1`；dylib680784字节，SHA256 `47d2859848eae057a6e7b66415d5c9bad78ecf9f6f986f6ca4037a150925fc7a`。GitHub ZIP digest及CI SHA256SUMS匹配、64-bit arm64 MH_DYLIB验证通过，独立核验161页嵌入CodeDirectory SHA256及ad-hoc标志。核验artifacts/verification-41297846590.json；ad-hoc不代表分发身份或宿主兼容。
+- VoicePackLogic/VoicePacks及Messages真实所选入口、账号工具栏动作已接通：32条/32MiB账号独立原子索引保存原始载荷与实际format/版本配对、离线PCM系统试听、稳定ID/命名/列表/自有记录删除、租约保护、确认当前会话单次发送。复用VoiceSendLogic唯一提交器，不新增宿主发送链。复制后安全读回比较再原子rename，失败保旧；崩溃残留副本不盲删，96MiB/64文件封顶。
+- 外部文件仅试听导入、自有包导出/导入未实现；跨版本本地包仅可试听，不信任导入声明、不把任意音频标format4。无跨重启发送恰好一次保证，无实际送达承诺。未执行真实微信/用户媒体/Photos/发删/安装，AI/Dock/红包详情/在线主题/视频解析继续排除。
+- 使用自己的api.html浏览器标签和环境token，严格TLS未降级、凭据未输出；只上传白名单源码和合法合成fixture。此为成功后本地文档补记，不为文档重复CI；包内STATUS仍为构建时待验说明。
 
 # 2026-11-01 所选普通语音转发：真实CI及产物核验完成
 

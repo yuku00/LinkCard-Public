@@ -219,7 +219,7 @@ class Guardrails(unittest.TestCase):
         ui=(ROOT/'Sources/VoicePacks.m').read_text()
         logic=(ROOT/'Sources/VoicePackLogic.m').read_text()
         messages=(ROOT/'Sources/Messages.m').read_text()
-        for marker in ['DISPATCH_QUEUE_SERIAL', 'WUContextGenerationSnapshot()==gen', 'self.cancellation.cancelled', 'WUVoicePackMatches(held,self.binding.version)', 'self.submitted containsObject', 'AVAudioPlayer', 'WUOfflineDecode', 'releaseResource', 'if(consumed) return']:
+        for marker in ['DISPATCH_QUEUE_SERIAL', 'UIApplicationWillResignActiveNotification', 'self.navigationController.presentingViewController dismissViewControllerAnimated:NO', 'WUContextGenerationSnapshot()==gen', 'self.cancellation.cancelled', 'WUVoicePackMatches(held,self.binding.version)', 'self.submitted containsObject', 'AVAudioPlayer', 'WUOfflineDecode', 'releaseResource', 'if(consumed) return']:
             self.assertIn(marker,ui)
         for marker in ['WUDraftMediaReadSource', 'NSDataWritingWithoutOverwriting', 'rename(tmp.path.fileSystemRepresentation', 'st.st_nlink!=1', 'current()', '@synchronized(Leases())', 'selected-type34', 'WUVoiceMeasuredMS', '32*1024*1024']:
             self.assertIn(marker,logic)

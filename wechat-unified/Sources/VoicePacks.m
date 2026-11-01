@@ -24,6 +24,7 @@ static NSData *Wave(NSData *data) {
 @property(nonatomic,strong) NSMutableSet *submitted;
 @property(nonatomic,strong) AVAudioPlayer *player;
 @property(nonatomic,copy) NSString *playing;
+@property(nonatomic,strong) id backgroundObserver;
 @property(nonatomic,strong) NSTimer *timer;
 @property(nonatomic,strong) NSProgress *cancellation;
 @property(nonatomic) BOOL busy;
@@ -40,15 +41,16 @@ static NSData *Wave(NSData *data) {
     [self.player stop]; self.player=nil;
     if(self.playing) { [self.store releaseResource:self.playing]; self.playing=nil; }
 }
-- (void)close { self.invalid=YES; [self.cancellation cancel]; [self stop]; [self.timer invalidate]; self.timer=nil; [self dismissViewControllerAnimated:YES completion:nil]; }
+- (void)close { self.invalid=YES; [self.cancellation cancel]; [self stop]; [self.timer invalidate]; self.timer=nil; [self.navigationController.presentingViewController dismissViewControllerAnimated:NO completion:nil]; }
 - (void)viewDidLoad {
     [super viewDidLoad]; self.cancellation=[NSProgress progressWithTotalUnitCount:1]; self.title=@"本账号本地语音包"; self.submitted=[NSMutableSet set];
     self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain target:self action:@selector(close)];
     self.navigationItem.rightBarButtonItems=@[[[UIBarButtonItem alloc] initWithTitle:@"保存所选" style:UIBarButtonItemStylePlain target:self action:@selector(saveSelected)],[[UIBarButtonItem alloc] initWithTitle:@"停止试听" style:UIBarButtonItemStylePlain target:self action:@selector(stop)]];
     __weak typeof(self) weak=self;
+    self.backgroundObserver=[NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note){ [weak close]; }];
     self.timer=[NSTimer scheduledTimerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *t){ if(![weak current]) [weak close]; }]; [self reload];
 }
-- (void)dealloc { [self.timer invalidate]; [self.player stop]; if(self.playing) [self.store releaseResource:self.playing]; }
+- (void)dealloc { if(self.backgroundObserver) [NSNotificationCenter.defaultCenter removeObserver:self.backgroundObserver]; [self.timer invalidate]; [self.player stop]; if(self.playing) [self.store releaseResource:self.playing]; }
 - (void)reload {
     if(![self current]) return; self.busy=YES;
     dispatch_async(Queue(),^{ NSError *error=nil; NSArray *rows=[self.store load:&error];
