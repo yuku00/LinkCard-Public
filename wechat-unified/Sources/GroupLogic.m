@@ -9,7 +9,7 @@ NSDictionary *WUEmptyEmojiGroups(void) { return @{@"enabled":@NO,@"groups":@[],@
 NSArray<NSString *> *WUToolbarActions(id value) {
     if(![value isKindOfClass:NSArray.class]) return @[];
     NSMutableArray *out=[NSMutableArray array];
-    for(id a in value) if([@[@"search",@"stats",@"settings"] containsObject:a] && ![out containsObject:a]) [out addObject:a];
+    for(id a in value) if([@[@"search",@"stats",@"settings",@"moments"] containsObject:a] && ![out containsObject:a]) [out addObject:a];
     return [out copy];
 }
 static BOOL ValidEmoji(id s) {

@@ -39,6 +39,7 @@ NSString *WUCurrentAccount(void) { @try { return Account(); } @catch(NSException
 NSUInteger WUContextGeneration(void) { (void)WUCurrentAccount(); return generation; }
 static id Contact(id v) { return Obj(v,@"GetContact") ?: Obj(v,@"getChatContact"); }
 static NSString *Session(id v) { return Str(Contact(v),@"m_nsUsrName"); }
+NSString *WUChatSession(UIViewController *owner) { @try { return Session(owner); } @catch(NSException *e) { return nil; } }
 static id Wrap(id cell) { return Obj(Obj(cell,@"viewModel"),@"messageWrap"); }
 static UIViewController *Owner(UIView *v) { for(UIResponder *r=v;r;r=r.nextResponder) if([r isKindOfClass:UIViewController.class]) return (id)r; return nil; }
 static UIViewController *Chat(UIView *v) { UIViewController *c=Owner(v); Class k=NSClassFromString(@"BaseMsgContentViewController"); while(c && ![c isKindOfClass:k]) c=c.parentViewController; return c; }
@@ -50,6 +51,7 @@ static void Notice(UIViewController *v, NSString *text) {
 static NSHashTable *pendingAlerts;
 static void CancelPending(void) {
     generation++;
+    WUCancelMoments();
     for(UIAlertController *a in pendingAlerts.allObjects) [a dismissViewControllerAnimated:NO completion:nil];
     [pendingAlerts removeAllObjects];
 }
@@ -149,13 +151,15 @@ static NSHashTable *chatActions;
     if([WUValue(@"enabled") boolValue] && account.length && session.length) for(NSString *key in selected) {
         if([key isEqual:@"search"] && !Has(v,@"onSearchItem","v",@[])) continue;
         if([key isEqual:@"stats"] && !StatsReady(Service(@"CMessageMgr"))) continue;
-        NSString *title=@{@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置"}[key];
+        if([key isEqual:@"moments"] && (!WUEnabled(@"convenientMoments") || !WUMomentsAvailable())) continue;
+        NSString *title=@{@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"moments":@"半屏朋友圈"}[key];
         [menu addObject:[UIAction actionWithTitle:title image:nil identifier:nil handler:^(UIAction *action){
             WUChatActions *target=weak; UIViewController *owner=target.owner;
             @try {
                 if(!owner.viewIfLoaded.window || owner.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(owner)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:key]) return;
                 if([key isEqual:@"settings"]) WUShowSettings(owner);
                 else if([key isEqual:@"stats"]) OpenStats(owner);
+                else if([key isEqual:@"moments"]) { if(!WUOpenMoments(owner)) Notice(owner,@"半屏朋友圈当前不可用，未打开全屏替代页面。"); }
                 else if([key isEqual:@"search"] && Has(owner,@"onSearchItem","v",@[])) ((void(*)(id,SEL))objc_msgSend)(owner,NSSelectorFromString(@"onSearchItem"));
             } @catch(NSException *e) { Notice(owner,@"该工具当前不可用，未自动重试。"); }
         }]];
@@ -167,6 +171,7 @@ static NSHashTable *chatActions;
         if([selected containsObject:@"search"] && self.search) [items removeObject:self.search];
     } else self.tools.menu=nil;
     v.navigationItem.rightBarButtonItems=items;
+    WURefreshMomentsInput(v);
 }
 - (void)openStats { if([WUValue(@"enabled") boolValue]) OpenStats(self.owner); }
 - (void)openSearch {
@@ -212,7 +217,7 @@ static void ChatAppeared(UIViewController *v,SEL s,BOOL animated) {
 static void ChatDisappeared(UIViewController *v,SEL s,BOOL animated) {
     UIViewController *presented=v.presentedViewController;
     BOOL ownStats=[presented isKindOfClass:UINavigationController.class] && [[(UINavigationController *)presented topViewController] isKindOfClass:NSClassFromString(@"WUStatsController")];
-    if(!ownStats) CancelPending();
+    if(!ownStats && !WUIsMomentsSheet(presented)) CancelPending();
     ((void(*)(id,SEL,BOOL))chatDisappearOriginal)(v,s,animated);
 }
 
@@ -375,6 +380,7 @@ BOOL WUMessageAvailable(NSString *key) {
         Class base=NSClassFromString(@"BaseMsgContentViewController"), msg=NSClassFromString(@"CMessageWrap");
         if([key isEqual:@"chatSearch"]) return WUMatches(class_getInstanceMethod(base,NSSelectorFromString(@"onSearchItem")),"v",@[]);
         if([key isEqual:@"antiRevoke"]) return revokeOriginal && LookupReady(Service(@"CMessageMgr"));
+        if([key isEqual:@"convenientMoments"]) return chatAppearOriginal && WUMomentsAvailable();
         if([key isEqual:@"callbackConfirm"]) return callbackOriginal!=NULL;
         if([key isEqual:@"multiRevoke"]) return chatAppearOriginal && WUMatches(class_getInstanceMethod(base,NSSelectorFromString(@"getSelectedMsgs")),"@",@[]) && RevokeSelector(Service(@"CMessageMgr"));
         if([key isEqual:@"repeatEmoticon"]) return cellLayoutOriginal && WUMatches(class_getInstanceMethod(msg,NSSelectorFromString(@"initWithMsgType:nsFromUsr:")),"@",@[@"q",@"@"]) && Has(Service(@"CMessageMgr"),@"AddEmoticonMsg:MsgWrap:","v",@[@"@",@"@"]);
@@ -384,6 +390,7 @@ BOOL WUMessageAvailable(NSString *key) {
     return NO;
 }
 void WUInstallMessages(void) {
+    WUInstallMoments();
     static dispatch_once_t once;
     dispatch_once(&once,^{
         chatActions=[NSHashTable weakObjectsHashTable]; cellActions=[NSHashTable weakObjectsHashTable]; pendingAlerts=[NSHashTable weakObjectsHashTable]; redSeen=[NSMutableOrderedSet orderedSet];
@@ -392,6 +399,7 @@ void WUInstallMessages(void) {
             for(WUCellActions *a in cellActions.allObjects) { [a restore]; if(!WUEnabled(@"repeatEmoticon")) { [a.repeat removeFromSuperview]; a.repeat=nil; } [a.cell setNeedsLayout]; }
         }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(WUChatActions *a in chatActions.allObjects) { @try { [a refresh]; } @catch(NSException *e) {} } }];
+        [NSNotificationCenter.defaultCenter addObserverForName:UIKeyboardDidShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(WUChatActions *a in chatActions.allObjects) WURefreshMomentsInput(a.owner); }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ CancelPending(); }];
     });
     WUHook(@"BaseMsgContentViewController",@"viewDidAppear:",NO,"v",@[@"B"],(IMP)ChatAppeared,&chatAppearOriginal);

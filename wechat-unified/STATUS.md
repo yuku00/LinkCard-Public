@@ -1,4 +1,26 @@
-# 功能状态（0.3.1 账号单表情分组与手动工具栏增量，非全项目完成）
+# 功能状态（半屏朋友圈已编码，待本轮CI；非全项目完成）
+
+## 2026-11-01 半屏朋友圈增量（覆盖下方该项历史未实现结论）
+
+新增 `Sources/Moments.m`、`MomentsLogic.h/.m`、`tests/moments_logic.m`。复用真实账号、当前会话与generation、手动工具栏。宿主 `WCTimeLineViewController` 仅用户动作后构造，使用自有UIPresentationController固定容器一半高度、UIViewController→UINavigationController containment；不以全屏跳转冒充。聊天MMGrowTextView下精确UITextView对象通知消费完整小写rp，忽略前缀/普通正文/组合输入/非编辑状态，不替换全局输入delegate、不发送rp。清空后通知原delegate更新草稿；缺匹配输入结构时rp入口不可用，手动工具仍可用。
+
+关闭只dismiss自有展示链，不改宿主chat frame/inset；只有用户关闭、账号/会话/代次仍一致、原输入仍挂在原聊天且没有其他第一响应者时恢复原键盘，不强抢焦点。后台/关闭配置/离页取消；可见展示链0.25秒本地身份核验取消切号，不新建后台朋友圈请求，不缓存朋友圈内容。宿主自身详情/媒体和请求取消语义仍需真机核验，不能保证关闭撤销已在途宿主请求。
+
+拍一拍继续单项未完成、无伪开关：定向核对 `sendPat:` 与 `patSendConfirmEnabled` 的实际引用只闭合到同步发送管理器和旧库确认逻辑；缺准确且可冻结目标的发送前手势/菜单协议，没有Hook同步BOOL、假成功或异步重放。未进行真实注入/发送/删除。
+
+本轮新增29项纯逻辑原生断言及2项结构防护；本地结构检查/CI结果将在BUILD-RESULT记录，不提前称通过。发布白名单仅自主源码/测试/构建文档；保持AI、ActionBar/Dock、红包详情、在线主题、视频解析排除。
+
+## 上一成功发布（2026-11-01，首页同步加固）
+
+最新commit `f031091092f7cf7e2a7e79cecc8a3a605e7f4a0d`；[CI 41277007885](https://github.com/yuku00/LinkCard-Public/actions/runs/41277007885) completed/success；[artifact 13071840910](https://github.com/yuku00/LinkCard-Public/actions/runs/41277007885/artifacts/13071840910)。首页分组最小链及HomeGroups.m同步加固均已纳入：setNormalSessions返回前投影、置顶计数同步apply、onNeedReload签名门控刷新与getter解码异常回退。
+
+恢复时远端仍为82bf8e0，34项白名单仅HomeGroups.m不同，无他人新增提交；只发布此一个文件，未强推/reset、未扩功能。发布后34/34 blob一致；此文是后补本地交付说明，包内STATUS保留构建时版本，不为文档再发布。
+
+15项结构检查、HomeLogic原生测试、MessageLogic21断言、GroupLogic32断言、主题ZIP原生测试、WUStats18项/0失败全部通过；严格编译链接和ad-hoc签名验证通过。ZIP GitHub digest、本地dylib SHA256与arm64 MH_DYLIB头均核验；完整摘要见BUILD-RESULT.md。
+
+**仍无iOS16.6/微信8.0.70真机验收。** 未注入或执行真实收发删；后台更新、原地数组修改、关闭恢复/切号/复用、折叠置顶与点击映射一致性和性能仍待验证。源码与CI成功不等于宿主兼容，更不等于全项目完成。AI、ActionBar/Dock等排除范围未变。
+
+---
 
 “已实现”只表示自主源码有实际执行路径；所有宿主功能仍待 iOS16.6 / 微信8.0.70 真机验收。签名不匹配的项目自动不可用。此表保留需求，不以一期缩减偷偷删除其余范围。
 
@@ -31,7 +53,7 @@
 |日月开关|已编码：程序绘制太阳/云/月/星，点按/拖动完成仅在值改变时向原UISwitch发送一次ValueChanged；取消不发送，原可访问性/业务target保留。只覆盖自有整合设置及NewSettingViewController，深度/节点预算限制，不全局Hook UISwitch；关闭移除外观与附加target。非微信明暗模式切换器；未做原样弹簧参数复刻|
 |搜索栏、表情、文件、聊天时间、消息引用美化|部分已编码：WCSearchBar/消息引用圆角与自适应背景；ChatTimeCellView内时间标签胶囊。保存并恢复原背景/裁剪/圆角，原布局先行。不改正文和时间。表情、文件专项未实现|
 |加号、发送按钮、宿主弹窗、左滑菜单、其他圆角|部分已编码：首页右上角MainFrameActionFloatView、MMToastView及首页左滑菜单背景/圆角；左滑容器使用已证实_menuContentView运行期对象类型与归属检查，无固定偏移。发送/发表按钮、完整弹窗、左滑首尾精细几何、聊天附件加号、其他圆角未实现|
-|便捷朋友圈|未实现；保留聊天半屏浏览 + 输入 rp 入口 + 工具栏手动入口，未把 rp 发给联系人|
+|便捷朋友圈|已编码半屏宿主朋友圈 + 聊天输入完整rp本地消费 + 账号手动工具栏入口；真实执行与生命周期边界见顶部本轮记录，待CI/真机，不代表宿主兼容|
 |朋友圈草稿箱、朋友圈防删全部功能|未实现；不导入旧归档、不删除宿主共享媒体、不把不可见当删除|
 |语音转发、非 AI 语音包|未实现；未引入缺确认的发送器、固定假编码、提交后自动重试|
 |语音实时进度/展示真实时长/分秒进位/波形/脉冲/拖动|未实现；保留截图目标（倒数默认关闭），不修改原消息数据|

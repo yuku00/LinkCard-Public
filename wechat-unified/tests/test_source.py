@@ -91,6 +91,21 @@ class Guardrails(unittest.TestCase):
         messages=(ROOT/'Sources/Messages.m').read_text()
         self.assertNotIn('[items addObject:self.stats]',messages)
         self.assertIn('selected containsObject:@"stats"',messages)
+    def test_moments_half_host_containment_and_cancel(self):
+        moments=(ROOT/'Sources/Moments.m').read_text()
+        for required in ['UIPresentationController', 'UIModalPresentationCustom', 'WUMomentsHeight(CGRectGetHeight(b))', 'shouldRemovePresentersView', 'addChildViewController:self.content', 'didMoveToParentViewController:self', 'WCTimeLineViewController', 'presenter.presentedViewController!=self', 'Current(chat,a,s,g)', '!Responder(chat.view.window,0)', 'closeRestoring:NO', '[self.watch invalidate]']:
+            self.assertIn(required,moments)
+        self.assertNotIn('UIModalPresentationFullScreen',moments)
+        self.assertNotIn('sendPat:',moments)
+        self.assertIn('WUCancelMoments();',(ROOT/'Sources/Messages.m').read_text())
+    def test_moments_rp_is_object_scoped_and_never_sent(self):
+        moments=(ROOT/'Sources/Moments.m').read_text()
+        for required in ['MMGrowTextView', 'object:text queue:nil', 'text.markedTextRange!=nil', 'text.isFirstResponder', 'self.consuming', 'text.text=@""', 'budget=500']:
+            self.assertIn(required,moments)
+        self.assertNotIn('WUHook(',moments)
+        self.assertNotIn('text.delegate=',moments)
+        self.assertNotIn('AddMsg',moments)
+        self.assertIn('tests/moments_logic.m',(ROOT/'tools/build.sh').read_text())
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()
         for word in ['未实现','无伪开关','便捷朋友圈','ActionBar','全部 AI','未执行']:

@@ -15,6 +15,9 @@ rm build/group-logic-tests
 xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/home_logic.m Sources/HomeLogic.m Sources/GroupLogic.m -framework Foundation -o build/home-logic-tests
 build/home-logic-tests | tee build/home-logic-tests.txt
 rm build/home-logic-tests
+xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/moments_logic.m Sources/MomentsLogic.m Sources/GroupLogic.m Sources/HomeLogic.m -framework Foundation -o build/moments-logic-tests
+build/moments-logic-tests | tee build/moments-logic-tests.txt
+rm build/moments-logic-tests
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" \
   -miphoneos-version-min=16.6 -fobjc-arc -fblocks -dynamiclib \
