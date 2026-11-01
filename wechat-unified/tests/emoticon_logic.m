@@ -34,6 +34,12 @@ static void Transaction(NSData *data, BOOL allow, BOOL success, BOOL invalidateB
 }
 int main(void) { @autoreleasepool {
     NSData *gif=Image(@"com.compuserve.gif",2), *png=Image(@"public.png",1), *jpg=Image(@"public.jpeg",1);
+    if(!WUEmoticonType(gif)) {
+        CGImageSourceRef probe=CGImageSourceCreateWithData((__bridge CFDataRef)gif,NULL);
+        fprintf(stderr,"Synthetic GIF bytes=%s status=%ld type=%s count=%zu\n",[gif base64EncodedStringWithOptions:0].UTF8String,(long)CGImageSourceGetStatus(probe),[(__bridge NSString *)CGImageSourceGetType(probe) UTF8String],CGImageSourceGetCount(probe));
+        for(size_t i=0;i<CGImageSourceGetCount(probe);i++) { NSDictionary *p=CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(probe,i,NULL)); CGImageRef image=CGImageSourceCreateImageAtIndex(probe,i,NULL); fprintf(stderr,"frame=%zu status=%ld props=%s decoded=%d\n",i,(long)CGImageSourceGetStatusAtIndex(probe,i),p.description.UTF8String,image!=NULL); if(image) CGImageRelease(image); }
+        CFRelease(probe);
+    }
     CHECK([WUEmoticonType(gif) isEqual:@"com.compuserve.gif"]); CHECK([WUEmoticonType(png) isEqual:@"public.png"]); CHECK([WUEmoticonType(jpg) isEqual:@"public.jpeg"]);
     CGImageSourceRef source=CGImageSourceCreateWithData((__bridge CFDataRef)gif,NULL); CHECK(CGImageSourceGetCount(source)==2); CFRelease(source);
     CHECK(!WUEmoticonType(nil)); CHECK(!WUEmoticonType([NSData data])); CHECK(!WUEmoticonType([NSMutableData dataWithLength:20*1024*1024+1]));
