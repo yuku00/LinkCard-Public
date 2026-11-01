@@ -54,7 +54,11 @@ NSString *WUChatSession(UIViewController *v) { return [v isKindOfClass:BaseMsgCo
 @implementation Model @end
 @implementation CommonMessageCellView
 - (id)getHeadImageView { return self.head; }
+#if defined(WU_TEST_BAD_ABI)
+- (BOOL)onHeadImageDoubleClick:(id)sender { self.pats++; self.receivedSender=sender; return NO; }
+#else
 - (void)onHeadImageDoubleClick:(id)sender { self.pats++; self.receivedSender=sender; if(self.throwPat) @throw [NSException exceptionWithName:@"pat" reason:nil userInfo:nil]; }
+#endif
 @end
 @interface GameController : NSObject
 + (NSString *)getMD5ByGameContent:(unsigned long long)n;

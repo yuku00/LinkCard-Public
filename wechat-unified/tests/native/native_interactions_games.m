@@ -3,7 +3,6 @@ static UIAlertController *Alert(TestScene *f) { return (id)f.chat.presentedViewC
 static void Pat(TestScene *f,id sender) { [f.cell onHeadImageDoubleClick:sender]; }
 static void Game(TestScene *f) { [f.manager AddEmoticonMsg:f.chat.session MsgWrap:f.cell.viewModel.messageWrap]; }
 static void Touch(TestScene *f) { UITouch *t=[UITouch new]; t.phase=UITouchPhaseBegan; [f.chat mmTableView:f.table touchesBegan:[NSSet setWithObject:t] withEvent:[UIEvent new]]; }
-static void Wrong(id x,SEL s,id value) {}
 static void PatTests(void) {
     TestConfig(@{@"patConfirm":@YES});
     TestScene *f=[TestScene new]; id opaque=[NSObject new]; Pat(f,opaque);
@@ -105,8 +104,12 @@ static void GameTests(void) {
 int main(int argc,const char **argv) { @autoreleasepool {
     TestInit();
     if(argc>1) {
-        class_replaceMethod(CommonMessageCellView.class,@selector(onHeadImageDoubleClick:),(IMP)Wrong,"B@:@");
-        class_replaceMethod(CMessageWrap.class,@selector(setM_uiCreateTime:),(IMP)Wrong,"v@:d");
+        // Built with WU_TEST_BAD_ABI: actual declarations/implementations differ.
+        // class_replaceMethod alone would preserve the original method encoding.
+        Method pat=class_getInstanceMethod(CommonMessageCellView.class,@selector(onHeadImageDoubleClick:));
+        Method time=class_getInstanceMethod(CMessageWrap.class,@selector(setM_uiCreateTime:));
+        assert(!WUMatches(pat,"v",@[@"@"]));
+        assert(WUMatches(time,"v",@[@"d"]));
         WUInstallNativeInteractions(); WUInstallNativeGames();
         assert(!WUNativeInteractionAvailable(@"patConfirm") && !WUNativeGameAvailable());
         puts("PASS full production entry signature rejection"); return 0;

@@ -23,9 +23,13 @@ if command -v xcrun >/dev/null 2>&1; then
       -framework Foundation -framework CoreGraphics -o "$WORK/$name"
   }
   build actions "$TESTDIR/native_interactions_games.m"
-  "$WORK/actions"; "$WORK/actions" bad-abi
+  "$WORK/actions"
+  build actions_bad -DWU_TEST_BAD_ABI=1 "$TESTDIR/native_interactions_games.m"
+  "$WORK/actions_bad" bad-abi
   build actions64 -DWU_TEST_64=1 "$TESTDIR/native_interactions_games.m"
-  "$WORK/actions64"; "$WORK/actions64" bad-abi
+  "$WORK/actions64"
+  build actions64_bad -DWU_TEST_64=1 -DWU_TEST_BAD_ABI=1 "$TESTDIR/native_interactions_games.m"
+  "$WORK/actions64_bad" bad-abi
   build hooks "$TESTDIR/native_hooks.m"; "$WORK/hooks"
   build guard "$TESTDIR/native_guard.m"
   "$WORK/guard" fresh; "$WORK/guard" saved; "$WORK/guard" blocked; "$WORK/guard" late

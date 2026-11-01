@@ -25,7 +25,12 @@ typedef unsigned TestNumber;
 typedef long long TestID;
 #endif
 @interface CMessageWrap : NSObject
-@property(nonatomic) TestNumber m_uiMessageType, m_uiGameType, m_uiGameContent, m_uiCreateTime, m_uiMesLocalID;
+@property(nonatomic) TestNumber m_uiMessageType, m_uiGameType, m_uiGameContent, m_uiMesLocalID;
+#if defined(WU_TEST_BAD_ABI)
+@property(nonatomic) double m_uiCreateTime;
+#else
+@property(nonatomic) TestNumber m_uiCreateTime;
+#endif
 @property(nonatomic) TestID m_n64MesSvrID;
 @property(nonatomic,copy) NSString *m_nsFromUsr, *m_nsToUsr, *m_nsRealChatUsr, *m_nsEmoticonMD5;
 - (instancetype)initWithMsgType:(TestNumber)type nsFromUsr:(NSString *)from;
@@ -41,7 +46,11 @@ typedef long long TestID;
 @property(nonatomic,strong) id receivedSender;
 @property(nonatomic) BOOL throwPat;
 - (id)getHeadImageView;
+#if defined(WU_TEST_BAD_ABI)
+- (BOOL)onHeadImageDoubleClick:(id)sender;
+#else
 - (void)onHeadImageDoubleClick:(id)sender;
+#endif
 @end
 @interface MMInputToolView : UIView
 @property(nonatomic,strong) UITextView *editor;
