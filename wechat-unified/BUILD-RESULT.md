@@ -1,6 +1,15 @@
-# 2026-11-01 所选普通语音转发：本轮待真实CI
+# 2026-11-01 本地所选语音包：本轮构建待验证
 
-新增VoiceSendLogic生产解码、精确ABI和单次提交状态机，Messages所选入口/收件人确认、账号手动工具栏；仓库通用转发拒绝语音。仅已存在原format 4语音的原始SILK/AMR配对，不支持任意导入文件发送。本地包仍有独立的编码到宿主格式映射缺口，本轮未做存储/删除。新生产mock与全部旧测试接入tools/build.sh，尚未把本轮编译记为成功；上一成功仍为0fa5134 / CI41295108120。所有测试使用既有合法合成音调fixture，无真实微信操作。独立分支非强制快进，禁止reset旧本地HEAD或发布原库/逆向转储/真实媒体。
+新增VoicePackLogic/VoicePacks、Messages真实所选入口及工具栏动作，复用VoiceSendLogic唯一发送提交器。当前尚未取得本轮CI结果；最后成功仍为2062fad70cecb31b915aced85000df7450157449 / CI41296334175，不将其旧产物冒充新包。新增生产原生存储/租约/配对/原子失败/单次提交回归，所有旧测试保留。外部导入与包导出未实现；无真实宿主、用户媒体、Photos或发送/删除操作，无安装。
+
+# 2026-11-01 所选普通语音转发：真实CI及产物核验完成
+
+- CI https://github.com/yuku00/LinkCard-Public/actions/runs/41296334175 completed/success，commit `2062fad70cecb31b915aced85000df7450157449`，job124817854055。从指定0fa5134一次非强制快进，11条工程路径，无其他项目/workflow变动；补记前324/324白名单一致，本地旧HEAD保留。
+- 25项结构测试、语音生产解码/ABI/单次提交mock通过（日志4991断言包含fixture逐字节解析检查，不能称4991个独立场景）；覆盖标准/腾讯SILK与AMR真实1秒、60秒/61秒边界、损坏/其他容器、类型/format拒绝、实际NSMethodSignature宽度冲突、缺服务、void以外返回拒绝、插入后异常、请求后异常、不双发、失效前后及不可变数据。全部旧原生回归保留通过，WUStats18/0失败；iOS arm64/min16.6/SDK18.5编译链接、codesign --verify --strict成功。
+- artifact `13079267403`；下载前确认338796字节（小于50MB），无安装。ZIP SHA256 `6b692a52b5d828c01ee18ff1f16dc26b7eacce2ae3b598c5ea17402a0cc36ec5`；dylib630304字节，SHA256 `83f777e3be8a2f1832b73036f443b588748352a32dbcc22c03aac84a3ae68ea6`。GitHub digest、SHA256SUMS、64-bit arm64 MH_DYLIB头一致；独立验证嵌入CodeDirectory 149页SHA256及ad-hoc标志，非分发身份/兼容保证。日志artifacts/ci-41296334175.log，核验artifacts/verification-41296334175.json。
+- 新增VoiceSendLogic生产解码、精确ABI和单次提交状态机，Messages所选入口/收件人确认、账号手动工具栏；复用Repository调用边界，仓库通用转发拒绝语音。仅已存在原format 4消息的原始SILK/AMR配对，不支持任意导入文件发送，原数据未就绪拒绝。状态未提交/失败/已请求/未知，不称送达，不沿false回退。切号/后台/代次失效取消未提交；没有跨重启账本。
+- 本地语音包导入/保存/试听/删除/发送仍未实现：欠缺外部SILK/AMR载荷到宿主format与封装的映射证据，不能拿旧固定4当通用转换。无伪开关、无文件写删；既有安全媒体存储未改。未执行真实微信注入、发删、服务或用户媒体；测试只用既有合法合成音调fixture。AI/Dock/红包详情/在线主题/视频解析继续排除。
+- 此为成功后本地补记，不为文档重跑CI；成功产物内STATUS是构建时待验版本。仅本地结构检查初次触发旧全局sendVoice禁令（误匹配ResendVoiceMsg），收窄为唯一已证实选择子白名单，其他旧禁令保留；首轮真实CI即成功，无掩盖编译失败。
 
 # 2026-11-01 朋友圈缓存后台与安全回收：最终CI及产物核验完成
 

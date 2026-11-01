@@ -215,6 +215,20 @@ class Guardrails(unittest.TestCase):
             self.assertNotIn(word,logic+ui)
         self.assertIn('tests/voice_send_logic.m',(ROOT/'tools/build.sh').read_text())
         self.assertIn('@"voiceForward"',(ROOT/'Sources/GroupLogic.m').read_text())
+    def test_voice_pack_owned_pairing_and_leases(self):
+        ui=(ROOT/'Sources/VoicePacks.m').read_text()
+        logic=(ROOT/'Sources/VoicePackLogic.m').read_text()
+        messages=(ROOT/'Sources/Messages.m').read_text()
+        for marker in ['DISPATCH_QUEUE_SERIAL', 'WUContextGenerationSnapshot()==gen', 'self.cancellation.cancelled', 'WUVoicePackMatches(held,self.binding.version)', 'self.submitted containsObject', 'AVAudioPlayer', 'WUOfflineDecode', 'releaseResource', 'if(consumed) return']:
+            self.assertIn(marker,ui)
+        for marker in ['WUDraftMediaReadSource', 'NSDataWritingWithoutOverwriting', 'rename(tmp.path.fileSystemRepresentation', 'st.st_nlink!=1', 'current()', '@synchronized(Leases())', 'selected-type34', 'WUVoiceMeasuredMS', '32*1024*1024']:
+            self.assertIn(marker,logic)
+        for marker in ['OpenVoicePacks(owner)', 'WUVoiceSelectedData(wrap)', 'CFBundleVersion', 'WUIsVoicePacksController(presented)']:
+            self.assertIn(marker,messages)
+        for forbidden in ['AddLocalMsg:', 'ResendVoiceMsg:', 'NSURLSession', 'AVSpeechSynthesizer']:
+            self.assertNotIn(forbidden,ui+logic)
+        self.assertIn('tests/voice_pack_logic.m',(ROOT/'tools/build.sh').read_text())
+        self.assertIn('-framework AVFoundation',(ROOT/'tools/build.sh').read_text())
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()
         for word in ['未实现','无伪开关','便捷朋友圈','ActionBar','全部 AI','未执行']:

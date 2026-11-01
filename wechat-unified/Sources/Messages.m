@@ -5,6 +5,8 @@
 #import "Repository.h"
 #import "EmoticonLogic.h"
 #import "VoiceSendLogic.h"
+#import "VoicePacks.h"
+static void OpenVoicePacks(UIViewController *owner);
 #import <Photos/Photos.h>
 static void ForwardSelectedVoice(UIViewController *owner);
 static void SaveSelectedEmoticon(UIViewController *owner);
@@ -161,12 +163,13 @@ static NSHashTable *chatActions;
         if([key isEqual:@"search"] && !Has(v,@"onSearchItem","v",@[])) continue;
         if([key isEqual:@"stats"] && !StatsReady(Service(@"CMessageMgr"))) continue;
         if([key isEqual:@"moments"] && (!WUEnabled(@"convenientMoments") || !WUMomentsAvailable())) continue;
-        NSString *title=@{@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"repository":@"消息仓库",@"voiceForward":@"所选语音转发",@"emojiSave":@"所选表情保存图库",@"moments":@"半屏朋友圈"}[key];
+        NSString *title=@{@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"repository":@"消息仓库",@"voiceForward":@"所选语音转发",@"voicePacks":@"本地语音包",@"emojiSave":@"所选表情保存图库",@"moments":@"半屏朋友圈"}[key];
         [menu addObject:[UIAction actionWithTitle:title image:nil identifier:nil handler:^(UIAction *action){
             WUChatActions *target=weak; UIViewController *owner=target.owner;
             @try {
                 if(!owner.viewIfLoaded.window || owner.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(owner)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:key]) return;
                 if([key isEqual:@"settings"]) WUShowSettings(owner);
+                else if([key isEqual:@"voicePacks"]) OpenVoicePacks(owner);
                 else if([key isEqual:@"voiceForward"]) ForwardSelectedVoice(owner);
                 else if([key isEqual:@"emojiSave"]) SaveSelectedEmoticon(owner);
                 else if([key isEqual:@"repository"]) OpenRepository(owner);
@@ -229,7 +232,7 @@ static void ChatAppeared(UIViewController *v,SEL s,BOOL animated) {
 static void ChatDisappeared(UIViewController *v,SEL s,BOOL animated) {
     UIViewController *presented=v.presentedViewController;
     BOOL ownStats=[presented isKindOfClass:UINavigationController.class] && [[(UINavigationController *)presented topViewController] isKindOfClass:NSClassFromString(@"WUStatsController")];
-    if(!ownStats && !WUIsMomentsSheet(presented) && !WUIsRepositoryController(presented)) CancelPending();
+    if(!ownStats && !WUIsMomentsSheet(presented) && !WUIsRepositoryController(presented) && !WUIsVoicePacksController(presented)) CancelPending();
     ((void(*)(id,SEL,BOOL))chatDisappearOriginal)(v,s,animated);
 }
 
@@ -610,6 +613,34 @@ static void SaveSelectedEmoticon(UIViewController *owner) {
     [pendingAlerts addObject:alert]; [owner presentViewController:alert animated:YES completion:nil];
 }
 
+static void OpenVoicePacks(UIViewController *owner) {
+    NSString *account=Account(), *session=Session(owner); NSUInteger gen=generation;
+    NSString *shortVersion=[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"], *build=[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleVersion"];
+    if(!account.length || !session.length || ![shortVersion isKindOfClass:NSString.class] || !shortVersion.length || ![build isKindOfClass:NSString.class] || !build.length) { Notice(owner,@"账号、会话或宿主版本不可核验，拒绝打开语音包。"); return; }
+    WUVoicePackBinding *b=[WUVoicePackBinding new]; b.account=account; b.target=session; b.generation=gen; b.version=[NSString stringWithFormat:@"%@/%@",shortVersion,build];
+    __weak UIViewController *weak=owner; NSString *version=b.version;
+    BOOL (^current)(void)=^BOOL {
+        @try { UIViewController *v=weak; return (v.viewIfLoaded.window || WUIsVoicePacksController(v.presentedViewController)) && (!v.navigationController || v.navigationController.topViewController==v) && UIApplication.sharedApplication.applicationState==UIApplicationStateActive && [WUValue(@"enabled") boolValue] && [account isEqual:Account()] && gen==generation && [session isEqual:Session(v)] && [WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:@"voicePacks"]; }
+        @catch(NSException *e) { return NO; }
+    };
+    b.current=current;
+    b.capture=^NSDictionary *{
+        if(!current()) return nil;
+        id selected=Obj(weak,@"getSelectedMsgs");
+        if(![selected isKindOfClass:NSArray.class] || [selected count]!=1) return nil;
+        id wrap=[selected firstObject]; NSDictionary *identity=Info(wrap);
+        if(!InSession(identity,account,session) || (![identity[@"id"] unsignedLongLongValue] && ![identity[@"local"] unsignedIntValue])) return nil;
+        NSData *data=WUVoiceSelectedData(wrap); if(!data) return nil;
+        // SelectedData validated the uint32 getter and actual format == 4; retain the observed value, not an inferred codec mapping.
+        unsigned format=((unsigned(*)(id,SEL))objc_msgSend)(wrap,NSSelectorFromString(@"m_uiVoiceFormat"));
+        return format==4?@{@"data":data,@"format":@(format),@"version":version}:nil;
+    };
+    b.send=^NSString *(WUVoiceForwardOperation *operation){
+        if(!current()) return @"失败：账号/会话/代次已失效，未提交";
+        return [operation submitWithManager:Service(@"CMessageMgr") audioSender:Service(@"AudioSender") messageClass:NSClassFromString(@"CMessageWrap") current:current];
+    };
+    WUShowVoicePacks(owner,b);
+}
 static char voiceForwardKey;
 static void ForwardSelectedVoice(UIViewController *owner) {
     NSString *account=Account(), *session=Session(owner); NSUInteger gen=generation;
