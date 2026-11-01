@@ -4,7 +4,9 @@
 #import "GroupLogic.h"
 #import "Repository.h"
 #import "EmoticonLogic.h"
+#import "VoiceSendLogic.h"
 #import <Photos/Photos.h>
+static void ForwardSelectedVoice(UIViewController *owner);
 static void SaveSelectedEmoticon(UIViewController *owner);
 static void OpenRepository(UIViewController *owner);
 static BOOL StatsReady(id mgr) {
@@ -159,12 +161,13 @@ static NSHashTable *chatActions;
         if([key isEqual:@"search"] && !Has(v,@"onSearchItem","v",@[])) continue;
         if([key isEqual:@"stats"] && !StatsReady(Service(@"CMessageMgr"))) continue;
         if([key isEqual:@"moments"] && (!WUEnabled(@"convenientMoments") || !WUMomentsAvailable())) continue;
-        NSString *title=@{@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"repository":@"消息仓库",@"emojiSave":@"所选表情保存图库",@"moments":@"半屏朋友圈"}[key];
+        NSString *title=@{@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"repository":@"消息仓库",@"voiceForward":@"所选语音转发",@"emojiSave":@"所选表情保存图库",@"moments":@"半屏朋友圈"}[key];
         [menu addObject:[UIAction actionWithTitle:title image:nil identifier:nil handler:^(UIAction *action){
             WUChatActions *target=weak; UIViewController *owner=target.owner;
             @try {
                 if(!owner.viewIfLoaded.window || owner.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(owner)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:key]) return;
                 if([key isEqual:@"settings"]) WUShowSettings(owner);
+                else if([key isEqual:@"voiceForward"]) ForwardSelectedVoice(owner);
                 else if([key isEqual:@"emojiSave"]) SaveSelectedEmoticon(owner);
                 else if([key isEqual:@"repository"]) OpenRepository(owner);
                 else if([key isEqual:@"stats"]) OpenStats(owner);
@@ -502,6 +505,7 @@ static void OpenRepository(UIViewController *owner) {
         }
         id source=RepositorySource(part[@"identity"],account);
         if(!source) return @"失败：源消息已失效或查询接口不可用；不是独立备份";
+        if([part[@"identity"][@"type"] unsignedIntValue]==34) return @"失败：普通转发不保证语音；请在聊天选择该语音并使用所选语音转发，未提交";
         id contacts=Service(@"CContactMgr");
         if(!Has(contacts,@"getContactByName:","@",@[@"@"])) return @"失败：目标查询不可用，未提交";
         id contact=((id(*)(id,SEL,id))objc_msgSend)(contacts,NSSelectorFromString(@"getContactByName:"),target);
@@ -604,4 +608,69 @@ static void SaveSelectedEmoticon(UIViewController *owner) {
         }];
     }]];
     [pendingAlerts addObject:alert]; [owner presentViewController:alert animated:YES completion:nil];
+}
+
+static char voiceForwardKey;
+static void ForwardSelectedVoice(UIViewController *owner) {
+    NSString *account=Account(), *session=Session(owner); NSUInteger gen=generation;
+    id selected=Obj(owner,@"getSelectedMsgs");
+    if(!account.length || !session.length || ![selected isKindOfClass:NSArray.class] || [selected count]!=1) { Notice(owner,@"未提交：请先在聊天多选中只选一条已有语音。"); return; }
+    id wrap=[selected firstObject]; NSDictionary *identity=Info(wrap);
+    if(!InSession(identity,account,session) || (![identity[@"id"] unsignedLongLongValue] && ![identity[@"local"] unsignedIntValue])) { Notice(owner,@"失败：所选消息身份不可核验，未提交。"); return; }
+    NSMutableDictionary *operations=objc_getAssociatedObject(owner,&voiceForwardKey);
+    if([operations[@"generation"] unsignedIntegerValue]!=gen) { operations=[NSMutableDictionary dictionaryWithObject:@(gen) forKey:@"generation"]; objc_setAssociatedObject(owner,&voiceForwardKey,operations,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+    if(operations[identity]) { Notice(owner,operations[identity]); return; }
+    if(operations.count>=101) { Notice(owner,@"本页面操作上限已到，请核对宿主后重新进入。"); return; }
+    NSData *data=WUVoiceSelectedData(wrap);
+    if(!data) { Notice(owner,@"失败：仅支持所选已有34类语音的原始数据与format 4配对；数据未就绪或ABI不符。未下载、未提交。"); return; }
+    operations[identity]=@"未提交：等待收件人确认";
+    __weak UIViewController *weak=owner;
+    BOOL (^current)(void)=^BOOL {
+        @try {
+            UIViewController *v=weak;
+            if(!v.viewIfLoaded.window || (v.navigationController && v.navigationController.topViewController!=v) || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(v)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:@"voiceForward"]) return NO;
+            id now=Obj(v,@"getSelectedMsgs");
+            return [now isKindOfClass:NSArray.class] && [now count]==1 && [now firstObject]==wrap && [identity isEqual:Info(wrap)];
+        } @catch(NSException *e) { return NO; }
+    };
+    UIAlertController *recipient=[UIAlertController alertControllerWithTitle:@"未提交：选择收件人" message:@"填写已有联系人或群的完整用户名，不使用昵称搜索，不拉取联系人列表。下一步仅离线验证，仍需再次确认发送。" preferredStyle:UIAlertControllerStyleAlert];
+    [recipient addTextFieldWithConfigurationHandler:^(UITextField *field){ field.text=session; field.autocorrectionType=UITextAutocorrectionTypeNo; field.autocapitalizationType=UITextAutocapitalizationTypeNone; }];
+    [recipient addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(UIAlertAction *a){ [operations removeObjectForKey:identity]; }]];
+    __weak UIAlertController *weakRecipient=recipient; __block BOOL chosen=NO;
+    [recipient addAction:[UIAlertAction actionWithTitle:@"验证所选语音" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+        if(chosen) return; chosen=YES;
+        NSString *target=[weakRecipient.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        [weak dismissViewControllerAnimated:YES completion:^{
+            if(!current()) { operations[identity]=@"失败：上下文失效，未提交"; return; }
+            @try {
+                id contacts=Service(@"CContactMgr");
+                if(!target.length || target.length>256 || !WUVoiceExactSignature(contacts,@"getContactByName:","@",@[@"@"])) { operations[identity]=@"失败：收件人接口不可用，未提交"; Notice(weak,operations[identity]); return; }
+                id contact=((id(*)(id,SEL,id))objc_msgSend)(contacts,NSSelectorFromString(@"getContactByName:"),target);
+                if(![Str(contact,@"m_nsUsrName") isEqual:target]) { operations[identity]=@"失败：收件人用户名不匹配，未提交"; Notice(weak,operations[identity]); return; }
+            } @catch(NSException *e) { operations[identity]=@"失败：收件人核验异常，未提交"; Notice(weak,operations[identity]); return; }
+            operations[identity]=@"未提交：正在离线解码所选语音";
+            dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
+                WUVoiceForwardOperation *operation=[[WUVoiceForwardOperation alloc] initWithData:data account:account target:target];
+                dispatch_async(dispatch_get_main_queue(),^{
+                    if(!current() || weak.presentedViewController) { operations[identity]=@"失败：上下文失效，未提交"; return; }
+                    if(!operation.milliseconds) { operations[identity]=@"失败：仅接受完整SILK/AMR且真实时长不超过60秒；其他编码不转换、不发送"; Notice(weak,operations[identity]); return; }
+                    operations[identity]=@"未提交：等待最终确认";
+                    UIAlertController *confirm=[UIAlertController alertControllerWithTitle:@"确认普通语音转发" message:[NSString stringWithFormat:@"状态：未提交\n账号：%@\n收件人用户名：%@\n离线实测：%u毫秒\n保留所选原始编码与format；只请求一次，不保证送达，不回退、不自动重试。",account,target,operation.milliseconds] preferredStyle:UIAlertControllerStyleAlert];
+                    [confirm addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(UIAlertAction *a){ [operations removeObjectForKey:identity]; }]];
+                    __block BOOL confirmed=NO;
+                    [confirm addAction:[UIAlertAction actionWithTitle:@"向此收件人请求发送一次" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+                        if(confirmed) return; confirmed=YES;
+                        [weak dismissViewControllerAnimated:YES completion:^{
+                            if(!current()) { operations[identity]=@"失败：确认失效，未提交"; return; }
+                            @try { operations[identity]=[operation submitWithManager:Service(@"CMessageMgr") audioSender:Service(@"AudioSender") messageClass:NSClassFromString(@"CMessageWrap") current:current]; }
+                            @catch(NSException *e) { operations[identity]=@"失败：服务获取异常，未提交"; }
+                            Notice(weak,operations[identity]);
+                        }];
+                    }]];
+                    [pendingAlerts addObject:confirm]; [weak presentViewController:confirm animated:YES completion:nil];
+                });
+            });
+        }];
+    }]];
+    [pendingAlerts addObject:recipient]; [owner presentViewController:recipient animated:YES completion:nil];
 }

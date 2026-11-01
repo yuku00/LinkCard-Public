@@ -19,6 +19,7 @@ def upload():
     allowed += ['Sources/Drafts.m','Sources/DraftsLogic.h','Sources/DraftsLogic.m','tests/drafts_logic.m','Sources/DraftMediaLogic.h','Sources/DraftMediaLogic.m','tests/draft_media_logic.m','BUILD-RESULT.md']
     allowed += ['Sources/EmoticonLogic.h','Sources/EmoticonLogic.m','tests/emoticon_logic.m']
     allowed += ['Sources/MomentsCache.m','Sources/MomentsCacheLogic.h','Sources/MomentsCacheLogic.m','tests/moments_cache_logic.m']
+    allowed += ['Sources/VoiceSendLogic.h','Sources/VoiceSendLogic.m','tests/voice_send_logic.m']
     # Exact manifest closure only: no SDK repository/history, binaries or private media.
     vendor=json.loads((ROOT/'Vendor/manifest.json').read_text())
     for name,digest in vendor['sha256'].items():
@@ -43,7 +44,7 @@ def upload():
     if not changed:
         print('No actual changes; no commit or CI triggered.'); return
     tree=api('POST',P+'/git/trees',{'base_tree':commit['tree']['sha'],'tree':changed})
-    new=api('POST',P+'/git/commits',{'message':'WeChat Unified: account-isolated seen Moments cache and safe local browser','tree':tree['sha'],'parents':[parent]})
+    new=api('POST',P+'/git/commits',{'message':'WeChat Unified: selected voice forwarding with measured codecs and one-shot submission','tree':tree['sha'],'parents':[parent]})
     assert api('GET',P+'/git/ref/heads/'+BRANCH)['object']['sha']==parent, 'Remote changed during upload'
     api('PATCH',P+'/git/refs/heads/'+BRANCH,{'sha':new['sha'],'force':False})
     state={'repo':REPO,'branch':BRANCH,'commit':new['sha'],'paths':[e['path'] for e in entries]}

@@ -24,7 +24,9 @@ class Guardrails(unittest.TestCase):
         self.assertEqual(len(hooks),len(set(hooks)))
     def test_no_unexpected_delete_or_excluded_client(self):
         for forbidden in ['DelMsg:', 'sendVoice', 'NSURLSession', 'UIKeyboardDockView', 'MSHookMessageEx', 'dlopen(', 'system(', 'OpenRedEnvelopesRequest', 'HBHelperUtil']:
-            self.assertNotIn(forbidden,SRC)
+            # Only the evidence-backed host selector is allowed; old helper/AI senders remain forbidden.
+            checked=SRC.replace('ResendVoiceMsg:MsgWrap:', '') if forbidden=='sendVoice' else SRC
+            self.assertNotIn(forbidden,checked)
         messages=(ROOT/'Sources/Messages.m').read_text()
         self.assertEqual(len(re.findall(r'objc_msgSend\)\([^;]+NSSelectorFromString\(@"AddEmoticonMsg:MsgWrap:"\)', messages)),1)
         self.assertNotIn('SendPatMgr',messages)  # BOOL protocol is deliberately not deferred/replayed.
@@ -201,6 +203,18 @@ class Guardrails(unittest.TestCase):
         shared=(ROOT/'Sources/DraftMediaLogic.m').read_text()
         self.assertIn('if(valid && !valid())',shared)
         self.assertNotIn('unlink(',shared)
+    def test_voice_forward_selected_once(self):
+        messages=(ROOT/'Sources/Messages.m').read_text()
+        ui=messages.split('static char voiceForwardKey;')[1]
+        logic=(ROOT/'Sources/VoiceSendLogic.m').read_text()
+        for word in ['getSelectedMsgs', 'InSession(identity,account,session)', 'WUVoiceSelectedData(wrap)', 'getContactByName:', 'gen!=generation', 'UIApplicationStateActive', 'dispatch_get_global_queue', 'if(confirmed) return', 'operations[identity]', 'pendingAlerts addObject:confirm']:
+            self.assertIn(word,ui)
+        for word in ['WUOfflineDecode', 'numerator/pcm.rate<=60000', 'methodSignatureForSelector', 'getArgumentTypeAtIndex', 'self.consumed=YES', 'AddLocalMsg:MsgWrap:', 'ResendVoiceMsg:MsgWrap:', 'WURepositoryInvoke', 'if(![insert hasPrefix:@"已请求"] || !current()) return self.status']:
+            self.assertIn(word,logic)
+        for word in ['ForwardMsg:', 'ResendMsg:', 'writeTo', 'removeItem', 'NSURLSession']:
+            self.assertNotIn(word,logic+ui)
+        self.assertIn('tests/voice_send_logic.m',(ROOT/'tools/build.sh').read_text())
+        self.assertIn('@"voiceForward"',(ROOT/'Sources/GroupLogic.m').read_text())
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()
         for word in ['未实现','无伪开关','便捷朋友圈','ActionBar','全部 AI','未执行']:

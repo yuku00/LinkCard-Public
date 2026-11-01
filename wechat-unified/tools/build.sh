@@ -19,6 +19,9 @@ xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-p
 build/repository-logic-tests | tee build/repository-logic-tests.txt
 rm build/repository-logic-tests
 python3 tools/build_codecs.py macosx
+xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/voice_send_logic.m Sources/VoiceSendLogic.m Sources/RepositoryLogic.m build/codec-macosx/libWUOffline.a -framework Foundation -o build/voice-send-tests
+build/voice-send-tests | tee build/voice-send-tests.txt
+rm build/voice-send-tests
 xcrun --sdk macosx clang -Wall -Wextra -Werror -I Sources tests/offline_voice.c build/codec-macosx/libWUOffline.a -o build/offline-voice-tests
 build/offline-voice-tests 2>&1 | tee build/offline-voice-tests.txt
 rm build/offline-voice-tests
