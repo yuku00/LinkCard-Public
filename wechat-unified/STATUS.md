@@ -1,9 +1,20 @@
-# 2026-11-01 所选语音入包、管理试听与单次发送（后台取消补强待CI）
+# 2026-11-01 输入交互与可逆卡片（已编码，待本轮真实CI）
 
-在下述已通过构建上补充UIApplicationWillResignActiveNotification同步停止播放器、取消未提交IO和关闭整个自有模态链；不依赖后台可能停顿的0.25秒计时器。本补强待独立CI，尚不以旧包冒充最新源码。
+本轮新增四个默认关闭、独立配置：inputPulse / hideHomeSearch / fileSurface / emoticonSurface。27项本地结构检查已通过；新增生产InteractionLogic原生测试保留全部旧回归，实际iOS编译及产物核验待本轮CI，不以前轮包冒充。基线b7c3e4082f740f738800dbab7b7afd6a1f25c8dd / CI41298154018，本地旧HEAD保留。
 
+- 输入呼吸灯：只在MMGrowTextView所属当前聊天、可见且UITextView有效第一响应编辑时，对自有CAShapeLayer透明度呼吸；与原输入描边独立。UITextView结束/离窗/配置关闭/后台立即取消，自有监视器检查隐藏和失效后停止；尊重减少动态（不呼吸，独立描边可保持静态），无become/resign焦点操作。运行期两项钩子完整成功才可启用。没有复制旧语音录制按钮灯效，不改系统键盘Dock。
+- 文件/表情背景卡片：复用CommonMessageCellView单一布局/复用链；47型表情、49型且有界XML精确msg/appmsg/type=6单节点文件才纳入。仅已证实m_bgImageView角色且为本cell子UIImageView，圆角/自适应背景；未知结构不处理，首次观察到对应角色才可启用。原布局前、模型替换、离窗、复用、关闭恢复；共享Surfaces快照逐属性比较自有预期值，不覆盖宿主后来改值。不动正文、图片对象、下载、动画、点击/target，非所有表情面板或所有文件显示方式完整美化。
+- 隐藏首页搜索：仅NewMainFrameViewController实际UITableView.tableHeaderView为WCSearchBar或单子UIView链纯搜索的布局；未知/混合表头不隐藏。保存原header与frame，以0.01高自有占位替代，和现有分组wrapper共享恢复顺序，分组关闭仍可单独隐藏真实搜索。关闭仅占位仍属于自己时恢复，不覆盖宿主新header；原对象未改frame，宿主后来高度更新作为新基线。首次观察真实纯搜索表头后可启用；不是WCRGrouping分组页替代，不承诺当前8.0.70一定使用此形状。
 
-最终CI `41297846590` completed/success，commit `a071ccfca058d7fa483283197e33d26bd9f1a844`；首次CI `41297524886`亦成功，第二次增加管理页展示前冻结所选快照与宿主异常失败关闭。由2062fad基线非强制快进2次、14条工程路径，无其他项目/workflow改动；补记前329/329白名单匹配。26项结构检查、语音包生产原生mock及全部旧回归通过。artifact `13080266420`，ZIP357247字节，dylib680784字节；SHA256 `47d2859848eae057a6e7b66415d5c9bad78ecf9f6f986f6ca4037a150925fc7a`，64-bit arm64 MachO、ZIP digest及161页嵌入ad-hoc签名核验通过。此为成功后本地补记，不为文档再次构建；包内状态是构建时待验版本。
+明确阻塞：播放语音保持键盘、发送/发表按钮专项未接通，无伪开关。一次定向核对旧0x2084d20/0x2085288仍是touches/hideInputToolView/resignFirstResponder/hideToolView路径，未证明明确播放动作与用户主动收键盘区分；不得据此全局拦resign。发送旧0x23bd88仅给WCRChatToolbarView/InputToolViewBar/SharePreConfirmSheetView祖先过滤，没有已证实send属性角色，禁止按按钮文字或全局UIButton美化。本轮不再研究已完成语音包。
+
+未执行真实微信、发删、用户媒体访问/注入或安装。UI目标仅静态/生产纯逻辑与待编译路径，不称宿主验收。动态字体不改文本字体/布局，颜色随宿主布局解析当前明暗；实时切换/复用/其他插件交互仍待真机。AI/Dock/红包详情/在线主题/视频解析保持排除。
+
+# 2026-11-01 所选语音入包、管理试听与单次发送（最终CI通过，未真机验收）
+
+最终CI `41298154018` completed/success，commit `b7c3e4082f740f738800dbab7b7afd6a1f25c8dd`。补充UIApplicationWillResignActiveNotification同步停止播放器、取消未提交IO和从presenter关闭整个自有模态链，不依赖后台可能停顿的0.25秒计时器。26项结构检查、新语音包生产mock及全部旧回归通过。artifact `13080148330`，ZIP357865字节、dylib680784字节；dylib SHA256 `d983db9359837ddccb073a5ac73158e40de932e67b7a28a574a4335e172eaa11`，ZIP摘要、arm64 MachO及161页嵌入ad-hoc签名已独立核验。总计从2062fad非强制快进3次，14条工程路径，补记前329/329白名单一致。本段为成功后本地补记，不为文档重复构建；包内状态为构建时待验版本。
+
+前轮CI `41297846590` completed/success，commit `a071ccfca058d7fa483283197e33d26bd9f1a844`；首次CI `41297524886`亦成功，第二次增加管理页展示前冻结所选快照与宿主异常失败关闭。由2062fad基线非强制快进2次、14条工程路径，无其他项目/workflow改动；补记前329/329白名单匹配。26项结构检查、语音包生产原生mock及全部旧回归通过。artifact `13080266420`，ZIP357247字节，dylib680784字节；SHA256 `47d2859848eae057a6e7b66415d5c9bad78ecf9f6f986f6ca4037a150925fc7a`，64-bit arm64 MachO、ZIP digest及161页嵌入ad-hoc签名核验通过。此为成功后本地补记，不为文档再次构建；包内状态是构建时待验版本。
 
 新增账号工具栏“本地语音包”：用户在聊天多选中只选一条已就绪type34语音，进入管理页命名保存；捕获真实原始载荷、实际format 4、宿主短版本/构建号和配对schema 1。仅当前已证明的真实format 4配对，不把任意导入文件标4。完整离线SILK/AMR解码、正整数毫秒且≤60000；不就绪、坏媒体、缺版本/格式拒绝。保存无需发送，管理页可重命名、列出来源/时长、离线试听、删除自有副本、最终确认发送至当前会话；版本不一致仅试听，拒绝猜测跨版本配对。
 

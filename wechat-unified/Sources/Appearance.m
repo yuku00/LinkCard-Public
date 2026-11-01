@@ -1,10 +1,16 @@
 #import "WU.h"
 #import <QuartzCore/QuartzCore.h>
+#import "InteractionLogic.h"
+#include <math.h>
+static IMP inputWindow;
+static BOOL pulseReady, inputSuspended;
+static NSHashTable<UIView *> *inputs;
+static NSTimer *pulseWatch;
 static IMP inputLayout, noticeLayout, homeLayout;
 static NSHashTable<UIView *> *decorated;
 static NSHashTable<UITableView *> *tables;
 static char layerKey, separatorKey;
-static void Remove(UIView *v) { CALayer *l=objc_getAssociatedObject(v,&layerKey); [l removeFromSuperlayer]; objc_setAssociatedObject(v,&layerKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+static void Remove(UIView *v) { CALayer *l=objc_getAssociatedObject(v,&layerKey); [l removeAllAnimations]; [l removeFromSuperlayer]; objc_setAssociatedObject(v,&layerKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
 static void Decorate(UIView *v,NSString *key) {
     Remove(v);
     if(!WUEnabled(key) || !v.window || CGRectIsEmpty(v.bounds)) return;
@@ -17,7 +23,40 @@ static void Decorate(UIView *v,NSString *key) {
     l.strokeColor=[UIColor.systemTealColor resolvedColorWithTraitCollection:v.traitCollection].CGColor; l.lineWidth=1;
     [v.layer addSublayer:l]; objc_setAssociatedObject(v,&layerKey,l,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [decorated addObject:v];
 }
-static void Input(UIView *v,SEL s) { Remove(v); ((void(*)(id,SEL))inputLayout)(v,s); Decorate(v,@"inputBorder"); }
+static BOOL Visible(UIView *v) {
+    if(!v.window || !v.window.isKeyWindow || CGRectIsEmpty(v.bounds)) return NO;
+    for(UIView *p=v;p;p=p.superview) if(p.hidden || p.alpha<0.01) return NO;
+    return CGRectIntersectsRect([v convertRect:v.bounds toView:v.window],v.window.bounds);
+}
+static BOOL Editing(UIView *v,NSUInteger depth) {
+    if(!depth || v.subviews.count>64) return NO;
+    if([v isKindOfClass:UITextView.class] && [(UITextView *)v isEditable] && v.isFirstResponder && Visible(v)) return YES;
+    for(UIView *c in v.subviews) if(Editing(c,depth-1)) return YES;
+    return NO;
+}
+static void RefreshInput(UIView *v) {
+    BOOL chat=NO; Class cls=NSClassFromString(@"BaseMsgContentViewController");
+    for(UIResponder *r=v;r;r=r.nextResponder) if(cls && [r isKindOfClass:cls]) { UIViewController *owner=(id)r; chat=owner.viewIfLoaded.window && !owner.presentedViewController && !owner.navigationController.presentedViewController && !owner.isBeingDismissed; break; }
+    NSUInteger effect=WUInputEffect(WUEnabled(@"inputBorder"),pulseReady && WUEnabled(@"inputPulse"),chat && Visible(v),Editing(v,8),!inputSuspended && UIApplication.sharedApplication.applicationState==UIApplicationStateActive,UIAccessibilityIsReduceMotionEnabled());
+    if(!effect) { Remove(v); return; }
+    CAShapeLayer *l=objc_getAssociatedObject(v,&layerKey);
+    if(!l) { l=[CAShapeLayer layer]; l.name=@"org.wechatunified.input"; l.fillColor=UIColor.clearColor.CGColor; [v.layer addSublayer:l]; objc_setAssociatedObject(v,&layerKey,l,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [decorated addObject:v]; }
+    [CATransaction begin]; [CATransaction setDisableActions:YES];
+    l.frame=v.bounds; l.path=[UIBezierPath bezierPathWithRoundedRect:CGRectInset(v.bounds,1,1) cornerRadius:10].CGPath;
+    l.strokeColor=[UIColor.systemTealColor resolvedColorWithTraitCollection:v.traitCollection].CGColor; l.lineWidth=effect==2?2:1;
+    [CATransaction commit];
+    if(effect==2 && ![l animationForKey:@"wu.breathe"]) { CABasicAnimation *a=[CABasicAnimation animationWithKeyPath:@"opacity"]; a.fromValue=@0.25; a.toValue=@1; a.duration=1.2; a.autoreverses=YES; a.repeatCount=HUGE_VALF; [l addAnimation:a forKey:@"wu.breathe"]; }
+    if(effect!=2) [l removeAnimationForKey:@"wu.breathe"];
+    if(effect==2 && !pulseWatch) {
+        pulseWatch=[NSTimer timerWithTimeInterval:0.15 repeats:YES block:^(NSTimer *timer) {
+            BOOL any=NO; for(UIView *input in inputs.allObjects) { RefreshInput(input); CALayer *layer=objc_getAssociatedObject(input,&layerKey); if([layer animationForKey:@"wu.breathe"]) any=YES; }
+            if(!any) { [timer invalidate]; pulseWatch=nil; }
+        }]; [NSRunLoop.mainRunLoop addTimer:pulseWatch forMode:NSRunLoopCommonModes];
+    }
+}
+BOOL WUInputPulseAvailable(void) { return pulseReady; }
+static void Input(UIView *v,SEL s) { ((void(*)(id,SEL))inputLayout)(v,s); [inputs addObject:v]; RefreshInput(v); }
+static void InputWindow(UIView *v,SEL s) { Remove(v); ((void(*)(id,SEL))inputWindow)(v,s); [inputs addObject:v]; RefreshInput(v); }
 static void Notice(UIView *v,SEL s) { Remove(v); ((void(*)(id,SEL))noticeLayout)(v,s); Decorate(v,@"noticeBorder"); }
 static void RestoreTables(void) {
     for(UITableView *t in tables) {
@@ -42,12 +81,19 @@ static void Home(UIViewController *v,SEL s) {
 }
 void WUInstallAppearance(void) {
     static dispatch_once_t once; dispatch_once(&once, ^{
-        decorated=NSHashTable.weakObjectsHashTable; tables=NSHashTable.weakObjectsHashTable;
-        [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
-            RestoreTables(); for(UIView *v in decorated) { Remove(v); [v setNeedsLayout]; }
+        decorated=NSHashTable.weakObjectsHashTable; tables=NSHashTable.weakObjectsHashTable; inputs=NSHashTable.weakObjectsHashTable;
+        for(NSString *name in @[WUChanged,UIApplicationWillResignActiveNotification,UIApplicationDidBecomeActiveNotification,UIAccessibilityReduceMotionStatusDidChangeNotification,UITextViewTextDidBeginEditingNotification,UITextViewTextDidEndEditingNotification])
+        [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            if([n.name isEqual:UIApplicationWillResignActiveNotification]) inputSuspended=YES;
+            if([n.name isEqual:UIApplicationDidBecomeActiveNotification]) inputSuspended=NO;
+            RestoreTables(); [pulseWatch invalidate]; pulseWatch=nil;
+            for(UIView *v in decorated.allObjects) { Remove(v); [v setNeedsLayout]; }
+            if(![n.name isEqual:UIApplicationWillResignActiveNotification]) for(UIView *v in inputs.allObjects) RefreshInput(v);
         }];
     });
-    WUHook(@"MMGrowTextView",@"layoutSubviews",NO,"v",@[],(IMP)Input,&inputLayout);
+    BOOL a=WUHook(@"MMGrowTextView",@"layoutSubviews",NO,"v",@[],(IMP)Input,&inputLayout);
+    BOOL b=WUHook(@"MMGrowTextView",@"didMoveToWindow",NO,"v",@[],(IMP)InputWindow,&inputWindow);
+    pulseReady=a && b;
     WUHook(@"SystemMessageCellView",@"layoutSubviews",NO,"v",@[],(IMP)Notice,&noticeLayout);
     WUHook(@"NewMainFrameViewController",@"viewDidLayoutSubviews",NO,"v",@[],(IMP)Home,&homeLayout);
 }

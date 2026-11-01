@@ -1,5 +1,6 @@
 #import "WU.h"
 #import "MessageLogic.h"
+#import "InteractionLogic.h"
 #import "WUStats.h"
 #import "GroupLogic.h"
 #import "Repository.h"
@@ -327,13 +328,18 @@ static NSDictionary *GroupInfo(id model, NSString *session, NSString *account) {
     } @catch(NSException *e) { Notice(v,@"无法读取表情上下文，未发送。"); }
 }
 @end
-static IMP cellLayoutOriginal, cellReuseOriginal;
+static IMP cellLayoutOriginal, cellReuseOriginal, cellModelOriginal, cellWindowOriginal;
+static void CellModel(UIView *cell, SEL s, id model) { WURestoreMessageSurface(cell); ((void(*)(id,SEL,id))cellModelOriginal)(cell,s,model); }
+static void CellWindow(UIView *cell, SEL s) { WURestoreMessageSurface(cell); ((void(*)(id,SEL))cellWindowOriginal)(cell,s); [cell setNeedsLayout]; }
 static char cellKey;
 static void CellLayout(UIView *cell, SEL s) {
+    WURestoreMessageSurface(cell);
     WUCellActions *a=objc_getAssociatedObject(cell,&cellKey); [a restore]; ((void(*)(id,SEL))cellLayoutOriginal)(cell,s);
+    @try { if(cellModelOriginal && cellWindowOriginal && cellReuseOriginal && Chat(cell)) { id wrap=Wrap(cell); WURefreshMessageSurface(cell,WUCardRole((NSUInteger)Num(wrap,@"m_uiMessageType"),Str(wrap,@"m_nsContent"))); } } @catch(NSException *e) { WURestoreMessageSurface(cell); }
     @try { if(!a) { a=[WUCellActions new]; a.cell=cell; objc_setAssociatedObject(cell,&cellKey,a,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [cellActions addObject:a]; } [a update]; } @catch(NSException *e) { [a restore]; [a.repeat removeFromSuperview]; a.repeat=nil; }
 }
 static void CellReuse(UIView *cell, SEL s) {
+    WURestoreMessageSurface(cell);
     WUCellActions *a=objc_getAssociatedObject(cell,&cellKey); [a restore]; [a.repeat removeFromSuperview]; a.repeat=nil;
     ((void(*)(id,SEL))cellReuseOriginal)(cell,s);
 }
@@ -422,6 +428,8 @@ void WUInstallMessages(void) {
     WUHook(@"MessageRevokeMgr",@"onRevokeMsg:",NO,"v",@[@"@"],(IMP)Revoke,&revokeOriginal);
     WUHook(@"VoIPBubbleMessageCellView",@"onClicked",NO,"v",@[],(IMP)Callback,&callbackOriginal);
     WUHook(@"CommonMessageCellView",@"layoutSubviews",NO,"v",@[],(IMP)CellLayout,&cellLayoutOriginal);
+    WUHook(@"CommonMessageCellView",@"setViewModel:",NO,"v",@[@"@"],(IMP)CellModel,&cellModelOriginal);
+    WUHook(@"CommonMessageCellView",@"didMoveToWindow",NO,"v",@[],(IMP)CellWindow,&cellWindowOriginal);
     WUHook(@"CommonMessageCellView",@"prepareForReuse",NO,"v",@[],(IMP)CellReuse,&cellReuseOriginal);
     WUHook(@"CMessageMgr",@"AsyncOnAddMsg:MsgWrap:",NO,"v",@[@"@",@"@"],(IMP)Arrival,&arrivalOriginal);
 }

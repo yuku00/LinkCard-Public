@@ -111,10 +111,23 @@ static void Count(id m,SEL s,NSUInteger n) {
 }
 static UITableView *Table(UIView *v,NSUInteger depth) { if(!depth) return nil; if([v isKindOfClass:UITableView.class]) return (id)v; if(v.subviews.count>100) return nil; for(UIView *c in v.subviews) { UITableView *t=Table(c,depth-1); if(t) return t; } return nil; }
 static NSArray *Tabs(NSDictionary *s) { return [@[@{@"id":@"all",@"name":@"全部"},@{@"id":@"private",@"name":@"私信"},@{@"id":@"chatroom",@"name":@"群聊"},@{@"id":@"other",@"name":@"其他"}] arrayByAddingObjectsFromArray:s[@"groups"]]; }
+static BOOL searchHeaderObserved;
+BOOL WUHomeSearchAvailable(void) { return searchHeaderObserved; }
+static BOOL SearchOnlyHeader(UIView *header) {
+    Class search=NSClassFromString(@"WCSearchBar");
+    for(NSUInteger depth=0;header && depth<6;depth++) {
+        if(search && [header isKindOfClass:search]) return YES;
+        if(header.subviews.count!=1 || ![header isMemberOfClass:UIView.class]) return NO;
+        header=header.subviews.firstObject;
+    }
+    return NO;
+}
 @interface WUHomePage : NSObject
 @property(nonatomic,weak) UIViewController *owner;
 @property(nonatomic,weak) UITableView *table;
 @property(nonatomic,strong) UIView *originalHeader, *header;
+@property(nonatomic,strong) UIView *searchHeader, *searchPlaceholder;
+@property(nonatomic) CGRect searchHeaderFrame;
 @property(nonatomic,strong) UISegmentedControl *tabs;
 @property(nonatomic,copy) NSString *account;
 @property(nonatomic,copy) NSArray *ids;
@@ -126,13 +139,35 @@ static NSArray *Tabs(NSDictionary *s) { return [@[@{@"id":@"all",@"name":@"全�
 - (void)refresh;
 @end
 @implementation WUHomePage
-- (void)restore { if(self.table.tableHeaderView==self.header) { [self.originalHeader removeFromSuperview]; self.originalHeader.frame=self.originalHeaderFrame; self.table.tableHeaderView=self.originalHeader; } [self.header removeFromSuperview]; self.header=nil; self.tabs=nil; self.originalHeader=nil; self.renderedState=nil; }
+- (void)restoreGroup { if(self.header && self.table.tableHeaderView==self.header) { [self.originalHeader removeFromSuperview]; self.originalHeader.frame=self.originalHeaderFrame; self.table.tableHeaderView=self.originalHeader; } [self.header removeFromSuperview]; self.header=nil; self.tabs=nil; self.originalHeader=nil; self.renderedState=nil; }
+- (void)restore {
+    [self restoreGroup];
+    if(self.searchPlaceholder && self.table.tableHeaderView==self.searchPlaceholder) {
+        // Hiding never changes the original frame; any intervening resize belongs to the host.
+        if(!CGRectEqualToRect(self.searchHeader.frame,self.searchHeaderFrame)) self.searchHeaderFrame=self.searchHeader.frame;
+        self.searchHeader.frame=self.searchHeaderFrame; self.table.tableHeaderView=self.searchHeader; [self.searchHeader setNeedsLayout];
+    }
+    self.searchHeader=nil; self.searchPlaceholder=nil;
+}
 - (void)refresh {
+    Class home=NSClassFromString(@"NewMainFrameViewController");
+    if(!home || ![self.owner isKindOfClass:home] || !self.owner.viewIfLoaded.window) { [self restore]; return; }
+    UITableView *t=Table(self.owner.view,8); if(!t) { [self restore]; return; }
+    if(self.table!=t) { [self restore]; self.table=t; }
+    if((self.header && t.tableHeaderView!=self.header) || (self.searchPlaceholder && !self.header && t.tableHeaderView!=self.searchPlaceholder)) [self restore];
+    BOOL hide=WUEnabled(@"hideHomeSearch");
+    if((hide && !self.searchHeader && self.header) || (!hide && self.searchHeader)) [self restore];
+    UIView *candidate=self.header?self.originalHeader:t.tableHeaderView;
+    if(SearchOnlyHeader(candidate)) searchHeaderObserved=YES;
+    if(hide && !self.searchHeader && SearchOnlyHeader(candidate)) {
+        self.searchHeader=candidate; self.searchHeaderFrame=candidate.frame;
+        self.searchPlaceholder=[[UIView alloc] initWithFrame:CGRectMake(0,0,t.bounds.size.width,0.01)];
+        t.tableHeaderView=self.searchPlaceholder;
+    }
     NSString *a=WUCurrentAccount(); NSDictionary *state=State(a); BOOL available=NO;
     for(WUHomeSnapshot *s in managers.allObjects) if([s current] && !s.invalid && s.countKnown && ![s.source containsObject:NSNull.null]) { [s apply]; available=s.filtered; }
-    if(!ready || !available || ![state[@"enabled"] boolValue] || ![WUValue(@"enabled") boolValue] || !self.owner.viewIfLoaded.window) { [self restore]; return; }
-    UITableView *t=Table(self.owner.view,8); if(!t) { [self restore]; return; }
-    if(self.table!=t || ![a isEqual:self.account]) { [self restore]; self.table=t; }
+    if(!ready || !available || ![state[@"enabled"] boolValue] || ![WUValue(@"enabled") boolValue]) { [self restoreGroup]; return; }
+    if(![a isEqual:self.account]) [self restoreGroup];
     self.account=a; self.generation=WUContextGeneration();
     if(self.header && t.tableHeaderView!=self.header) [self restore];
     if(self.header && [self.renderedState isEqual:state] && self.renderedWidth==t.bounds.size.width) return;

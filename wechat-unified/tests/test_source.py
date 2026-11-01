@@ -229,6 +229,26 @@ class Guardrails(unittest.TestCase):
             self.assertNotIn(forbidden,ui+logic)
         self.assertIn('tests/voice_pack_logic.m',(ROOT/'tools/build.sh').read_text())
         self.assertIn('-framework AVFoundation',(ROOT/'tools/build.sh').read_text())
+    def test_input_and_reversible_card_boundaries(self):
+        appearance=(ROOT/'Sources/Appearance.m').read_text()
+        surfaces=(ROOT/'Sources/Surfaces.m').read_text()
+        messages=(ROOT/'Sources/Messages.m').read_text()
+        home=(ROOT/'Sources/HomeGroups.m').read_text()
+        for marker in ['WUInputEffect(', 'UIAccessibilityIsReduceMotionEnabled()', 'UITextViewTextDidEndEditingNotification', 'UIApplicationWillResignActiveNotification', 'inputSuspended=YES', 'removeAllAnimations', 'didMoveToWindow', 'isFirstResponder']:
+            self.assertIn(marker,appearance)
+        for forbidden in ['becomeFirstResponder', 'resignFirstResponder', 'WUHook(@"UIView"', 'WUHook(@"UIButton"']:
+            self.assertNotIn(forbidden,appearance+surfaces)
+        for marker in ['m_bgImageView','UIImageView.class','isDescendantOfView:cell','WUSurfaceValueOwned','appliedRadius']:
+            self.assertIn(marker,surfaces)
+        for marker in ['WURestoreMessageSurface(cell)', 'WUCardRole(', 'cellModelOriginal && cellWindowOriginal && cellReuseOriginal']:
+            self.assertIn(marker,messages)
+        for marker in ['SearchOnlyHeader', 'NewMainFrameViewController', 'WCSearchBar', 'searchHeaderFrame', 'self.table.tableHeaderView==self.searchPlaceholder', 'restoreGroup']:
+            self.assertIn(marker,home)
+        self.assertNotIn('wcrGrouping_hideSearchHeader',home)
+        self.assertIn('tests/interaction_logic.m',(ROOT/'tools/build.sh').read_text())
+        for key in ['inputPulse','hideHomeSearch','fileSurface','emoticonSurface']:
+            self.assertIn(key,(ROOT/'Sources/Settings.m').read_text())
+            self.assertGreaterEqual((ROOT/'Sources/Core.m').read_text().count('@"'+key+'"'),2)
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()
         for word in ['未实现','无伪开关','便捷朋友圈','ActionBar','全部 AI','未执行']:

@@ -1,18 +1,40 @@
 #import "WU.h"
+#import "InteractionLogic.h"
 #import <QuartzCore/QuartzCore.h>
 static NSHashTable<UIView *> *styled;
-static char baselineKey,childrenKey;
+static char baselineKey,childrenKey,cardKey;
+static NSMutableSet<NSString *> *cardRoles;
+static void Restore(UIView *v);
+void WURestoreMessageSurface(UIView *cell) {
+    UIView *target=objc_getAssociatedObject(cell,&cardKey);
+    if(target) Restore(target);
+    objc_setAssociatedObject(cell,&cardKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
 static IMP searchLayout,referLayout,plusLayout,toastLayout,timeLayout,swipeLayout;
 static void Restore(UIView *v) {
     NSDictionary *b=objc_getAssociatedObject(v,&baselineKey); if(!b) return;
-    v.layer.cornerRadius=[b[@"radius"] doubleValue]; v.clipsToBounds=[b[@"clip"] boolValue]; v.backgroundColor=b[@"bg"]==NSNull.null?nil:b[@"bg"];
+    if(WUSurfaceValueOwned(@(v.layer.cornerRadius),b[@"appliedRadius"])) v.layer.cornerRadius=[b[@"radius"] doubleValue];
+    if(WUSurfaceValueOwned(@(v.clipsToBounds),b[@"appliedClip"])) v.clipsToBounds=[b[@"clip"] boolValue];
+    if(WUSurfaceValueOwned(v.backgroundColor?:NSNull.null,b[@"appliedBg"])) v.backgroundColor=b[@"bg"]==NSNull.null?nil:b[@"bg"];
     objc_setAssociatedObject(v,&baselineKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 static void WUStyleSurface(UIView *v,NSString *key,CGFloat radius) {
     if(!WUEnabled(key)||!v.window||CGRectIsEmpty(v.bounds)) return;
-    objc_setAssociatedObject(v,&baselineKey,@{@"radius":@(v.layer.cornerRadius),@"clip":@(v.clipsToBounds),@"bg":v.backgroundColor?:NSNull.null},OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    v.layer.cornerRadius=MIN(radius,MIN(v.bounds.size.width,v.bounds.size.height)/2); v.clipsToBounds=YES;
-    v.backgroundColor=[UIColor.secondarySystemGroupedBackgroundColor resolvedColorWithTraitCollection:v.traitCollection]; [styled addObject:v];
+    CGFloat applied=MIN(radius,MIN(v.bounds.size.width,v.bounds.size.height)/2);
+    UIColor *color=[UIColor.secondarySystemGroupedBackgroundColor resolvedColorWithTraitCollection:v.traitCollection];
+    objc_setAssociatedObject(v,&baselineKey,@{@"radius":@(v.layer.cornerRadius),@"clip":@(v.clipsToBounds),@"bg":v.backgroundColor?:NSNull.null,@"appliedRadius":@(applied),@"appliedClip":@YES,@"appliedBg":color},OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    v.layer.cornerRadius=applied; v.clipsToBounds=YES; v.backgroundColor=color; [styled addObject:v];
+}
+BOOL WUCardSurfaceAvailable(NSString *key) { return [cardRoles containsObject:key]; }
+void WURefreshMessageSurface(UIView *cell,NSString *role) {
+    WURestoreMessageSurface(cell);
+    if(![@[@"fileSurface",@"emoticonSurface"] containsObject:role] || !cell.window) return;
+    // m_bgImageView is the existing evidence-backed CommonMessageCellView background role.
+    id target=nil; @try { target=[cell valueForKey:@"m_bgImageView"]; } @catch(NSException *e) { return; }
+    if(![target isKindOfClass:UIImageView.class] || target==cell || ![target isDescendantOfView:cell]) return;
+    [cardRoles addObject:role];
+    WUStyleSurface(target,role,14);
+    if(objc_getAssociatedObject(target,&baselineKey)) objc_setAssociatedObject(cell,&cardKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 static void Search(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))searchLayout)(v,s); WUStyleSurface(v,@"searchSurface",14); }
 static void Refer(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))referLayout)(v,s); WUStyleSurface(v,@"referSurface",12); }
@@ -29,7 +51,7 @@ static void Swipe(UIView *v,SEL s) {
     WUStyleSurface(menu,@"swipeSurface",14); objc_setAssociatedObject(v,&childrenKey,@[menu],OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 void WUInstallSurfaces(void) {
-    static dispatch_once_t once; dispatch_once(&once, ^{ styled=NSHashTable.weakObjectsHashTable; [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(UIView *v in styled) { Restore(v); [v setNeedsLayout]; } [styled removeAllObjects]; }]; });
+    static dispatch_once_t once; dispatch_once(&once, ^{ styled=NSHashTable.weakObjectsHashTable; cardRoles=[NSMutableSet set]; [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(UIView *v in styled) { Restore(v); [v setNeedsLayout]; } [styled removeAllObjects]; }]; });
     WUHook(@"ChatTimeCellView",@"layoutSubviews",NO,"v",@[],(IMP)Time,&timeLayout);
     Class base=NSClassFromString(@"MMBaseMultiMenuTableViewCell"); Ivar ivar=base?class_getInstanceVariable(base,"_menuContentView"):NULL;
     if(ivar && ivar_getTypeEncoding(ivar)[0]=='@') WUHook(@"NewMainFrameCell",@"layoutSubviews",NO,"v",@[],(IMP)Swipe,&swipeLayout);
