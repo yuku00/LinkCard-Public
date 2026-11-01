@@ -7,6 +7,18 @@ int main(void) { @autoreleasepool {
     CHECK([NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:NULL]);
     configDir=open(dir.fileSystemRepresentation,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
     snapshot=@{@"schema":@1,@"enabled":@NO,@"words":@""};
+    CHECK(!WUEnabled(@"hideDictationIcon") && !WUEnabled(@"dictationPreventMistouch"));
+    CHECK(WUSave(@"hideDictationIcon",@YES)); CHECK(WUSave(@"dictationPreventMistouch",@NO));
+    snapshot=ReadConfig(@"config.json");
+    CHECK([WUValue(@"hideDictationIcon") boolValue] && ![WUValue(@"dictationPreventMistouch") boolValue]);
+    CHECK(!WUEnabled(@"hideDictationIcon")); CHECK(WUSave(@"enabled",@YES)); CHECK(WUEnabled(@"hideDictationIcon"));
+    CHECK(WUSave(@"hideDictationIcon",@NO)); CHECK(WUSave(@"dictationPreventMistouch",@YES));
+    close(configDir); configDir=open(dir.fileSystemRepresentation,O_RDONLY|O_DIRECTORY|O_NOFOLLOW); snapshot=ReadConfig(@"config.json");
+    CHECK(!WUEnabled(@"hideDictationIcon") && WUEnabled(@"dictationPreventMistouch"));
+    NSData *dictationBefore=[NSData dataWithContentsOfFile:[dir stringByAppendingPathComponent:@"config.json"]];
+    CHECK(!WUSave(@"hideDictationIcon",@"YES") && !WUSave(@"dictationPreventMistouch",@[]));
+    CHECK([[NSData dataWithContentsOfFile:[dir stringByAppendingPathComponent:@"config.json"]] isEqual:dictationBefore]);
+    CHECK(WUSave(@"enabled",@NO)); CHECK(!WUEnabled(@"dictationPreventMistouch"));
     NSDictionary *on=@{@"enabled":@YES,@"monitor":@[@"friend"],@"exclude":@[@"excluded"],@"days":@30};
     NSMutableDictionary *off=[on mutableCopy]; off[@"enabled"]=@NO;
     CHECK(WUSaveAccountOption(@"A",@"momentsCache",on));

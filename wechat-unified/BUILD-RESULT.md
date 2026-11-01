@@ -1,6 +1,10 @@
-# 2026-11-01 两项P0修复（红基线已证实，绿回归待本轮CI）
+# 2026-11-01 两项P0修复（真实红→绿CI及产物核验通过）
 
-红基线 commit 5478dd0c4f33e649783dd53555b252b972f9694c / run 41305087598 / job 124843744812 在 macOS 实际执行：生产 WUSaveAccountOption→WUSave→磁盘重载18检查11失败；同一构造类 I/q/i/Q 的复读就绪与普通语音/语音包分别失败1/5/6/6项，编译错误不计为红。现仅修 momentsCache 共享入口白名单及消息构造适配，严格核对 Method/NSMethodSignature，协议类型化 ARC init，范围/异常失败不提交。新测试覆盖 I/q/i/Q、替换self/释放、初始化异常、同一mock三路径；语音后续字段ABI与回执、默认关闭不变。绿CI和产物尚待验证，不代表真实微信或完整功能通过。
+- 红基线 commit `5478dd0c4f33e649783dd53555b252b972f9694c` / run `41305087598` / job `124843744812`：真实生产WUSaveAccountOption→WUSave→磁盘重载18检查11失败；同一构造类I/q/i/Q的复读就绪与普通语音/语音包分别失败1/5/6/6项。独立job仅在实际运行返回预期症状失败时通过，编译错误不计红。
+- 修复 commit `cb772143a6b4068659d0da9b7f17f12afefcea9c`；https://github.com/yuku00/LinkCard-Public/actions/runs/41305559880 / job `124845108130` completed/success。18配置检查、每个I/q/i/Q同mock三路径1619断言、构造ABI/范围/ARC释放/替换self/异常1828断言全绿；28结构守护、31 XCTest和全部旧原生测试保留通过。断言数含fixture解析，不等于独立场景数。
+- artifact `13083116943` 已下载核验：ZIP447881字节，SHA256 `9cf0ed7c79f038b32b10d3299e84f9633dcbe8d38a3707a1e17a622f4bf140db`；dylib848288字节，SHA256 `1c02f7e15c3fa70e67a4b236c8276bed89e983565dc0cb91dfdea379dc341adf`。GitHub摘要/SHA256SUMS、arm64 MH_DYLIB、iOS16.6/SDK18.5、codesign --verify --strict及本地202页CodeDirectory SHA256/特殊槽核验通过；ad-hoc不是分发身份。
+- 从f4d0bfce两次非强制快进指定独立分支，补记前340/340发布路径一致，旧HEAD未reset。仅修缓存入口及共享消息构造，不猜宿主实际类型，不放宽后续语音字段/回执，不改默认或自动发送。日志与独立核验在artifacts/ci-41305559880.log、verification-41305559880.json、p0-final-audit.json。
+- 本段与STATUS是成功后本地补记，源码与测试未再改动，不为文档重跑CI；产物内仍为待验文案。未执行真实微信、注入、用户数据或真实发删，仍是有限自主实现而非完整源码/完整功能验收。
 
 # 2026-11-01 统计增量：首轮真实CI及产物独立核验通过
 

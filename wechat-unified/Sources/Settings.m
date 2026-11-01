@@ -1,4 +1,5 @@
 #import "WU.h"
+#import "WUDictation.h"
 @interface WUWords : UIViewController
 @property(nonatomic,strong) UITextView *editor;
 @end
@@ -28,7 +29,7 @@
 @implementation WUSettings
 - (void)viewDidLoad {
     [super viewDidLoad]; self.title=@"微信整合 · 0.3.1";
-    self.rows=@[@[@"enabled",@"启用已实现功能"],@[@"voiceProgress",@"语音真实播放进度（本地）"],@[@"voiceRealDuration",@"语音：显示PCM实测时长"],@[@"voiceCarry",@"语音：分秒格式"],@[@"voiceCountdown",@"语音：倒数显示"],@[@"voiceWaveform",@"语音：真实PCM采样波形"],@[@"voiceAlways",@"语音：未播放常显波形"],@[@"voicePulse",@"语音：播放脉冲"],@[@"voiceSeek",@"语音：拖动松手定位"],@[@"ads",@"公众号列表去广告"],@[@"momentsAds",@"朋友圈广告有效性过滤"],@[@"miniSplashAds",@"小程序非激励开屏广告过滤"],@[@"keywords",@"朋友圈字面关键词屏蔽"],@[@"inputBorder",@"输入框描边"],@[@"inputPulse",@"输入呼吸灯 · 仅正在编辑"],@[@"hideHomeSearch",@"隐藏首页搜索表头（已识别布局）"],@[@"fileSurface",@"文件消息背景卡片美化"],@[@"emoticonSurface",@"表情消息背景卡片美化"],@[@"noticeBorder",@"聊天系统通知描边"],@[@"separators",@"首页列表隐藏分割线"],@[@"convenientMoments",@"半屏朋友圈 · 聊天输入 rp"],@[@"chatSearch",@"聊天页头当前会话搜索"],@[@"callbackConfirm",@"通话记录回拨前确认"],@[@"antiRevoke",@"保留收到的被撤回消息（无提示插入）"],@[@"multiRevoke",@"多选撤回自身消息（不删除）"],@[@"repeatEmoticon",@"表情标签 · 常规复读（部分）"],@[@"mergeGroup",@"群聊相邻头像合并显示"],@[@"mergePrivate",@"私聊相邻头像合并显示"],@[@"mergeBottom",@"合并头像置底"],@[@"redReminder",@"红包前台提醒（部分定位）"],@[@"themes",@"本地PNG主题 / 独立气泡"],@[@"sunMoon",@"设置页日月开关外观"],@[@"searchSurface",@"搜索栏圆角柔和背景"],@[@"referSurface",@"消息引用卡片美化"],@[@"plusSurface",@"首页右上角加号菜单美化"],@[@"toastSurface",@"宿主Toast圆角背景"],@[@"timeSurface",@"聊天时间标签胶囊背景"],@[@"swipeSurface",@"首页左滑菜单圆角卡片"]];
+    self.rows=@[@[@"enabled",@"启用已实现功能"],@[@"voiceProgress",@"语音真实播放进度（本地）"],@[@"voiceRealDuration",@"语音：显示PCM实测时长"],@[@"voiceCarry",@"语音：分秒格式"],@[@"voiceCountdown",@"语音：倒数显示"],@[@"voiceWaveform",@"语音：真实PCM采样波形"],@[@"voiceAlways",@"语音：未播放常显波形"],@[@"voicePulse",@"语音：播放脉冲"],@[@"voiceSeek",@"语音：拖动松手定位"],@[@"ads",@"公众号列表去广告"],@[@"momentsAds",@"朋友圈广告有效性过滤"],@[@"miniSplashAds",@"小程序非激励开屏广告过滤"],@[@"keywords",@"朋友圈字面关键词屏蔽"],@[@"inputBorder",@"输入框描边"],@[WUDictationHideKey,@"隐藏语音转述图标"],@[WUDictationGuardKey,@"语音转述防误触"],@[@"inputPulse",@"输入呼吸灯 · 仅正在编辑"],@[@"hideHomeSearch",@"隐藏首页搜索表头（已识别布局）"],@[@"fileSurface",@"文件消息背景卡片美化"],@[@"emoticonSurface",@"表情消息背景卡片美化"],@[@"noticeBorder",@"聊天系统通知描边"],@[@"separators",@"首页列表隐藏分割线"],@[@"convenientMoments",@"半屏朋友圈 · 聊天输入 rp"],@[@"chatSearch",@"聊天页头当前会话搜索"],@[@"callbackConfirm",@"通话记录回拨前确认"],@[@"antiRevoke",@"保留收到的被撤回消息（无提示插入）"],@[@"multiRevoke",@"多选撤回自身消息（不删除）"],@[@"repeatEmoticon",@"表情标签 · 常规复读（部分）"],@[@"mergeGroup",@"群聊相邻头像合并显示"],@[@"mergePrivate",@"私聊相邻头像合并显示"],@[@"mergeBottom",@"合并头像置底"],@[@"redReminder",@"红包前台提醒（部分定位）"],@[@"themes",@"本地PNG主题 / 独立气泡"],@[@"sunMoon",@"设置页日月开关外观"],@[@"searchSurface",@"搜索栏圆角柔和背景"],@[@"referSurface",@"消息引用卡片美化"],@[@"plusSurface",@"首页右上角加号菜单美化"],@[@"toastSurface",@"宿主Toast圆角背景"],@[@"timeSurface",@"聊天时间标签胶囊背景"],@[@"swipeSurface",@"首页左滑菜单圆角卡片"]];
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"完成" style:UIBarButtonItemStyleDone target:self action:@selector(done)];
     self.tableView.backgroundColor=UIColor.systemGroupedBackgroundColor;
     self.navigationController.navigationBar.prefersLargeTitles=YES;
@@ -47,6 +48,7 @@
     return @"目标 iOS 16.6 / 微信暂按 8.0.70。签名匹配≠功能已验收。尚无真机验证，完整未完成清单见源码 STATUS.md。无 AI、无 ActionBar、无系统 Dock 修改、无奖励伪报。";
 }
 - (BOOL)available:(NSString *)key {
+    if([key isEqual:WUDictationHideKey] || [key isEqual:WUDictationGuardKey]) return WUDictationAvailable(key);
     if([key isEqual:@"inputPulse"]) return WUInputPulseAvailable();
     if([key isEqual:@"hideHomeSearch"]) return WUHomeSearchAvailable();
     if([@[@"fileSurface",@"emoticonSurface"] containsObject:key]) return WUCardSurfaceAvailable(key);
@@ -69,6 +71,8 @@
         if([key isEqual:@"inputPulse"]) cell.detailTextLabel.text=@"仅可见聊天输入正在编辑时动画；关闭、离窗、后台及减少动态时取消，不操作键盘焦点。";
         if([@[@"fileSurface",@"emoticonSurface"] containsObject:key]) cell.detailTextLabel.text=@"仅已确认消息背景UIImageView，不改媒体、动画、下载、点击或文字。首次需查看对应消息后重开设置。";
         if([key isEqual:@"hideHomeSearch"]) cell.detailTextLabel.text=@"仅NewMainFrame真实纯搜索表头；混合或未知布局不隐藏。首次需访问首页后重开设置，关闭恢复原表头和高度。";
+        if([key isEqual:WUDictationHideKey]) cell.detailTextLabel.text=@"仅隐藏聊天输入框所属语音转述图标；关闭恢复宿主状态，不修改系统键盘听写。需先打开聊天观察布局。";
+        if([key isEqual:WUDictationGuardKey]) cell.detailTextLabel.text=@"未聚焦时，图标内短于0.35秒的单点按仅额外聚焦，再使用语音转述；无确认弹窗，不重放发送。取消、拖出或多触点不额外聚焦。";
         if(!sw.enabled) cell.detailTextLabel.text=@"尚未观察到可核验的宿主接口/布局；不会启用空开关";
         [sw addTarget:self action:@selector(change:) forControlEvents:UIControlEventValueChanged]; cell.accessoryView=sw; cell.selectionStyle=UITableViewCellSelectionStyleNone;
     } else { cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; cell.textLabel.text=p.section==2?@"查看接口检测（不含聊天数据）":(p.row==0?@"编辑朋友圈屏蔽词":(p.row==1?@"识别链接 / 外部浏览器打开":(p.row==2?@"导入和管理本地主题 / 气泡":@"账号表情分组 / 聊天工具栏"))); }

@@ -4,6 +4,26 @@ import re, unittest
 ROOT=Path(__file__).resolve().parents[1]
 SRC='\n'.join(p.read_text() for p in sorted((ROOT/'Sources').glob('*')))
 class Guardrails(unittest.TestCase):
+    def test_dictation_production_wiring_and_scope(self):
+        module=(ROOT/'Sources/WUDictation.m').read_text()
+        appearance=(ROOT/'Sources/Appearance.m').read_text()
+        core=(ROOT/'Sources/Core.m').read_text()
+        settings=(ROOT/'Sources/Settings.m').read_text()
+        self.assertEqual(appearance.count('WURefreshDictation(v);'),2)
+        self.assertIn('WUInstallDictation();',core)
+        for key in ['hideDictationIcon','dictationPreventMistouch']:
+            self.assertEqual(core.count('@"'+key+'"'),2)
+        for key in ['WUDictationHideKey','WUDictationGuardKey']:
+            self.assertIn('@['+key+',',settings)
+        for forbidden in ['UIAlertController','dispatch_async','setEnableDictation','layoutSubviews','didMoveToWindow','WUHook(@"UIView"','WUHook(@"UIImageView"']:
+            self.assertNotIn(forbidden,module)
+        self.assertIn('touchesMoved:withEvent:',module)
+        self.assertIn('next.revision == 0',module)
+        self.assertIn('*original != replacement',module)
+        self.assertIn('tests/test_dictation_native.py',(ROOT/'tools/build.sh').read_text())
+        self.assertIn('0.35秒',settings)
+        self.assertIn('elapsed < 0.35',(ROOT/'Sources/WUDictationLogic.h').read_text())
+
     def test_shared_message_constructor_and_runtime_regressions(self):
         messages=(ROOT/'Sources/Messages.m').read_text()
         voice=(ROOT/'Sources/VoiceSendLogic.m').read_text()

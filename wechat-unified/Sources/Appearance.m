@@ -1,4 +1,5 @@
 #import "WU.h"
+#import "WUDictation.h"
 #import <QuartzCore/QuartzCore.h>
 #import "InteractionLogic.h"
 #include <math.h>
@@ -59,8 +60,8 @@ static void RefreshInput(UIView *v) {
     }
 }
 BOOL WUInputPulseAvailable(void) { return pulseReady; }
-static void Input(UIView *v,SEL s) { ((void(*)(id,SEL))inputLayout)(v,s); [inputs addObject:v]; RefreshInput(v); }
-static void InputWindow(UIView *v,SEL s) { Remove(v); ((void(*)(id,SEL))inputWindow)(v,s); [inputs addObject:v]; RefreshInput(v); }
+static void Input(UIView *v,SEL s) { ((void(*)(id,SEL))inputLayout)(v,s); [inputs addObject:v]; RefreshInput(v); WURefreshDictation(v); }
+static void InputWindow(UIView *v,SEL s) { Remove(v); ((void(*)(id,SEL))inputWindow)(v,s); [inputs addObject:v]; RefreshInput(v); WURefreshDictation(v); }
 static void Notice(UIView *v,SEL s) { Remove(v); ((void(*)(id,SEL))noticeLayout)(v,s); Decorate(v,@"noticeBorder"); }
 static void RestoreTables(void) {
     for(UITableView *t in tables) {

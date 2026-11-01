@@ -3,6 +3,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build
 python3 tests/test_source.py
+xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/dictation_logic.c -o build/dictation-logic-tests
+build/dictation-logic-tests | tee build/dictation-logic-tests.txt
+rm build/dictation-logic-tests
+python3 tests/test_dictation_native.py
 xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/interaction_logic.m Sources/InteractionLogic.m -framework Foundation -o build/interaction-tests
 build/interaction-tests | tee build/interaction-tests.txt
 rm build/interaction-tests
