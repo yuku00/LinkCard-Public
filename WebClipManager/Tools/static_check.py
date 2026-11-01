@@ -16,8 +16,13 @@ workflow = yaml.load((root / '.github/workflows/build.yml').read_text(), Loader=
 assert set(workflow['on']) == {'workflow_dispatch'}
 assert workflow['permissions'] == {'contents': 'read'}
 assert 'release' not in workflow['jobs']
+from entitlement_policy import validate_entitlements, self_test, BUILD
+self_test()
+assert str(project['settings']['base']['CURRENT_PROJECT_VERSION']) == BUILD
+props = project['targets']['WebClipManager']['info']['properties']
+assert props['UIFileSharingEnabled'] is False and props['LSSupportsOpeningDocumentsInPlace'] is False
 with (root / 'Config/TrollStore.entitlements').open('rb') as f:
-    assert plistlib.load(f) == {'com.apple.private.security.no-sandbox': True}
+    validate_entitlements(plistlib.load(f))
 source = '\n'.join(p.read_text() for p in (root / 'Sources').glob('*.swift'))
 for forbidden in ['removeItem(', 'removeFromDisk(', '.perform(', 'method_getImplementation', 'unsafeBitCast', 'URLSession', 'Process(', 'system(']:
     assert forbidden not in source, forbidden

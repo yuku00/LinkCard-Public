@@ -20,7 +20,7 @@ final class StartupViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         let title = UILabel()
-        title.text = "UIKit 启动成功 · build 3"
+        title.text = "UIKit 启动成功 · build 5（候选修复）"
         title.font = .preferredFont(forTextStyle: .title2)
         title.numberOfLines = 0
         let detail = UILabel()
@@ -55,7 +55,8 @@ final class StartupViewController: UIViewController {
         present(host, animated: true) { StartupLog.record("S7_PRESENT_COMPLETED") }
     }
     @objc private func exportLog() {
-        let controller = UIActivityViewController(activityItems: [StartupLog.url], applicationActivities: nil)
+        guard let log = StartupLog.url, FileManager.default.fileExists(atPath: log.path) else { return }
+        let controller = UIActivityViewController(activityItems: [log], applicationActivities: nil)
         controller.popoverPresentationController?.sourceView = view
         controller.popoverPresentationController?.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
         present(controller, animated: true)

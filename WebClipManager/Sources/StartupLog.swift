@@ -3,15 +3,30 @@ import Foundation
 // Diagnostic build only. Never pass URLs, titles, counts or error descriptions here.
 enum StartupLog {
     private static let lock = NSLock()
-    static var url: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("startup-build3.log")
+    static func logURL(documents: URL) -> URL? {
+        // Fail closed if installation unexpectedly gives us /var/mobile/Documents.
+        let base = documents.resolvingSymlinksInPath().standardizedFileURL
+        let parts = base.pathComponents
+        guard parts.count >= 6,
+              parts.suffix(5).first == "Containers",
+              parts[parts.count - 4] == "Data",
+              parts[parts.count - 3] == "Application",
+              UUID(uuidString: parts[parts.count - 2]) != nil,
+              parts.last == "Documents" else { return nil }
+        let target = base.appendingPathComponent("WebClipManager", isDirectory: true)
+            .appendingPathComponent("startup-build5.log")
+        guard target.resolvingSymlinksInPath().standardizedFileURL.path == target.path else { return nil }
+        return target
+    }
+    static var url: URL? {
+        guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
+        return logURL(documents: documents)
     }
     static func record(_ stage: String) {
         lock.lock()
         defer { lock.unlock() }
         let fm = FileManager.default
-        let target = url
+        guard let target = url else { return }
         do {
             try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
             let bytes = (try? target.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0

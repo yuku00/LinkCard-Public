@@ -54,7 +54,15 @@ def inspect(path, require_icon=True):
             assert pos + length <= total
             blobs[slot] = sig[pos:pos + length]
         entitlements = plistlib.loads(blobs[5][8:])
-        assert entitlements == {'com.apple.private.security.no-sandbox': True}
+        from entitlement_policy import validate_entitlements, decode_der, BUILD
+        assert info['CFBundleVersion'] == BUILD
+        assert info.get('UIFileSharingEnabled') is False
+        assert info.get('LSSupportsOpeningDocumentsInPlace') is False
+        validate_entitlements(entitlements)
+        assert struct.unpack_from('>I', blobs[7])[0] == 0xfade7172
+        der_entitlements = decode_der(blobs[7][8:])
+        validate_entitlements(der_entitlements)
+        assert der_entitlements == entitlements, 'XML/DER mismatch'
         directories = []
         for slot, cd in blobs.items():
             if slot != 0 and not 0x1000 <= slot < 0x1005:
@@ -83,7 +91,7 @@ def inspect(path, require_icon=True):
                 files = value['CFBundlePrimaryIcon']['CFBundleIconFiles']
                 assert files and any(n.startswith(prefix + f) and n.endswith('.png') for f in files for n in names)
         result = {'sha256': hashlib.sha256(open(path, 'rb').read()).hexdigest(), 'info': info,
-                  'codeDirectories': directories, 'entitlements': entitlements, 'signatureSlots': sorted(blobs),
+                  'codeDirectories': directories, 'entitlements': entitlements, 'derEntitlements': der_entitlements, 'signatureSlots': sorted(blobs),
                   'platform': platform, 'minimumOS': '16.0', 'sdk': '%d.%d.%d' % (sdk >> 16, sdk >> 8 & 255, sdk & 255),
                   'libraries': libraries, 'rpaths': rpaths, 'icons': icons,
                   'limitations': 'Static validation only; no device launch, dyld symbol availability, or installed CoreTrust verification.'}
