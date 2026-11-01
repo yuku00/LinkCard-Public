@@ -2,11 +2,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 import UIKit
 
-@main
-struct WebClipManagerApp: App {
-    var body: some Scene { WindowGroup { RootView() } }
-}
-
 struct BackupDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.data] }
     static var writableContentTypes: [UTType] { [.data, .json] }
@@ -36,16 +31,19 @@ final class Model: ObservableObject {
 
     func refresh() async {
         guard !busy else { return }
+        StartupLog.record("S9_REFRESH_ENTERED")
         busy = true
         readState = "reading"
         defer { busy = false }
         do {
             scan = try await repository.scan()
+            StartupLog.record("S11_SCAN_RETURNED")
             readState = scan.issues.isEmpty ? "readable" : "partial"
             selected.formIntersection(Set(scan.clips.map(\.id)))
             status = "已读取 \(scan.clips.count) 项；\(scan.issues.count) 项读取警告"
             if !scan.issues.isEmpty { results = scan.issues; showResults = true }
         } catch {
+            StartupLog.record("S11_SCAN_THROWN")
             readState = "failed"
             scan = Scan()
             selected.removeAll()
@@ -151,7 +149,7 @@ struct ManagerView: View {
                     NavigationLink { DiagnosticsView(model: model) } label: { Label("诊断", systemImage: "stethoscope") }
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { Task { await model.refresh() } } label: { Label("刷新", systemImage: "arrow.clockwise") }
+                    Button { StartupLog.record("S8_SCAN_BUTTON"); Task { await model.refresh() } } label: { Label("刷新", systemImage: "arrow.clockwise") }
                         .disabled(model.busy)
                 }
                 ToolbarItemGroup(placement: .bottomBar) {
@@ -163,7 +161,7 @@ struct ManagerView: View {
                     Button { model.showResults = true } label: { Label("逐项结果", systemImage: "list.bullet.rectangle") }
                 }
             }
-            .task { await model.refresh() }
+            .onAppear { StartupLog.record("S6_MANAGER_ON_APPEAR_NO_SCAN") }
             .confirmationDialog("导出所选 \(model.selected.count) 项？", isPresented: $confirmBackup, titleVisibility: .visible) {
                 Button("生成本地备份") { Task { await model.backup() } }
             } message: {

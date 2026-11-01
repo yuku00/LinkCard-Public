@@ -39,6 +39,7 @@ struct RootView: View {
             ManagerView(model: model).tabItem { Label("书签管理", systemImage: "square.grid.2x2") }
             NotesView().tabItem { Label("备忘录导出", systemImage: "note.text") }
         }.tint(.teal)
+            .onAppear { StartupLog.record("S6_ROOT_ON_APPEAR") }
     }
 }
 

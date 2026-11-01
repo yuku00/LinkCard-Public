@@ -64,6 +64,9 @@ jobs:
           otool -l "$BIN" > macho-load-commands.txt
           otool -L "$BIN" > macho-libraries.txt
           xcodebuild -version > toolchain.txt
+          xcrun swiftc --version >> toolchain.txt
+          xcrun nm -m -u "$BIN" >> toolchain.txt
+          xcodebuild -project WebClipManager.xcodeproj -scheme WebClipManager -configuration Release -showBuildSettings | python3 -c 'import sys; print("".join(s for s in sys.stdin if any(k in s for k in ["SWIFT", "DEPLOYMENT_TARGET", "RUNPATH"])))' >> toolchain.txt
       - uses: actions/upload-artifact@v4
         if: ${{ inputs.sign_for_trollstore }}
         with:

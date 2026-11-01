@@ -74,6 +74,7 @@ actor Repository {
     }
 
     func scan() throws -> Scan {
+        StartupLog.record("S10_REPOSITORY_SCAN_ENTERED")
         try check(root, directory: true)
         let entries = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
         var result = Scan()
