@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
+@class UINavigationController;
 BOOL WUEnabled(NSString *key);
 BOOL WUSave(NSString *key, id value);
 id WUValue(NSString *key);

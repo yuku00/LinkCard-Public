@@ -37,6 +37,11 @@ int main(void) { @autoreleasepool {
     assert(WUDraftsPut(root,@"b",one,@"账号B",&e));
     assert(WUDraftsDelete(root,@"a",two,&e)); assert(WUDraftsLoad(root,@"a",&e).count==1);
     assert([WUDraftsLoad(root,@"b",&e)[0][@"parts"][0][@"text"] isEqual:@"账号B"]);
+    NSURL *bIndex=[root URLByAppendingPathComponent:@"62.plist"]; NSData *bBefore=[NSData dataWithContentsOfURL:bIndex];
+    assert([fm setAttributes:@{NSFilePosixPermissions:@0500} ofItemAtPath:root.path error:&e]);
+    assert(!WUDraftsPut(root,@"b",one,@"原子写入失败保旧",&e));
+    assert([[NSData dataWithContentsOfURL:bIndex] isEqual:bBefore]);
+    assert([fm setAttributes:@{NSFilePosixPermissions:@0700} ofItemAtPath:root.path error:&e]);
     assert(!WUDraftsPut(root,@"a",one,@"",&e)); assert(!WUDraftsPut(root,@"a",@"index-0",@"bad",&e));
     // Production storage must leave same-path/shared/in-use media untouched, even on deletion or bad index.
     NSURL *media=[root URLByAppendingPathComponent:@"shared-video.mov"]; NSData *asset=[@"synthetic-owned-asset" dataUsingEncoding:NSUTF8StringEncoding]; assert([asset writeToURL:media atomically:YES]);

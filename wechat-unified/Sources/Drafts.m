@@ -80,6 +80,7 @@ void WUMomentsDraftsAction(UINavigationController *nav, NSString *account, NSUIn
                 id view=WUDraftsTextView(top);
                 if(![view isKindOfClass:UITextView.class] || ![(UITextView *)view isDescendantOfView:top.view]) { Notice(top,@"正文控件不匹配，未保存"); return; }
                 NSString *text=[[(UITextView *)view text] copy]; NSString *uuid=objc_getAssociatedObject(top,&draftIDKey)?:NSUUID.UUID.UUIDString; NSError *e=nil;
+                if(!Active(account,generation) || nav.topViewController!=top) return;
                 if(!WUDraftsPut(Directory(),account,uuid,text,&e)) { Notice(top,e.localizedDescription); return; }
                 objc_setAssociatedObject(top,&draftIDKey,uuid,OBJC_ASSOCIATION_COPY_NONATOMIC);
                 Notice(top,@"正文已原子保存。原编辑器未退出；返回草稿箱即可预览或恢复。发布后不会自动删除草稿。");
