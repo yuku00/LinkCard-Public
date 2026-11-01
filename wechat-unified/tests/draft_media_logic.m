@@ -31,6 +31,7 @@ int main(void) { @autoreleasepool {
     CHECK(!WUDraftMediaURLs(root,@"b",rows[0],&e));
     // Copy failure must retain committed row and all original resources.
     CHECK(!WUDraftMediaPut(root,@"a",uuid,@"failed",@"video-backup",@[[root URLByAppendingPathComponent:@"missing"]],&e));
+    CHECK([e.localizedDescription containsString:@"源媒体不可读"]);
     CHECK([WUDraftMediaLoad(root,@"a",&e) isEqual:rows]); CHECK([fm fileExistsAtPath:old.path]);
     failCopy=YES; CHECK(!WUDraftMediaPut(root,@"a",uuid,@"copy failed",@"images",@[image],&e)); failCopy=NO;
     CHECK([WUDraftMediaLoad(root,@"a",&e) isEqual:rows]); CHECK([fm fileExistsAtPath:old.path]);

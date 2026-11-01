@@ -83,7 +83,7 @@ BOOL WUDraftMediaPut(NSURL *root, NSString *a, NSString *uuid, NSString *text, N
         for(NSURL *u in files) { struct stat st; if(lstat(u.path.fileSystemRepresentation,&st)!=0 || !S_ISREG(st.st_mode)) return Fail(e,@"自有目录存在非普通文件，拒绝写入"); used+=(unsigned long long)st.st_size; if(used>512ULL*1024*1024) return Fail(e,@"账号保留资源已满，未自动删除"); }
         NSMutableArray *resources=[NSMutableArray array];
         for(id source in sources) {
-            @autoreleasepool {
+            { // NSError ** writeback must outlive this iteration; no nested autorelease pool.
                 NSData *data=nil;
                 if(images && [source isKindOfClass:NSData.class]) data=source;
                 else if([source isKindOfClass:NSURL.class]) data=ReadSource(source,64*1024*1024);

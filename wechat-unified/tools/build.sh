@@ -7,7 +7,7 @@ xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-p
 build/drafts-logic-tests | tee build/drafts-logic-tests.txt
 rm build/drafts-logic-tests
 xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/draft_media_logic.m Sources/DraftMediaLogic.m -framework Foundation -o build/draft-media-tests
-build/draft-media-tests | tee build/draft-media-tests.txt || { lldb --batch -o run -o 'thread backtrace -c 30' build/draft-media-tests; exit 1; }
+build/draft-media-tests | tee build/draft-media-tests.txt || { lldb --batch -o run -k 'thread backtrace -c 30' build/draft-media-tests; exit 1; }
 rm build/draft-media-tests
 xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/repository_logic.m Sources/RepositoryLogic.m -framework Foundation -o build/repository-logic-tests
 build/repository-logic-tests | tee build/repository-logic-tests.txt
