@@ -54,7 +54,7 @@ int main(void) { @autoreleasepool {
         CHECK([decoded[@"sampleRate"] intValue]==([name hasSuffix:@"amr"]?8000:16000));
         NSArray *bars=decoded[@"peaks"]; CHECK(bars.count==48);
         double maximum=0; for(NSNumber *bar in bars) { CHECK(isfinite(bar.doubleValue) && bar.doubleValue>=0 && bar.doubleValue<=1); maximum=fmax(maximum,bar.doubleValue); }
-        CHECK(maximum>.1); CHECK(WUVoiceSeekMS(.5,[decoded[@"duration"] doubleValue])==500);
+        CHECK(fabs(maximum-([name hasSuffix:@"amr"]?2992.0:12595.0)/32768.0)<.000001); CHECK(WUVoiceSeekMS(.5,[decoded[@"duration"] doubleValue])==500);
         if(![name hasSuffix:@"amr"]) { CHECK([bars.firstObject doubleValue]<.01); CHECK([bars.lastObject doubleValue]>.1); }
         NSProgress *cancel=[NSProgress progressWithTotalUnitCount:1]; [cancel cancel]; CHECK(!WUVoiceDecodeCancellable(encoded,cancel));
         uint8_t junk=0x7c; [encoded appendBytes:&junk length:1]; CHECK(!WUVoiceDecode(encoded));

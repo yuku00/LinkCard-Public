@@ -21,8 +21,13 @@ int main(void) {
         size_t n; unsigned char *p=fixture(names[k],&n); WUOfflinePCM out={0};
         CHECK(!WUOfflineDecode(p,n,NULL,NULL,&out)); CHECK(out.rate==(k==2?8000:16000)); CHECK(out.frames==out.rate);
         float max=0; for(size_t i=0;i<out.frames;i++) { CHECK(isfinite(out.samples[i])); if(fabsf(out.samples[i])>max) max=fabsf(out.samples[i]); }
-        fprintf(stderr,"%s: rate=%u frames=%zu peak=%g\n",names[k],out.rate,out.frames,max);
-        CHECK(max>.1f && max<=1); free(out.samples);
+        uint64_t hash=UINT64_C(14695981039346656037);
+        for(size_t i=0;i<out.frames;i++) { uint16_t s=(uint16_t)(int16_t)(out.samples[i]*32768.0f); hash=(hash^(s&255))*UINT64_C(1099511628211); hash=(hash^(s>>8))*UINT64_C(1099511628211); }
+        fprintf(stderr,"%s: rate=%u frames=%zu peak=%g PCM-FNV64=%016llx\n",names[k],out.rate,out.frames,max,(unsigned long long)hash);
+        CHECK(hash==(k==2?UINT64_C(0x66b16db954fbb6aa):UINT64_C(0xb33249e300d33e5b)));
+        // Legacy GCC -O2 inflated this fixture to 9960; even -fwrapv alone is insufficient.
+        // Pinned SDK at O0 / explicit wrapping yields 2992 (independent FFmpeg: 3300).
+        CHECK(max==(k==2?2992.0f:12595.0f)/32768.0f); free(out.samples);
         int count=0; CHECK(WUOfflineDecode(p,n,cancel,&count,&out)==2); CHECK(!out.samples && !out.frames);
         // Appended partial frame must invalidate even otherwise fully decoded audio.
         unsigned char *tail=malloc(n+1); memcpy(tail,p,n); tail[n]=0x7c; bad(tail,n+1); free(tail);

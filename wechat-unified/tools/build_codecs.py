@@ -9,7 +9,7 @@ platform=sys.argv[1]; assert platform in ('macosx','iphoneos','linux')
 out=root/'build'/('codec-'+platform); out.mkdir(parents=True,exist_ok=True)
 base=vendor/'amr/opencore/codecs_v2/audio/gsm_amr/amr_nb'
 includes=[vendor/'silk/interface',vendor/'silk/src',vendor/'amr/oscl',base/'dec/src',base/'dec/include',base/'common/include',base.parent/'common/dec/include',base/'enc/src',root/'Sources']
-flags=['-O2','-fPIC','-fvisibility=hidden']+['-I'+str(p) for p in includes]
+flags=['-Os','-fPIC','-fvisibility=hidden','-fwrapv','-fno-strict-aliasing']+['-I'+str(p) for p in includes]
 if platform!='linux':
     sdk=subprocess.check_output(['xcrun','--sdk',platform,'--show-sdk-path'],text=True).strip(); flags+=['-isysroot',sdk]
     if platform=='iphoneos': flags+=['-arch','arm64','-miphoneos-version-min=16.6']
