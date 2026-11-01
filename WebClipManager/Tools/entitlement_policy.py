@@ -44,7 +44,9 @@ def decode_der(data):
         elif tag == 0x0c:
             value = data[offset:end].decode('utf-8')
         elif tag == 1:
-            assert length == 1 and data[offset] in (0, 255)
+            # ldid 2.1.5 emits 0x01 for true; also accept canonical DER 0xff.
+            # Keep the length and explicit value allowlist (not arbitrary nonzero).
+            assert length == 1 and data[offset] in (0, 1, 255)
             value = data[offset] != 0
         else:
             raise AssertionError('Unexpected DER tag')
@@ -67,7 +69,8 @@ def self_test():
         else:
             raise AssertionError('Unsafe profile accepted')
     assert decode_der(bytes.fromhex('310830060c01610101ff')) == {'a': True}
-    for bad in [b'', bytes.fromhex('310830060c01610101ff00'), bytes.fromhex('310830060c0161010101')]:
+    assert decode_der(bytes.fromhex('310830060c0161010101')) == {'a': True}
+    for bad in [b'', bytes.fromhex('310830060c01610101ff00'), bytes.fromhex('310830060c0161010102')]:
         try:
             decode_der(bad)
         except AssertionError:

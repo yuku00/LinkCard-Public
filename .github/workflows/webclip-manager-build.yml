@@ -24,6 +24,7 @@ jobs:
           python3 -m venv /tmp/webclip-checks
           /tmp/webclip-checks/bin/pip install PyYAML==6.0.2
           /tmp/webclip-checks/bin/python Tools/static_check.py
+          /tmp/webclip-checks/bin/python Tools/test_entitlement_der.py
           /tmp/webclip-checks/bin/python Tools/test_notes_format.py
       - name: Generate project
         run: xcodegen generate
