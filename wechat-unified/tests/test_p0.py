@@ -20,6 +20,9 @@ core=(ROOT/'Sources/Core.m').read_text()
 groups=(ROOT/'Sources/Groups.m').read_text()
 config=core[:core.index('static const char *Unqualified')].replace('#import "WU.h"','#import <Foundation/Foundation.h>')
 config=config.replace('static NSMutableDictionary<NSString *, NSString *> *hooks;','')
+# Use the exact production validator, without importing its UIKit-facing installer.
+native=(ROOT/'Sources/WUNative.m').read_text()
+config=config.replace('#import "WUNative.h"',between(native,'static NSArray *Keys(void)', 'BOOL WUNativeEnabled('))
 config+='\nstatic NSString *currentAccount=@"A";\nNSString *WUCurrentAccount(void) { return currentAccount; }\n'
 config+=between(groups,'NSDictionary *WUAccountOptions','static NSDictionary *EmojiState')
 config+=(ROOT/'tests/p0_config.m').read_text()

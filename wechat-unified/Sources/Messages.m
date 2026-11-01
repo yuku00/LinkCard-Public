@@ -7,6 +7,7 @@
 #import "EmoticonLogic.h"
 #import "VoiceSendLogic.h"
 #import "VoicePacks.h"
+#import "WUNativeAction.h"
 static void OpenVoicePacks(UIViewController *owner);
 #import <Photos/Photos.h>
 static void ForwardSelectedVoice(UIViewController *owner);
@@ -62,6 +63,7 @@ static void Notice(UIViewController *v, NSString *text) {
 static NSHashTable *pendingAlerts;
 static void CancelPending(void) {
     generation++;
+    WUNativeCancelActions();
     WUCancelMoments();
     WUCancelVoice();
     for(UIAlertController *a in pendingAlerts.allObjects) [a dismissViewControllerAnimated:NO completion:nil];
@@ -259,7 +261,7 @@ static void ChatAppeared(UIViewController *v,SEL s,BOOL animated) {
 static void ChatDisappeared(UIViewController *v,SEL s,BOOL animated) {
     UIViewController *presented=v.presentedViewController;
     BOOL ownStats=[presented isKindOfClass:UINavigationController.class] && [[(UINavigationController *)presented topViewController] isKindOfClass:NSClassFromString(@"WUStatsController")];
-    if(!ownStats && !WUIsMomentsSheet(presented) && !WUIsRepositoryController(presented) && !WUIsVoicePacksController(presented)) CancelPending();
+    if(!ownStats && !WUNativeOwnsController(presented) && !WUIsMomentsSheet(presented) && !WUIsRepositoryController(presented) && !WUIsVoicePacksController(presented)) CancelPending();
     ((void(*)(id,SEL,BOOL))chatDisappearOriginal)(v,s,animated);
 }
 

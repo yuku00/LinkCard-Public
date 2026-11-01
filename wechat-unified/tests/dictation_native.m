@@ -2,6 +2,10 @@
 #import "WUDictation.h"
 #include <string.h>
 #include <stdlib.h>
+// This fixture tests dictation assuming a permitted boot. The complete guard and
+// registry ownership behavior is executed independently by tests/native/run.sh.
+BOOL WUNativeGuardAllowsHooks(void) { return YES; }
+void WUNativeRecordHook(Class cls, SEL selector, IMP replacement, IMP *slot) { (void)cls; (void)selector; (void)replacement; (void)slot; }
 static NSMutableDictionary<NSString *, NSString *> *hooks;
 #include "dictation_core_hooks.inc"
 // Real ObjC runtime + exact production WUHook/WUMatches and complete production module.

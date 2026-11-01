@@ -1,5 +1,6 @@
 #import "WU.h"
 #import "WUDictation.h"
+#import "WUNative.h"
 #import "GroupLogic.h"
 #import "PluginHubLogic.h"
 #import "ThemeCatalog.h"
@@ -27,6 +28,7 @@ static NSDictionary *ReadConfig(NSString *name) {
     if (x[@"words"] && (![x[@"words"] isKindOfClass:NSString.class] || [x[@"words"] length] > 2048)) return nil;
     for(NSString *k in @[@"themePack",@"bubblePack"]) if(x[k] && (![x[k] isKindOfClass:NSString.class] || ([x[k] length] && ![[NSUUID alloc] initWithUUIDString:x[k]]))) return nil;
     if(x[@"accounts"] && !WUValidAccountOptions(x[@"accounts"])) return nil;
+    if(x[@"native"] && !WUNativeValidOptions(x[@"native"])) return nil;
     if(x[@"pluginHub"] && !WUHubValidOptions(x[@"pluginHub"])) return nil;
     if(x[@"themeOptions"] && !WUValidThemeOptions(x[@"themeOptions"])) return nil;
     if(x[@"surfaceStyles"] && !WUValidSurfaceStyles(x[@"surfaceStyles"])) return nil;
@@ -48,10 +50,11 @@ id WUValue(NSString *key) { @synchronized(NSProcessInfo.processInfo) { return sn
 BOOL WUEnabled(NSString *key) { return [WUValue(@"enabled") boolValue] && [WUValue(key) boolValue]; }
 BOOL WUSave(NSString *key, id value) {
     NSCAssert(NSThread.isMainThread, @"UI configuration is main-thread owned");
-    if(![@[@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress",@"voiceRealDuration",@"voiceCarry",@"voiceCountdown",@"voiceWaveform",@"voiceAlways",@"voicePulse",@"voiceSeek",@"enabled",@"ads",@"momentsAds",@"miniSplashAds",@"keywords",@"words",@"inputBorder",@"inputPulse",@"hideHomeSearch",@"fileSurface",@"emoticonSurface",@"noticeBorder",@"separators",@"convenientMoments",@"chatSearch",@"callbackConfirm",@"antiRevoke",@"multiRevoke",@"repeatEmoticon",@"mergeGroup",@"mergePrivate",@"mergeBottom",@"redReminder",@"themes",@"sunMoon",@"themePack",@"bubblePack",@"searchSurface",@"referSurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"accounts",@"pluginHub",@"themeOptions",@"surfaceStyles"] containsObject:key]) return NO;
+    if(![@[@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress",@"voiceRealDuration",@"voiceCarry",@"voiceCountdown",@"voiceWaveform",@"voiceAlways",@"voicePulse",@"voiceSeek",@"enabled",@"ads",@"momentsAds",@"miniSplashAds",@"keywords",@"words",@"inputBorder",@"inputPulse",@"hideHomeSearch",@"fileSurface",@"emoticonSurface",@"noticeBorder",@"separators",@"convenientMoments",@"chatSearch",@"callbackConfirm",@"antiRevoke",@"multiRevoke",@"repeatEmoticon",@"mergeGroup",@"mergePrivate",@"mergeBottom",@"redReminder",@"themes",@"sunMoon",@"themePack",@"bubblePack",@"searchSurface",@"referSurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"accounts",@"pluginHub",@"themeOptions",@"surfaceStyles",@"native"] containsObject:key]) return NO;
     BOOL pack=[@[@"themePack",@"bubblePack"] containsObject:key];
     if(pack) { if(![value isKindOfClass:NSString.class] || ([value length] && ![[NSUUID alloc] initWithUUIDString:value])) return NO; }
     else if([key isEqual:@"accounts"]) { if(!WUValidAccountOptions(value)) return NO; }
+    else if([key isEqual:@"native"]) { if(!WUNativeValidOptions(value)) return NO; }
     else if([key isEqual:@"pluginHub"]) { if(!WUHubValidOptions(value)) return NO; }
     else if([key isEqual:@"themeOptions"]) { if(!WUValidThemeOptions(value)) return NO; }
     else if([key isEqual:@"surfaceStyles"]) { if(!WUValidSurfaceStyles(value)) return NO; }
@@ -72,6 +75,7 @@ BOOL WUMatches(Method m, const char *result, NSArray<NSString *> *args) {
     return ok;
 }
 BOOL WUHook(NSString *name, NSString *selector, BOOL meta, const char *ret, NSArray<NSString *> *args, IMP replacement, IMP *original) {
+    if(!WUNativeGuardAllowsHooks()) return NO;
     NSString *key=[NSString stringWithFormat:@"%@%@ %@",meta?@"+":@"-",name,selector];
     if([hooks[key] isEqual:@"installed"]) return YES;
     Class c=NSClassFromString(name); if(meta && c) c=object_getClass(c);
@@ -80,6 +84,7 @@ BOOL WUHook(NSString *name, NSString *selector, BOOL meta, const char *ret, NSAr
     *original=method_getImplementation(m);
     // Add an owned override when inherited; never replace a superclass method by accident.
     if(!class_addMethod(c,s,replacement,method_getTypeEncoding(m))) method_setImplementation(class_getInstanceMethod(c,s),replacement);
+    WUNativeRecordHook(c,s,replacement,original);
     hooks[key]=@"installed"; return YES;
 }
 NSArray *WUHookStatus(void) {
@@ -87,10 +92,10 @@ NSArray *WUHookStatus(void) {
     for(NSString *k in [[hooks allKeys] sortedArrayUsingSelector:@selector(compare:)]) [out addObject:[NSString stringWithFormat:@"%@ — %@",k,hooks[k]]];
     return out;
 }
-static void Install(void) { WUInstallDictation(); WUInstallVoice(); WUInstallAds(); WUInstallTimeline(); WUInstallMomentsCache(); WUInstallAppearance(); WUInstallSurfaces(); WUInstallThemes(); WUInstallMessages(); WUInstallGroups(); WUInstallHomeGroups(); WUInstallPluginHub(); WUInstallSettings(); }
+static void Install(void) { if(!WUNativeGuardAllowsHooks()) return; WUInstallNative(); WUInstallNativeInteractions(); WUInstallNativeGames(); WUInstallDictation(); WUInstallVoice(); WUInstallAds(); WUInstallTimeline(); WUInstallMomentsCache(); WUInstallAppearance(); WUInstallSurfaces(); WUInstallThemes(); WUInstallMessages(); WUInstallGroups(); WUInstallHomeGroups(); WUInstallPluginHub(); WUInstallSettings(); }
 __attribute__((constructor)) static void Start(void) {
-    if(![NSBundle.mainBundle.bundleIdentifier isEqual:@"com.tencent.xin"]) return;
-    dispatch_async(dispatch_get_main_queue(), ^{
+    @autoreleasepool {
+        if(![NSBundle.mainBundle.bundleIdentifier isEqual:@"com.tencent.xin"]) return;
         hooks=[NSMutableDictionary dictionary];
         NSString *base=NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory,NSUserDomainMask,YES).firstObject;
         NSString *dir=[base stringByAppendingPathComponent:@"WeChatUnified"];
@@ -98,7 +103,11 @@ __attribute__((constructor)) static void Start(void) {
         mkdir(dir.fileSystemRepresentation,0700);
         configDir=open(dir.fileSystemRepresentation,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
         snapshot=ReadConfig(@"config.json") ?: ReadConfig(@"backup.json") ?: @{@"schema":@1,@"enabled":@NO,@"words":@""};
-        Install();
-        [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ Install(); }];
-    });
+        // Persist the startup guard before registering any host override. UI stays on main.
+        if(WUNativeStartGuard(configDir)) WUInstallNative();
+        dispatch_async(dispatch_get_main_queue(), ^{
+            Install();
+            [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ Install(); }];
+        });
+    }
 }

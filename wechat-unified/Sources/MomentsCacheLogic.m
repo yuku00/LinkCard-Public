@@ -20,7 +20,7 @@ NSDictionary *WUMCacheNormalize(id tid, id username, id text) {
     while([tid length]>1 && [tid hasPrefix:@"0"]) tid=[tid substringFromIndex:1];
     return @{@"tid":[tid copy],@"username":[username copy],@"text":[text copy]};
 }
-static BOOL Comment(id r) {
+static BOOL WUCommentRecordValid(id r) {
     if(![r isKindOfClass:NSDictionary.class] || [r count]!=5 || !Text(r[@"id"],80) || ![r[@"id"] length] || !Text(r[@"author"],256) || ![r[@"author"] length] || !Text(r[@"text"],1000) || !Text(r[@"replyTo"],256)) return NO;
     id t=r[@"time"]; return [t isKindOfClass:NSNumber.class] && isfinite([t doubleValue]) && [t doubleValue]>=0 && [t doubleValue]<=253402300799.0 && floor([t doubleValue])==[t doubleValue];
 }
@@ -30,7 +30,7 @@ NSArray *WUMCacheMergeComments(NSArray *old, NSArray *observed, NSError **e) {
     for(NSArray *page in @[old,observed]) {
         NSMutableDictionary *seen=[NSMutableDictionary dictionary];
         for(id r in page) {
-            if(!Comment(r)) { Fail(e); return nil; }
+            if(!WUCommentRecordValid(r)) { Fail(e); return nil; }
             NSArray *key=@[r[@"author"],r[@"id"]];
             if(seen[key] && ![seen[key] isEqual:r]) { Fail(e); return nil; }
             NSDictionary *copy=[[NSDictionary alloc] initWithDictionary:r copyItems:YES]; seen[key]=copy; rows[key]=copy;
