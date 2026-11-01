@@ -79,10 +79,32 @@ static void ReclaimTests(void) {
     (void)one;
     assert([NSFileManager.defaultManager removeItemAtURL:root.URLByDeletingLastPathComponent error:&e]);
 }
+static void InFlightTests(dispatch_queue_t io, dispatch_semaphore_t done) {
+    assert(!NSThread.isMainThread);
+    NSURL *root=[[[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES] URLByAppendingPathComponent:NSUUID.UUID.UUIDString] URLByAppendingPathComponent:@"MomentsCache"].URLByResolvingSymlinksInPath;
+    NSURL *text=[root URLByAppendingPathComponent:@"Text"], *media=[root URLByAppendingPathComponent:@"Media"];
+    NSError *e=nil; BOOL (^valid)(void)=^BOOL{ return YES; };
+    NSDictionary *row=WUMCacheObserve(text,@"A",Item(@"1",@"in flight"),100,&e); assert(row);
+    __block BOOL copying=YES, queued=NO, cleaned=NO;
+    assert(WUDraftMediaPutChecked(media,@"A",row[@"id"],@"in flight",@"images",@[[NSMutableData dataWithLength:32768]],^BOOL{
+        assert(copying && !cleaned);
+        if(!queued) { queued=YES; dispatch_async(io,^{ @autoreleasepool {
+            assert(!copying); NSError *error=nil;
+            NSDictionary *result=WUMCacheReclaim(text,media,@"A",1,200000,[NSSet set],valid,&error);
+            assert(result && !error && [result[@"files"] unsignedIntegerValue]==1);
+            cleaned=YES; assert([NSFileManager.defaultManager removeItemAtURL:root.URLByDeletingLastPathComponent error:&error]);
+            dispatch_semaphore_signal(done);
+        }}); }
+        return YES;
+    },&e));
+    assert(!cleaned); copying=NO;
+}
 int main(void) { @autoreleasepool {
     dispatch_queue_t io=dispatch_queue_create("test.moments.io",DISPATCH_QUEUE_SERIAL);
     dispatch_semaphore_t done=dispatch_semaphore_create(0);
     dispatch_async(io,^{ @autoreleasepool { ReclaimTests(); dispatch_semaphore_signal(done); } });
+    assert(dispatch_semaphore_wait(done,dispatch_time(DISPATCH_TIME_NOW,30*NSEC_PER_SEC))==0);
+    dispatch_async(io,^{ @autoreleasepool { InFlightTests(io,done); } });
     assert(dispatch_semaphore_wait(done,dispatch_time(DISPATCH_TIME_NOW,30*NSEC_PER_SEC))==0);
     NSURL *root=[[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES] URLByAppendingPathComponent:NSUUID.UUID.UUIDString].URLByResolvingSymlinksInPath;
     NSURL *media=[root URLByAppendingPathComponent:@"media"];
