@@ -1,4 +1,4 @@
-# WeChat Unified 0.1.0 — independent experimental dylib
+# WeChat Unified 0.2.0 — message interaction development increment
 
 Independent Objective-C source implementation; no original plugin binary, source dump, assets, account data, credentials, AI client or remote service is included. Publication is prepared for the `wechat-unified/` directory on a dedicated branch. Build and publication status must be checked against the dedicated GitHub Actions run for the exact source commit; local structural tests alone do not prove compilation or device compatibility. Existing projects are untouched.
 
@@ -6,7 +6,9 @@ Independent Objective-C source implementation; no original plugin binary, source
 
 This is a small functional first delivery, **not the whole requested feature set**. Implemented: targeted official-account feed advertising switches/plugin filtering; literal Moments keyword filtering; scoped input/system-notice outlines; home-list separator hiding; manual local link detection with explicit default-browser confirmation. One entry is appended to WeChat Settings navigation bar, titled **整合**. No existing navigation item is removed. Actual private class/selector signatures are checked before installation; unsupported switches are disabled with an explanation. The diagnostic page lists structural hook results only, never message/account contents.
 
-Default: all interception and appearance switches OFF. Enable the master and individual items deliberately. No message is sent, recalled, deleted, exported or scanned. Device-level cosmetic/keyword preferences alone are stored in Application Support/WeChatUnified. Atomic writes, checked file fsync, backup and O_NOFOLLOW are used. The plugin does not touch host data files. Account-specific storage/dispatch modules are deliberately absent rather than writing to an unsafe shared account bucket.
+Default: interception and appearance switches remain OFF. This increment adds evidence-gated current-chat search, callback confirmation, received-message local anti-revoke, a separate selected-own-message recall action, regular emoticon repeat, adjacent-avatar grouping and foreground red-packet reminders. Recall and repeat are actual user-confirmed host submissions, not delivery promises; no host deletion fallback or automatic retry exists. Partial/unavailable subfeatures are listed in STATUS.md, notably pre-send pat confirmation, repeat download/theme icons and cross-chat red-packet positioning. Read-only current-session statistics have a production binding, semantic ABI gate and bounded pagination; final aggregation uses a background immutable snapshot. It is not all-account/all-statistics coverage.
+
+Only device preferences are persisted, using atomic writes, checked file fsync, backup and O_NOFOLLOW. Message records and account contexts stay in memory. No original binaries, reverse-engineering dumps, production user data or credentials are published. Process-local submission deduplication is not a durable crash ledger or an exactly-once server guarantee.
 
 ## Build
 

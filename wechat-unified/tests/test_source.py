@@ -8,9 +8,12 @@ class Guardrails(unittest.TestCase):
         hooks=re.findall(r'WUHook\(@"([^"]+)",@"([^"]+)",(YES|NO)', SRC)
         self.assertGreaterEqual(len(hooks),10)
         self.assertEqual(len(hooks),len(set(hooks)))
-    def test_no_host_data_mutation_or_network_client(self):
-        for forbidden in ['DelMsg','AddMsg','sendPat:', 'sendVoice', 'NSURLSession', 'UIKeyboardDockView', 'MSHookMessageEx', 'dlopen(', 'system(']:
+    def test_no_unexpected_delete_or_excluded_client(self):
+        for forbidden in ['DelMsg:', 'sendVoice', 'NSURLSession', 'UIKeyboardDockView', 'MSHookMessageEx', 'dlopen(', 'system(', 'OpenRedEnvelopesRequest', 'HBHelperUtil']:
             self.assertNotIn(forbidden,SRC)
+        messages=(ROOT/'Sources/Messages.m').read_text()
+        self.assertEqual(len(re.findall(r'objc_msgSend\)\([^;]+NSSelectorFromString\(@"AddEmoticonMsg:MsgWrap:"\)', messages)),1)
+        self.assertNotIn('SendPatMgr',messages)  # BOOL protocol is deliberately not deferred/replayed.
     def test_runtime_signature_checks_and_local_override(self):
         self.assertIn('method_getNumberOfArguments',SRC)
         self.assertIn('method_copyArgumentType',SRC)

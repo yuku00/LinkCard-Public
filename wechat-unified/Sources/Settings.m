@@ -27,8 +27,8 @@
 @end
 @implementation WUSettings
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"微信整合 · 0.1.0";
-    self.rows=@[@[@"enabled",@"启用已实现功能"],@[@"ads",@"公众号列表去广告"],@[@"keywords",@"朋友圈字面关键词屏蔽"],@[@"inputBorder",@"输入框描边"],@[@"noticeBorder",@"聊天系统通知描边"],@[@"separators",@"首页列表隐藏分割线"]];
+    [super viewDidLoad]; self.title=@"微信整合 · 0.2.0";
+    self.rows=@[@[@"enabled",@"启用已实现功能"],@[@"ads",@"公众号列表去广告"],@[@"keywords",@"朋友圈字面关键词屏蔽"],@[@"inputBorder",@"输入框描边"],@[@"noticeBorder",@"聊天系统通知描边"],@[@"separators",@"首页列表隐藏分割线"],@[@"chatSearch",@"聊天页头当前会话搜索"],@[@"callbackConfirm",@"通话记录回拨前确认"],@[@"antiRevoke",@"保留收到的被撤回消息（无提示插入）"],@[@"multiRevoke",@"多选撤回自身消息（不删除）"],@[@"repeatEmoticon",@"表情标签 · 常规复读（部分）"],@[@"mergeGroup",@"群聊相邻头像合并显示"],@[@"mergePrivate",@"私聊相邻头像合并显示"],@[@"mergeBottom",@"合并头像置底"],@[@"redReminder",@"红包前台提醒（部分定位）"]];
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"完成" style:UIBarButtonItemStyleDone target:self action:@selector(done)];
     self.tableView.backgroundColor=UIColor.systemGroupedBackgroundColor;
     self.navigationController.navigationBar.prefersLargeTitles=YES;
@@ -41,13 +41,14 @@
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?self.rows.count:(s==1?2:1); }
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return @[@"本期实现（默认关闭，先小范围测试）",@"本地工具",@"宿主适配状态"][s]; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
-    if(s==0) return @"只显示有实现的开关。灰色表示当前宿主缺接口或签名不匹配。去广告需刷新列表；关键词仅过滤新列表，不删内容。外观仅覆盖标题所列容器，不代表整套主题。";
+    if(s==0) return @"只显示有执行路径的开关；灰色表示当前宿主缺接口/签名。消息动作在聊天页，执行前确认并重验上下文。拍一拍同步BOOL协议尚未安全适配，没有伪开关。复读长按下载/主题图标及红包跨会话定位尚未完成。";
     if(s==1) return @"不采集历史、不扫描聊天数据库、不发送消息。外部打开使用系统默认浏览器；不承诺绕过封禁。";
     return @"目标 iOS 16.6 / 微信暂按 8.0.70。签名匹配≠功能已验收。尚无真机验证，完整未完成清单见源码 STATUS.md。无 AI、无 ActionBar、无系统 Dock 修改、无奖励伪报。";
 }
 - (BOOL)available:(NSString *)key {
     if([key isEqual:@"enabled"]) return YES;
     NSDictionary *map=@{@"ads":@"BrandTL",@"keywords":@"WCFacade",@"inputBorder":@"MMGrowTextView",@"noticeBorder":@"SystemMessageCellView",@"separators":@"NewMainFrameViewController"};
+    if(!map[key]) return WUMessageAvailable(key);
     for(NSString *line in WUHookStatus()) if([line containsString:map[key]] && [line hasSuffix:@"— installed"]) return YES;
     return NO;
 }

@@ -10,6 +10,8 @@ NSArray<NSString *> *WUHookStatus(void);
 void WUInstallAds(void);
 void WUInstallTimeline(void);
 void WUInstallAppearance(void);
+void WUInstallMessages(void);
+BOOL WUMessageAvailable(NSString *key);
 void WUInstallSettings(void);
 void WUShowSettings(UIViewController *owner);
 void WUShowLinks(UIViewController *owner);
