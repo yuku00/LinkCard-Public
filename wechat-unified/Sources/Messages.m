@@ -2,6 +2,8 @@
 #import "MessageLogic.h"
 #import "WUStats.h"
 #import "GroupLogic.h"
+#import "Repository.h"
+static void OpenRepository(UIViewController *owner);
 static BOOL StatsReady(id mgr) {
     Method method=class_getInstanceMethod(object_getClass(mgr),NSSelectorFromString(@"GetMsgByCreateTime:FromID:FromCreateTime:Limit:LeftCount:"));
     for(NSString *i in @[@"I",@"i"]) for(NSString *t in @[@"I",@"i"]) for(NSString *l in @[@"I",@"i"]) for(NSString *p in @[@"^I",@"^i"])
@@ -153,12 +155,13 @@ static NSHashTable *chatActions;
         if([key isEqual:@"search"] && !Has(v,@"onSearchItem","v",@[])) continue;
         if([key isEqual:@"stats"] && !StatsReady(Service(@"CMessageMgr"))) continue;
         if([key isEqual:@"moments"] && (!WUEnabled(@"convenientMoments") || !WUMomentsAvailable())) continue;
-        NSString *title=@{@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"moments":@"半屏朋友圈"}[key];
+        NSString *title=@{@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"repository":@"消息仓库",@"moments":@"半屏朋友圈"}[key];
         [menu addObject:[UIAction actionWithTitle:title image:nil identifier:nil handler:^(UIAction *action){
             WUChatActions *target=weak; UIViewController *owner=target.owner;
             @try {
                 if(!owner.viewIfLoaded.window || owner.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(owner)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:key]) return;
                 if([key isEqual:@"settings"]) WUShowSettings(owner);
+                else if([key isEqual:@"repository"]) OpenRepository(owner);
                 else if([key isEqual:@"stats"]) OpenStats(owner);
                 else if([key isEqual:@"moments"]) { if(!WUOpenMoments(owner)) Notice(owner,@"半屏朋友圈当前不可用，未打开全屏替代页面。"); }
                 else if([key isEqual:@"search"] && Has(owner,@"onSearchItem","v",@[])) ((void(*)(id,SEL))objc_msgSend)(owner,NSSelectorFromString(@"onSearchItem"));
@@ -449,4 +452,63 @@ static void OpenStats(UIViewController *owner) {
         };
         WUStatsBindOwner(owner,binding); WUShowStats(owner);
     } @catch(NSException *e) { Notice(owner,@"统计绑定失败，未启动扫描。"); }
+}
+
+// Repository adapters reuse this module's exact account/session/generation checks.
+static id RepositorySource(NSDictionary *identity, NSString *account) {
+    id mgr=Service(@"CMessageMgr");
+    if(!Has(mgr,@"GetMsg:LocalID:","@",@[@"@",@"I"]) && !Has(mgr,@"GetMsg:LocalID:","@",@[@"@",@"i"])) return nil;
+    unsigned int local=[identity[@"local"] unsignedIntValue]; if(!local) return nil;
+    id wrap=((id(*)(id,SEL,id,unsigned int))objc_msgSend)(mgr,NSSelectorFromString(@"GetMsg:LocalID:"),@"filehelper",local);
+    return wrap && [Info(wrap) isEqual:identity] && InSession(identity,account,@"filehelper")?wrap:nil;
+}
+static void OpenRepository(UIViewController *owner) {
+    NSString *account=Account(), *target=Session(owner); NSUInteger gen=generation;
+    if(!account.length || !target.length) return;
+    __weak UIViewController *weak=owner;
+    WURepositoryBinding *binding=[WURepositoryBinding new]; binding.account=account; binding.target=target;
+    BOOL (^current)(void)=^BOOL{
+        UIViewController *v=weak;
+        return v && v.viewIfLoaded.window && UIApplication.sharedApplication.applicationState==UIApplicationStateActive && [WUValue(@"enabled") boolValue] && [account isEqual:Account()] && gen==generation && [target isEqual:Session(v)] && [WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:@"repository"];
+    };
+    binding.current=current;
+    binding.capture=^NSArray *{
+        @try {
+            if(!current() || ![target isEqual:@"filehelper"]) return nil;
+            id selected=Obj(weak,@"getSelectedMsgs");
+            if(![selected isKindOfClass:NSArray.class] || ![selected count] || [selected count]>50) return nil;
+            NSMutableArray *parts=[NSMutableArray array]; NSMutableSet *seen=[NSMutableSet set];
+            for(id wrap in [selected copy]) {
+                NSDictionary *m=Info(wrap);
+                if(!current() || !RepositorySource(m,account) || [seen containsObject:m[@"local"]]) return nil;
+                [seen addObject:m[@"local"]]; [parts addObject:@{@"kind":@"reference",@"identity":m}];
+            }
+            [parts sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b){ NSComparisonResult r=[a[@"identity"][@"time"] compare:b[@"identity"][@"time"]]; return r==NSOrderedSame?[a[@"identity"][@"local"] compare:b[@"identity"][@"local"]]:r; }];
+            return [parts copy];
+        } @catch(NSException *e) { return nil; }
+    };
+    binding.send=^NSString *(NSDictionary *part){
+        if(!current()) return @"失败：上下文失效，未提交";
+        if([part[@"kind"] isEqual:@"text"]) {
+            id mgr=Service(@"CMessageMgr");
+            if(!current()) return @"失败：上下文失效，未提交";
+            // No AddMsg fallback after a possibly submitted call, and no AI helper.
+            return WURepositoryInvoke(mgr,@"sendMsg:toContactUsrName:",part[@"text"],target);
+        }
+        id source=RepositorySource(part[@"identity"],account);
+        if(!source) return @"失败：源消息已失效或查询接口不可用；不是独立备份";
+        id contacts=Service(@"CContactMgr");
+        if(!Has(contacts,@"getContactByName:","@",@[@"@"])) return @"失败：目标查询不可用，未提交";
+        id contact=((id(*)(id,SEL,id))objc_msgSend)(contacts,NSSelectorFromString(@"getContactByName:"),target);
+        if(![Str(contact,@"m_nsUsrName") isEqual:target]) return @"失败：目标不符，未提交";
+        Class cls=NSClassFromString(@"ForwardMessageLogicController");
+        id forwarder=cls?[[cls alloc] init]:nil;
+        if(!WURepositoryCanInvoke(forwarder,@"ForwardMsg:ToContact:")) return @"失败：转发协议不可用，未提交";
+        if(!current() || ![Info(source) isEqual:part[@"identity"]]) return @"失败：源或目标变化，未提交";
+        NSString *status=WURepositoryInvoke(forwarder,@"ForwardMsg:ToContact:",source,contact);
+        // Retention matches the observed host adapter only; this is NOT a receipt timer.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC),dispatch_get_main_queue(),^{ (void)[forwarder class]; });
+        return status;
+    };
+    WUShowRepository(owner,binding);
 }

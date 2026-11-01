@@ -15,7 +15,7 @@ def upload():
         api('POST',P+'/git/refs',{'ref':'refs/heads/'+BRANCH,'sha':parent})
         STATE.write_text(json.dumps({'repo':REPO,'branch':BRANCH,'commit':parent},indent=2))
     commit=api('GET',P+'/git/commits/'+parent)
-    allowed=['Sources/Voice.m','Sources/VoiceLogic.h','Sources/VoiceLogic.m','Sources/VoiceAudio.h','Sources/VoiceAudio.m','tests/voice_logic.m','Sources/AdsLogic.h','Sources/AdsLogic.m','tests/ads_logic.m','tests/ads_hooks.m','tests/ads-stubs/UIKit/UIKit.h','Sources/Moments.m','Sources/MomentsLogic.h','Sources/MomentsLogic.m','tests/moments_logic.m','Sources/HomeLogic.h','Sources/HomeLogic.m','Sources/HomeGroups.m','tests/home_logic.m','Sources/GroupLogic.h','Sources/GroupLogic.m','Sources/Groups.m','tests/group_logic.m','Sources/WU.h','Sources/Core.m','Sources/Ads.m','Sources/Timeline.m','Sources/Appearance.m','Sources/Links.m','Sources/Settings.m','Sources/Messages.m','Sources/MessageLogic.h','Sources/MessageLogic.m','Sources/WUStats.h','Sources/WUStats.m','Sources/ThemeArchive.h','Sources/ThemeArchive.m','Sources/Themes.m','Sources/SunMoon.m','Sources/Surfaces.m','tests/theme_archive.m','tools/build.sh','tools/test_stats.sh','tests/message_logic.m','tests/WUStatsTests.m','tests/test_source.py','README.md','STATUS.md']
+    allowed=['Sources/Repository.h','Sources/Repository.m','Sources/RepositoryLogic.h','Sources/RepositoryLogic.m','tests/repository_logic.m','Sources/Voice.m','Sources/VoiceLogic.h','Sources/VoiceLogic.m','Sources/VoiceAudio.h','Sources/VoiceAudio.m','tests/voice_logic.m','Sources/AdsLogic.h','Sources/AdsLogic.m','tests/ads_logic.m','tests/ads_hooks.m','tests/ads-stubs/UIKit/UIKit.h','Sources/Moments.m','Sources/MomentsLogic.h','Sources/MomentsLogic.m','tests/moments_logic.m','Sources/HomeLogic.h','Sources/HomeLogic.m','Sources/HomeGroups.m','tests/home_logic.m','Sources/GroupLogic.h','Sources/GroupLogic.m','Sources/Groups.m','tests/group_logic.m','Sources/WU.h','Sources/Core.m','Sources/Ads.m','Sources/Timeline.m','Sources/Appearance.m','Sources/Links.m','Sources/Settings.m','Sources/Messages.m','Sources/MessageLogic.h','Sources/MessageLogic.m','Sources/WUStats.h','Sources/WUStats.m','Sources/ThemeArchive.h','Sources/ThemeArchive.m','Sources/Themes.m','Sources/SunMoon.m','Sources/Surfaces.m','tests/theme_archive.m','tools/build.sh','tools/test_stats.sh','tests/message_logic.m','tests/WUStatsTests.m','tests/test_source.py','README.md','STATUS.md']
     # Exact manifest closure only: no SDK repository/history, binaries or private media.
     vendor=json.loads((ROOT/'Vendor/manifest.json').read_text())
     for name,digest in vendor['sha256'].items():
@@ -40,7 +40,7 @@ def upload():
     if not changed:
         print('No actual changes; no commit or CI triggered.'); return
     tree=api('POST',P+'/git/trees',{'base_tree':commit['tree']['sha'],'tree':changed})
-    new=api('POST',P+'/git/commits',{'message':'WeChat Unified: bounded offline SILK/AMR decoder-only integration and native regressions','tree':tree['sha'],'parents':[parent]})
+    new=api('POST',P+'/git/commits',{'message':'WeChat Unified: account-isolated message repository and explicit manual send','tree':tree['sha'],'parents':[parent]})
     assert api('GET',P+'/git/ref/heads/'+BRANCH)['object']['sha']==parent, 'Remote changed during upload'
     api('PATCH',P+'/git/refs/heads/'+BRANCH,{'sha':new['sha'],'force':False})
     state={'repo':REPO,'branch':BRANCH,'commit':new['sha'],'paths':[e['path'] for e in entries]}

@@ -1,8 +1,20 @@
+# 2026-11-01 消息仓库手动闭环增量（本节覆盖历史仓库未实现状态）
+
+已落盘 Repository/RepositoryLogic 与 Messages 生产绑定：账号工具栏手动勾选“消息仓库”，进入当前聊天后可新建独立纯文本、备注改名、删除自有条目、点选多个条目并确认冻结账号和目标用户名后逐项请求。在文件传输助手中先使用宿主多选1–50条，再从工具进入“助手所选入库”；按时间/localID排序保存引用组合，不自动导航助手、不改变宿主选择集、不读取未选择历史、不删原聊天。每条引用保存from/to/real/serverID/localID/time/type身份，发送前GetMsg:LocalID:重查并全字段匹配；缺源明确失败，绝不从文本/XML/媒体路径假恢复。
+
+账号独立Application Support/WeChatUnified/Repository文件，账号UTF8十六进制文件名与文件内账号双核验；二进制plist原子写，失败不更新UI、不做非原子回退。限制每账号200条、每条50项、单批50项、纯文本10000字、备注80字、总文件1MiB；超限显式拒绝。账号名称超过100 UTF8字节拒绝。坏文件加载失败后禁止覆盖，无自动修复/迁移。原消息引用不是媒体备份，独立媒体备份未实现。
+
+纯文本仅使用静态已确认sendMsg:toContactUsrName:，运行时两个对象参数及void/BOOL返回门控；不猜构造/AddMsg时间状态契约，宿主缺此直接协议时明确未提交。原消息经CContactMgr确认目标、ForwardMessageLogicController精确运行期协议检查再ForwardMsg:ToContact:；语音/图片/视频/文件等仅委托宿主原消息转发，不保证宿主支持各类型或资源就绪。所有BOOL均不解释成送达，正常返回只记“已请求”，调用中异常记“未知”，前置失败记“失败”；无350ms送达假设、无自动重试、无提交后替代路径。forwarder三秒保活仅匹配已有观察，不充当回执。
+
+发送前目标确认、按钮busy/consumed及本次面板已处理集合防连点；主队列逐项让出以核验账号/session/generation/前台/总开关/工具选择。切号/后台等取消未提交项、关闭自有界面，已提交不可撤回。防重不跨重启持久化：崩溃后必须先核对宿主再手动发送；不声称恰好一次投递。原有AI/ActionBar/Dock/红包详情/在线主题/视频解析排除不变。
+
+新增仓库纯逻辑及直接生产RepositoryLogic发送入口原生mock（BOOL false仍只已请求、异常未知且仅一次、void转发、签名错误零调用、账号隔离、原子写失败/坏文件/超限）和结构保护；保留全部旧测试。UI、Messages私有服务绑定及媒体真实转发仍无真机验收，未访问真实聊天、未发删真实消息。CI结果完成后记录BUILD-RESULT，不以源码存在冒充兼容。
+
 # 2026-11-01 离线语音生产集成（本节覆盖下方历史缺口）
 
 已将最小固定版本SILK/AMR-NB decoder-only源码接入WUVoiceDecode；标准/腾讯SILK输出明确16kHz mono signed-int16，AMR-NB明确8kHz mono signed-int16，Apple小端数值转换为float计算真实48桶波形与帧时长，沿用原有seek/UI。严格解析长度/TOC，8MiB输入、5120字节SILK包、9000包、180秒、受限内存；坏头/截断/解码错误/超限/取消全部返回失败，不交付部分PCM。NSProgress逐包取消，原request/account/generation检查继续丢弃旧结果。不推测宿主PCM、不执行真实宿主、不上传或修改语音。
 
-依赖仅54+76个解码源码单元及必要头文件，manifest逐文件固定SHA256；许可证/NOTICE随二进制分发，不作专利保证。无encoder、无下载或安装、无额外iOS架构。新增生产C入口合成解码/边界/取消40054原生断言本地Linux通过，19项现有结构检查通过；macOS原生WUVoiceDecode波形/时长与iOS arm64编译结果等待本轮CI，不能称已iOS运行。全部原有测试及排除范围保留。先前dylib基准376016字节，实际变化以成功产物核验为准。
+依赖仅54+76个解码源码单元及必要头文件，manifest逐文件固定SHA256；许可证/NOTICE随二进制分发，不作专利保证。无encoder、无下载或安装、无额外iOS架构。实际CI 41284657099 completed/success，commit 23539a3972d64b4118c1b3dba77d1a8b30389826：macOS原生生产C入口40057断言、WUVoiceDecode/VoiceLogic5162断言、19项结构检查与全部旧测试通过，iOS arm64 decoder/dylib编译链接成功；未在iOS或真实宿主运行。首轮CI暴露AMR优化器差异，固定-Os整数语义并加强完整PCM哈希及精确峰值回归后全量重跑，未删测试。301/301发布文件一致；下载ZIP259069字节/dylib508880字节（较376016增加132864，35.33%）；digest/SHA256/arm64/119页嵌入ad-hoc签名独立核验通过。详情BUILD-RESULT。本段为成功构建后本地补记，未为文档另触发CI，排除范围全部保持。
 
 # 历史：语音显示链增量（当时SILK完整链仍缺）
 

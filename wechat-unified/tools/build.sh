@@ -3,6 +3,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build
 python3 tests/test_source.py
+xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/repository_logic.m Sources/RepositoryLogic.m -framework Foundation -o build/repository-logic-tests
+build/repository-logic-tests | tee build/repository-logic-tests.txt
+rm build/repository-logic-tests
 python3 tools/build_codecs.py macosx
 xcrun --sdk macosx clang -Wall -Wextra -Werror -I Sources tests/offline_voice.c build/codec-macosx/libWUOffline.a -o build/offline-voice-tests
 build/offline-voice-tests 2>&1 | tee build/offline-voice-tests.txt

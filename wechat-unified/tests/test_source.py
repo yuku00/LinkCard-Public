@@ -133,6 +133,19 @@ class Guardrails(unittest.TestCase):
         for required in ['ExtAudioFileRead', 'kAudioFormatFlagsNativeFloatPacked', 'O_NOFOLLOW', 'S_ISREG', '8*1024*1024', 'source.mSampleRate*180', 'if(!known) return nil']:
             self.assertIn(required,audio)
         self.assertIn('tests/voice_logic.m',(ROOT/'tools/build.sh').read_text())
+    def test_repository_manual_atomic_and_no_receipt_claim(self):
+        repo=(ROOT/'Sources/Repository.m').read_text()
+        logic=(ROOT/'Sources/RepositoryLogic.m').read_text()
+        messages=(ROOT/'Sources/Messages.m').read_text()
+        for required in ['self.busy=YES', 'self.submitted', 'if(consumed)', 'work.count>50', 'self.binding.target', '失败：上下文变化，未提交']:
+            self.assertIn(required,repo)
+        for required in ['NSDataWritingAtomic', 'root[@"account"] isEqual:a', '1024*1024', 'method_getNumberOfArguments(m)!=4', 'submitted=YES; [v invoke]', '已请求（非送达）']:
+            self.assertIn(required,logic)
+        for required in ['RepositorySource', 'ForwardMessageLogicController', 'ForwardMsg:ToContact:', 'sendMsg:toContactUsrName:', 'gen==generation', 'OpenRepository(owner)', '[Info(wrap) isEqual:identity]']:
+            self.assertIn(required,messages)
+        self.assertNotIn('350',repo)
+        self.assertNotIn('removeItem',repo+logic)
+        self.assertIn('tests/repository_logic.m',(ROOT/'tools/build.sh').read_text())
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()
         for word in ['未实现','无伪开关','便捷朋友圈','ActionBar','全部 AI','未执行']:
