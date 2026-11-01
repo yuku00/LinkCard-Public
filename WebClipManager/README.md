@@ -1,6 +1,8 @@
-# WebClip Manager — build5 候选修复
+# WebClip Manager — build6 WebClips 只读权限候选
 
-> 当前状态与权限以 [build5 候选说明](Docs/BUILD5-CANDIDATE.md) 为准。已获授权在 `yuku00/LinkCard-Public` 独立构建；下文初始开发阶段的“未上传/未编译”等叙述是历史记录，不代表当前状态。当前只要求一次验证：启动首页 → 手动主界面 → 手动刷新。没有真机通过结论，删除仍不可用。
+> 当前状态以 [build6 证据、变更及最少测试步骤](Docs/BUILD6-READ-ACCESS.md) 为准。用户已确认 build5 在 iPhone14 / iOS16.6 / TrollStore2.1 启动、SwiftUI 和手动刷新正常；未解决的是 WebClips 目录读取拒绝，不是启动闪退。build6 保留已成功的启动架构与原六项权限，仅增加 Safari storage 候选、POSIX 只读访问与脱敏错误诊断。真实读取效果待设备确认，删除禁用。下面初始开发时期的构建/授权状态仅是历史记录，不代表当前结论。
+
+## 初始开发记录（历史）
 
 面向 iOS 16.6 / TrollStore 的 SwiftUI 原生工具，最低部署 iOS 16。**没有编译、签名、安装或真机验证；删除功能明确不可用。** 本次仅写入源码，不创建公开仓库、不上传、不发布、不运行 Actions。
 

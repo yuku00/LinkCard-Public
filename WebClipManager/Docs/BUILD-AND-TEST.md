@@ -1,6 +1,6 @@
 # 手动构建、签名与首次测试
 
-> 以下构建环境状态及首次验收清单保留为初始开发记录。当前授权、六项权限、目录保护与单次启动验证步骤以 [build5 候选说明](BUILD5-CANDIDATE.md) 为准，不再要求重复权限批准或执行整套真机验收。
+> 以下构建环境状态及首次验收清单保留为初始开发记录。当前以 [build6 只读权限说明](BUILD6-READ-ACCESS.md) 为准：build5 启动、SwiftUI 与刷新已获真机确认；build6 保留架构及六项权限、只增加 Safari storage 候选，读取待确认。继续使用已授权的独立 workflow，不重复请求批准。
 
 已获得开始编译授权，但本机缺少 Swift、Xcode、XcodeGen、clang、gh。实际调用 `xcodebuild -project WebClipManager.xcodeproj -scheme WebClipManager -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build` 返回 `/bin/sh: xcodebuild: not found`（退出码 127），并未进入编译。工程尚需 XcodeGen 生成。目录没有 .git/remote，未发现 gh hosts 配置及 GH_TOKEN/GITHUB_TOKEN 环境变量，无法确认远程认证或触发 Actions。没有安装依赖、创建仓库、上传、发布或安装应用。
 
