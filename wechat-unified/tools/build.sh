@@ -3,6 +3,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build
 python3 tests/test_source.py
+xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/ads_logic.m Sources/AdsLogic.m -framework Foundation -o build/ads-logic-tests
+build/ads-logic-tests | tee build/ads-logic-tests.txt
+rm build/ads-logic-tests
+xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I tests/ads-stubs -I Sources tests/ads_hooks.m Sources/Ads.m Sources/AdsLogic.m -framework Foundation -o build/ads-hook-tests
+build/ads-hook-tests | tee build/ads-hook-tests.txt
+rm build/ads-hook-tests
 xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/message_logic.m Sources/MessageLogic.m -framework Foundation -o build/message-logic-tests
 build/message-logic-tests | tee build/message-logic-tests.txt
 rm build/message-logic-tests

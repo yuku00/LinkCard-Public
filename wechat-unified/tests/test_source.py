@@ -4,6 +4,20 @@ import re, unittest
 ROOT=Path(__file__).resolve().parents[1]
 SRC='\n'.join(p.read_text() for p in sorted((ROOT/'Sources').glob('*')))
 class Guardrails(unittest.TestCase):
+    def test_independent_ad_scope_and_reward_passthrough(self):
+        ads=(ROOT/'Sources/Ads.m').read_text()
+        hooks=re.findall(r'WUHook\(@"([^"]+)",@"([^"]+)"',ads)
+        self.assertEqual(set(hooks), {('BrandTLExptConfig','isExptNotShowAd'),('BrandTLFlutterViewController','enableAd'),('BrandTLCanvasCardMgr','isAdRequestOpen'),('BrandTLCanvasCardMgr','isAdCardOpen'),('BrandTLFlutterViewController','getMagicBrushFlutterPlugins'),('WCAdvertiseDataHelper','IsAdvertiseDataValid:dataItem:'),('WAAppTaskSplashADConfig','canShowSplashADWindow'),('WAAppTaskSplashADConfig','canHotStartShowSplashAD')})
+        for forbidden in ['handleJSEvent:', 'isSplashADFinished', 'splashADHasContent', 'WAJSInvoker', 'URLWithString:', 'saveAdvertiseDatas', 'm_advertiseList']:
+            self.assertNotIn(forbidden,ads)
+        self.assertIn('splashWindowReady && splashHotReady',ads)
+        self.assertIn('@"IsAdvertiseDataValid:dataItem:",NO,@encode(BOOL),@[@"@",@"@"]',ads)
+        self.assertIn('BOOL original=((BOOL(*)(id,SEL,id,id))momentsValid)',ads)
+        for key in ['momentsAds','miniSplashAds']:
+            self.assertIn(key,(ROOT/'Sources/Core.m').read_text())
+            self.assertIn(key,(ROOT/'Sources/Settings.m').read_text())
+        self.assertIn('WUAdsAvailable(key)',(ROOT/'Sources/Settings.m').read_text())
+        self.assertIn('tests/ads_logic.m',(ROOT/'tools/build.sh').read_text())
     def test_single_hook_owner(self):
         hooks=re.findall(r'WUHook\(@"([^"]+)",@"([^"]+)",(YES|NO)', SRC)
         self.assertGreaterEqual(len(hooks),10)

@@ -8,6 +8,7 @@ BOOL WUMatches(Method method, const char *result, NSArray<NSString *> *arguments
 BOOL WUHook(NSString *className, NSString *selector, BOOL meta, const char *result, NSArray<NSString *> *arguments, IMP replacement, IMP *original);
 NSArray<NSString *> *WUHookStatus(void);
 void WUInstallAds(void);
+BOOL WUAdsAvailable(NSString *key);
 void WUInstallTimeline(void);
 void WUInstallAppearance(void);
 void WUInstallMessages(void);
