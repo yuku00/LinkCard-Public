@@ -51,7 +51,7 @@ static NSHashTable<WUMomentsSheet *> *sheets;
     UIButton *close=[UIButton buttonWithType:UIButtonTypeSystem]; [close setTitle:@"关闭朋友圈" forState:UIControlStateNormal];
     close.accessibilityLabel=@"关闭半屏朋友圈并返回聊天"; [close addTarget:self action:@selector(closeTapped) forControlEvents:UIControlEventTouchUpInside];
     close.translatesAutoresizingMaskIntoConstraints=NO; [self.view addSubview:close];
-    UIButton *drafts=[UIButton buttonWithType:UIButtonTypeSystem]; [drafts setTitle:@"草稿/存文字" forState:UIControlStateNormal];
+    UIButton *drafts=[UIButton buttonWithType:UIButtonTypeSystem]; [drafts setTitle:@"草稿 / 保存" forState:UIControlStateNormal];
     [drafts addTarget:self action:@selector(draftsTapped) forControlEvents:UIControlEventTouchUpInside]; drafts.translatesAutoresizingMaskIntoConstraints=NO; [self.view addSubview:drafts];
     [NSLayoutConstraint activateConstraints:@[[drafts.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16],[drafts.topAnchor constraintEqualToAnchor:self.view.topAnchor],[drafts.heightAnchor constraintEqualToConstant:44],[drafts.trailingAnchor constraintLessThanOrEqualToAnchor:close.leadingAnchor constant:-8]]];
     [self addChildViewController:self.content]; UIView *body=self.content.view; body.translatesAutoresizingMaskIntoConstraints=NO; [self.view addSubview:body];

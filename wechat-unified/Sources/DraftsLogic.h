@@ -6,3 +6,5 @@ BOOL WUDraftsDelete(NSURL *directory, NSString *account, NSString *uuid, NSError
 BOOL WUDraftsEditorAvailable(Class cls);
 id WUDraftsCreateEditor(Class cls);
 id WUDraftsTextView(id editor);
+id WUDraftsObject(id receiver, NSString *selector);
+id WUDraftsCreateImageEditor(Class cls, NSArray *images);

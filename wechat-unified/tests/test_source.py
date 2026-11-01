@@ -146,6 +146,18 @@ class Guardrails(unittest.TestCase):
         self.assertNotIn('350',repo)
         self.assertNotIn('removeItem',repo+logic)
         self.assertIn('tests/repository_logic.m',(ROOT/'tools/build.sh').read_text())
+    def test_draft_media_owned_transaction_and_honest_restore(self):
+        logic=(ROOT/'Sources/DraftMediaLogic.m').read_text()
+        ui=(ROOT/'Sources/Drafts.m').read_text()
+        host=(ROOT/'Sources/DraftsLogic.m').read_text()
+        for required in ['NSDataWritingAtomic', 'NSDataWritingWithoutOverwriting', 'Hash(check)', 'Load(d,a,e)', '512ULL*1024*1024', 'URLByResolvingSymlinksInPath', 'S_ISREG']:
+            self.assertIn(required,logic)
+        for forbidden in ['removeItem', 'unlink(', 'NSKeyedArchiver', 'object_setIvar', 'setDraftItemVideoPath']:
+            self.assertNotIn(forbidden,logic+ui+host)
+        for required in ['UIImagePNGRepresentation', 'imageSelectorController', 'arrImages', 'video-backup', 'WUDraftMediaPut', 'WUDraftMediaURLs', 'isEqualToArray:images', '位置、可见范围', 'draftMediaKey']:
+            self.assertIn(required,ui)
+        self.assertIn('initWithImages:images contacts:nil',host)
+        self.assertIn('tests/draft_media_logic.m',(ROOT/'tools/build.sh').read_text())
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()
         for word in ['未实现','无伪开关','便捷朋友圈','ActionBar','全部 AI','未执行']:

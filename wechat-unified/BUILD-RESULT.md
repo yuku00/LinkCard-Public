@@ -1,0 +1,284 @@
+# 2026-11-01 文字草稿准确构建收尾（未重复编译）
+
+CI 41288097864 completed/success，commit `93b6c5a71d52b670595387b79d95243a644a4821`，artifact 13075473694 已通过独立本地 api.html / 严格TLS下载。ZIP 282508字节，SHA256 `626997f42072456ca13e165be07a46026dc641a4682f353925f622e93516a93d` 与远端digest一致。dylib 544128字节，SHA256 `f135ab3bae0bf6124c480e82a396d2113266465356ad0b8010080b6991970d9e` 与SHA256SUMS一致。arm64 MH_DYLIB；CI strict codesign通过，本地独立验证嵌入ad-hoc CodeDirectory 128页×4096字节及特殊槽哈希。产物在 artifacts/run-41288097864；核验记录 verification-41288097864.json。远低于50MB，未安装或注入宿主。该产物仅文字草稿，不代表媒体完成。本地旧HEAD与工作树均保留。
+
+# 2026-11-01 账号消息仓库：实际CI成功交付
+
+- 最新commit `a062ce0a663999cc766790214f9441f4fb97d899`；现有独立分支 `wechat-unified/initial-20261101` 从指定 `23539a3972d64b4118c1b3dba77d1a8b30389826` 快进3次，13条自主路径；未reset旧HEAD/工作树、未强推、未改其他项目。最终306/306发布白名单blob一致（后补此文档前），审计见 `artifacts/repository-remote-diff.json` 与 `artifacts/recovery-audit.json`。未上传原库、转储、用户数据或Key，原排除项不变。
+- [CI 41286051033](https://github.com/yuku00/LinkCard-Public/actions/runs/41286051033) completed/success；[artifact 13075217370](https://github.com/yuku00/LinkCard-Public/actions/runs/41286051033/artifacts/13075217370) 已下载核验。严格TLS使用本次自有api.html标签与环境token，未打印凭据。
+- 实际新增：账号独立原子文件仓库，纯文本新建、助手宿主所选消息身份引用入库、备注/删除自有条目、手动工具栏入口、组合选择与冻结目标确认、逐项已请求/失败/未知。Messages复用account/session/generation；自有仓库模态例外避免正常打开就取消，原聊天导航所有权仍核验。切号/后台/停用取消未提交；无自动重试或提交后回退。原消息引用不是媒体备份，源消失不假恢复。
+- macOS原生实际执行：Repository生产逻辑/宿主发送入口mock **53断言**（账号文件隔离/文件内账号双核验、坏文件、实际1MiB超限、写入失败、BOOL false非送达、异常未知且仅调用一次、错误ABI零调用、void转发）；20项结构测试；GroupLogic34断言（旧32语义全保留，另加仓库合法/去重两项）；所有旧语音/codec、Ads及生产Hook mock、Messages、Home、Moments、主题、WUStats18项0失败全部通过。源码整体iOS arm64/min16.6实际编译链接、ad-hoc签名与strict校验成功。不是再次开展codec核验任务，仅正常保留全量回归。
+- 失败根因完整保留：首轮41285687845编译发现Apple UInt typedef冲突，改私有RepoUInt；第二轮41285812426旧“仓库未实现”夹具仍把repository当非法动作，保留该非法动作拒绝/去重测试但将不支持样例改为autoReply，并新增repository合法及去重测试，没有删除测试。第三轮全量成功；同时补齐模态生命周期例外及结构回归。
+
+## 下载与独立核验
+
+- ZIP：`artifacts/WeChatUnified-41286051033.zip`，**275119字节**；SHA256 `e3a427769f178d14b513a324632b93860e9770631296dcfdc83affc984626578`，与GitHub digest完全一致。
+- dylib：`artifacts/run-41286051033/WeChatUnified.dylib`，**543568字节**，较上版508880增加34688（约6.82%）；SHA256 `a007d53e5c118f855adcf5a7ff5559e780485b853bd2743fa2cbb31d4f1cc1e6`，与CI SHA256SUMS一致。
+- 64-bit arm64 MH_DYLIB、IOS/min16.6、系统依赖；CI `codesign --verify --strict` 通过，本地另逐页核验嵌入CodeDirectory **128页×4096** SHA256及特殊槽，ad-hoc标志有效。ad-hoc不等于开发者分发签名。
+- 产物ZIP无测试可执行/mock库；仅dylib、验证文本/文档、既有解码依赖许可证。未安装任何新工具链或宿主；无真实微信读取/发送/删除操作。
+
+## 精确缺口与未验边界
+
+1. 文本仅适配已证据确认且运行时匹配的 `CMessageMgr sendMsg:toContactUsrName:`；缺此协议的宿主明确失败，不猜CMessageWrap时间/状态构造、不做AddMsg盲回退。
+2. 原消息转发仅通过 `ForwardMessageLogicController ForwardMsg:ToContact:`；图片/视频/语音/文件/名片等是否被具体宿主支持、附件清理/未下载、真正送达均未验。没有独立媒体备份，没有源失效恢复或自动定位/导航助手。
+3. 助手入库依赖用户先在宿主多选；尚未真机验证多选模式与聊天工具菜单同时可达性、UI弹窗/键盘/模态完整生命周期。没有伪造一个微信运行环境来声称这些通过。原生mock覆盖直接生产RepositoryLogic调用边界，不等于整段Messages宿主服务/UI集成测试。
+4. 防重复仅当前面板及确认/单批，不是跨重启恰好一次；没有持久发送账本/服务端回执，崩溃或未知后需用户先在宿主核对。关闭/切号不撤销已提交的宿主请求。
+5. 总量200条、每条/批50项、文本10000字、备注80字、文件1MiB，账号UTF8最多100字节；显式拒绝超限，不丢弃旧条目。文件为自有明文plist依赖宿主沙盒保护，不声称独立加密。
+
+本节与STATUS为成功下载核验后的本地交付补记，未为文档再次触发CI。
+
+# 2026-11-01 离线SILK/AMR生产集成交付：实际CI成功
+
+- 成功commit `23539a3972d64b4118c1b3dba77d1a8b30389826`，分支 `wechat-unified/initial-20261101` 从指定348040c快进两次；保留本地旧HEAD与全部未提交成果，不reset、不动其他项目。
+- [Actions 41284657099](https://github.com/yuku00/LinkCard-Public/actions/runs/41284657099) completed/success；artifact `13075105011` 已下载。301/301发布白名单文件与成功提交一致（后补本段文档之前）。源码仅必要固定版本decoder闭包/许可证/构建测试及合成fixture，无原插件、逆向转储、真实媒体或凭据。
+- 主工程WUVoiceDecode实际接入标准/腾讯SILK、AMR-NB；SILK明确请求16kHz、AMR-NB8kHz，mono signed-int16 Apple小端，数值转换float计算真实波形与时长，沿用seek/UI。8MiB文件、5120字节SILK包、9000包、180秒、受限内存，错误/截断/超限/取消不返回部分成功。NSProgress逐包取消与既有request/account/generation交付检查并存。
+- macOS runner实际执行：19项结构检查；生产C入口40057断言（完整PCM指纹、峰值、真实时长、错误输入、取消、180秒边界）；WUVoiceDecode/VoiceLogic 5162断言（含保留的52项旧断言和合成波形/seek）；Ads14及运行期Hook fixture、Message21、Group32、Moments29、Home、主题ZIP、WUStats18/0失败全部通过。iOS arm64 decoder静态库及dylib实际编译链接通过，平台IOS/min16.6/SDK18.5；未在iOS或真实微信执行。
+- 首轮CI `41284108859` 没有跳过失败：暴露旧AMR固定点代码GCC -O2与Clang/GCC -O0/-Os输出差异。最终固定`-Os -fwrapv -fno-strict-aliasing`，采用全部PCM FNV64及精确峰值（SILK b33249e300d33e5b/12595；AMR 66b16db954fbb6aa/2992）替代任意振幅阈值；保留所有测试。独立现有FFmpeg在同一合成AMR的峰值3300，与不同实现有差异，不把旧smoke的9960当跨编译器金标准；不宣称穷尽codec符合性。
+
+## 已下载产物及独立核验
+
+- ZIP `artifacts/WeChatUnified-41284657099.zip`：259069字节，SHA256 `98a74c5c32c4678ccfe6e769558234b721dc56f78d607c79a474b75f0c8b0d17`，与GitHub digest完全一致。
+- dylib `artifacts/run-41284657099/WeChatUnified.dylib`：508880字节，SHA256 `7d2a39d838246343221774e7208a617ff370492c3b2f5e5c300cd1be174e142e`，与SHA256SUMS一致；原376016字节，增加132864字节（35.33%）。ZIP由160802增至259069字节（含新增测试证据与许可证）。
+- 本地Mach-O解析为64-bit arm64 MH_DYLIB；CI严格codesign验证通过，本地独立验证119个4096字节嵌入CodeDirectory代码页及特殊槽SHA256。签名ad-hoc，非商店/分发证书。
+- SILK许可证、AMR Apache LICENSE及完整NOTICE随包，逐字节与源码一致。Skype BSD式条件保留，不作专利保证。只构建54个SILK+76个AMR单元，无encoder，无安装下载，无多余iOS架构。
+- 精确源码ZIP `artifacts/WeChatUnified-source-23539a3.zip`：301个已审计文件、721599字节；SHA256 `1c8c7f4586cdbaf67dfcd0d2417c4e0e33d87a9f63363d0b304a879e62f95f5b`。此包与成功提交一致，本段为之后本地补记，不为文档重复触发CI。
+
+限制：AMR-WB、坏质量/NO_DATA与保留FT拒绝；无一般完整性校验的合法帧位翻转、恰好帧边界截短无法普遍识别。宿主路径/ABI仍须运行时匹配；未执行真机注入、真实媒体、宿主播放seek兼容和性能验收。全部AI、ActionBar/Dock、红包详情、在线主题、视频解析继续排除。
+
+---
+
+# 历史：语音显示链增量（当时SILK完整链仍缺）
+
+- 最新commit `348040c4a8fb4de331536f09717822632b07c5d0`；在既有 `wechat-unified/initial-20261101` 分支从55b1eb4快进两次，未reset本地旧HEAD、未动其他项目。
+- [CI 41280295233](https://github.com/yuku00/LinkCard-Public/actions/runs/41280295233) completed/success；[artifact 13072693084](https://github.com/yuku00/LinkCard-Public/actions/runs/41280295233/artifacts/13072693084)。第一次CI 41280169716因AudioToolbox既有Size类型与本地回调同名而编译失败；改为VoiceDataSize后全量重新通过，无删测试或忽略-Werror。
+- 19项结构检查、新增Voice52项原生断言通过，包含实际生成WAV→生产AudioToolbox解码→实际帧时长/48桶峰值、静音/双声道/非有限值/边界、整数毫秒seek与生产lease生命周期判定。全部旧Ads14与运行Hook fixture、Message21、Group32、Moments29、Home、主题ZIP、WUStats18/0失败均通过。iOS arm64严格编译链接与codesign验证成功。
+- 发布白名单49/49 blob与远端一致，机器记录 `artifacts/remote-audit-41280295233.json`（本地后补交付文档之前）；仅自主源码、测试和构建说明，不含逆向库/转储/用户媒体/凭据。所有网络经自己的本地api.html桥和原生严格TLS，token只从环境引用。
+
+## 产物独立核验
+
+- ZIP `artifacts/WeChatUnified-41280295233.zip`，160802字节；SHA256 `91361ef414bae8b0f76a254e4ba6a69d54b4c1d59593c8eed7877bce699f3fef`，等于GitHub artifact digest。
+- dylib `artifacts/run-41280295233/WeChatUnified.dylib`，376016字节；SHA256 `bd59077d2ce248506336201d7f3387e2d0fb7b2ba102577a4cdab6e7a6a6b54e`，等于包内SHA256SUMS。
+- 本地解析确认64-bit arm64 MH_DYLIB；CI codesign --verify --strict通过；本地独立核对嵌入CodeDirectory的87个4096字节代码页及特殊槽SHA256，ad-hoc标志正确，非分发证书签名。
+- 记录 `artifacts/verification-41280295233.json`、`ci-artifacts-41280295233.json`、完整 `ci-41280295233.log`。先查160802字节体积后下载；没有安装工具包或注入微信。
+
+## 执行链与准确缺口
+
+真实播放器currentPlayTime读取和seekToTime:均运行时验ABI，旧导出证明32位毫秒；不是浮点秒。显示层不改任何原消息/模型时长，不自动播放/发送，不访问网络。系统已识别WAV/CAF/M4A容器才解码PCM并计算真实时长/真实波形；拖动仅在当前播放、成功解码和账号/消息/代次/服务实例有效时松手调用seek，进度只由随后真实时钟读取更新。单显示计时器，后台/关闭/复用/离页取消；无随机波形、无假进度、无抢键盘。
+
+**尚未满足所有普通微信语音的完整链：SILK/AMR没有当前宿主PCM布局/采样率可靠契约，不冒险猜24kHz。** 对这类消息只显示宿主真实已播放时间，明确标记总时长/波形不可用且禁止seek。保持键盘无可靠入口，未加入。真实UIKit布局、手势与聊天滚动冲突、宿主时间语义/实际seek命中、切号与后台等仍需隔离真机验收；现有模拟测试不是宿主验收。没有真实收发删或真机通过结论，不称全项目完成。全部AI/ActionBar Dock/红包详情/在线主题/视频解析继续排除。
+
+本说明及STATUS为成功后的本地交付补记，不为文档再次触发CI；归档内STATUS保留构建时状态。
+
+---
+
+# 2026-11-01 独立广告：真实CI通过与产物核验
+
+本轮只收敛朋友圈广告有效性和小程序非激励开屏两个独立模块，公众号五入口保持不变。默认关闭；精确运行签名门控；朋友圈仅广告validator且dataItem精确WCDataItem、参数完整才改原YES为NO；小程序只canShow双门控且两处完整可用。不吞JS事件、不伪造激励完成/奖励、不全局改URL、不清空广告存储。不是全项目完成；目标微信真实命中与生命周期未验收。
+
+- commit `55b1eb447321d73cd1c94c64f526da14442172f2`，从`16ca9c7398906dceda9863f8abdecc1ba04ab1bb`在现有独立分支快进1次，仅12条自主源码/测试/STATUS/构建路径，无workflow或其他项目变化。未reset主工程旧HEAD。
+- [CI 41279290907](https://github.com/yuku00/LinkCard-Public/actions/runs/41279290907)：completed/success，首次构建成功，无删测试或忽略错误。
+- [Artifact 13072367167](https://github.com/yuku00/LinkCard-Public/actions/runs/41279290907/artifacts/13072367167)，head_sha与远端/发布状态一致。
+- 18项结构检查、AdsLogic14项原生断言、直接编译生产Ads.m的真实ObjC方法Hook fixture通过（签名错误/缺门控/未知与nil模型/开关回退/原IMP次数/激励及JS事件原路径）。原MessageLogic21、GroupLogic32、MomentsLogic29、HomeLogic、主题ZIP与WUStats18项/0失败均通过；严格-Werror编译链接和签名验证通过。
+- 发布43/43白名单blob与远端完全一致（文档后补之前）；证据`artifacts/remote-audit-41279290907.json`。仅白名单自主文件公开，无原库、转储、素材或凭据。
+
+## 下载与独立核验
+
+- ZIP：`artifacts/WeChatUnified-41279290907.zip`，146011字节。
+- ZIP SHA256：`30477812d4d7291a838bbb5f666beb699df59d66b346b0550bbda3d5a0d3f8f7`，等于GitHub digest。
+- dylib：`artifacts/run-41279290907/WeChatUnified.dylib`，356720字节。
+- dylib SHA256：`c5e935f9758b62376346dca43b4a5eb2803e2033eb7e0cd894f9e43355ee30b0`，等于包内SHA256SUMS。
+- 本地确认64-bit arm64 MH_DYLIB；CI codesign --verify --strict通过；本地独立解析LC_CODE_SIGNATURE/SuperBlob/CodeDirectory核对82个4096字节代码页和嵌入特殊槽SHA256，ad-hoc标记正确，不是分发身份签名。
+- 证据`artifacts/verification-41279290907.json`、`ci-artifacts-41279290907.json`与完整`ci-41279290907.log`。自己的本地api.html桥，原生严格TLS，环境token不输出。已先查体积，未安装任何工具包或注入微信。
+
+未加入表情图库/图片转表情：没有补齐原始动态数据→Photos及权限/完成反馈链，不把静图当GIF；未重复猜拍一拍接口。AI/ActionBar Dock/红包详情/在线主题/视频解析继续排除。没有真实收发删、原远程认证或目标宿主验收；小程序正常状态机、朋友圈缓存及实际广告过滤效果仍须隔离设备验证。此段及STATUS为成功后本地交付补记，归档STATUS保留构建时状态，不为文档再次提交。以下为历史。
+
+---
+
+# 2026-11-01 半屏朋友圈：实际发布、测试与签名核验闭合
+
+最新commit `16ca9c7398906dceda9863f8abdecc1ba04ab1bb`，从 `f031091092f7cf7e2a7e79cecc8a3a605e7f4a0d` 在既有独立分支 `wechat-unified/initial-20261101` 快进1次。只变更13个 `wechat-unified/` 自主路径，没有其他项目/workflow/原库/逆向转储/附件/凭据。主工程未reset；38项发布白名单在后补文档前逐blob与远端完全一致，审计存于 `artifacts/remote-audit-41278387645.json`。
+
+## 真实CI与新增实现
+
+- [CI 41278387645](https://github.com/yuku00/LinkCard-Public/actions/runs/41278387645)：completed / success，首次构建即成功，无删测试、无失败绕过。
+- [Artifact 13072167405](https://github.com/yuku00/LinkCard-Public/actions/runs/41278387645/artifacts/13072167405)。run与artifact的head_sha均与远端一致。
+- `Sources/Moments.m`：签名门控创建真实WCTimeLineViewController；自有UIPresentationController固定半屏、导航子控制器containment、关闭自有展示链、保留聊天布局；精确聊天输入对象消费完整小写rp且清空同步通知宿主delegate，未调用任何发送接口；已接账号手动工具菜单和真实开关，默认关闭。
+- `Sources/MomentsLogic.h/.m`：rp/组合输入/编辑状态/归属、账号会话代次失效及半屏几何判断；`tests/moments_logic.m`真实原生29项断言全部通过。
+- 17项结构检查、原MessageLogic21断言、GroupLogic32断言、HomeLogic与主题ZIP原生测试、WUStats18项XCTest/0失败全部通过。arm64/iOS16.6最低部署、严格-Werror编译链接通过。
+
+## 已下载及独立核验
+
+- ZIP：`artifacts/WeChatUnified-41278387645.zip`，143607字节。
+- ZIP SHA256：`d1838d8fd4c388c841ca66aca8044ed6f18da91d0d87757ee951fb56dc0cfb15`，与GitHub artifact digest相等。
+- dylib：`artifacts/run-41278387645/WeChatUnified.dylib`，356528字节。
+- dylib SHA256：`f3171d1aa33d56c98e3b01322ad5b8f2f11b213ec2dd3cf5b48d7cbe42e4e835`，与包内SHA256SUMS相等。
+- 本地核验64-bit arm64 MH_DYLIB；CI `codesign --verify --strict`、valid on disk、Designated Requirement通过；另外本地解析LC_CODE_SIGNATURE、SuperBlob、CodeDirectory，独立逐一核对82个4096字节SHA256代码页及嵌入特殊槽摘要，ad-hoc标记正确。不是开发者分发签名，也不代表宿主兼容。
+- 机器证据：`artifacts/verification-41278387645.json`；完整日志：`artifacts/ci-41278387645.log`。全程自己的本地api.html标签、原生严格TLS；凭据仅环境取用，无输出、无上传、无大型安装。
+
+## 精确残余与风险
+
+拍一拍仍未完成：现有定向引用只闭合同步BOOL发送路径，头像单击/插件自身手势候选未证为可冻结目标的发送前动作；没有假成功、异步重放或空开关。半屏朋友圈源码/CI完成不等于微信8.0.70真机验收：输入结构不匹配时rp绑定不可用；宿主自己的导航、媒体/评论、在途网络取消、旋转、切号和键盘实际布局需隔离设备验收。自己的关闭只在用户明确关闭、原账号会话代次有效、原输入仍在原窗口且无其他第一响应者时恢复键盘；失效/后台取消不抢焦点。没有真实宿主注入、发送、撤回或数据删除；不称全部项目完成。AI/ActionBar Dock/红包详情/在线主题/视频解析保持排除。
+
+此段及STATUS的CI结果为成功后本地交付补记；归档STATUS保留编译时状态，不为文档再次提交/重复构建。以下均为旧版本历史。
+
+---
+
+# 2026-11-01 首页分组同步加固：历史发布闭合
+
+**最新工作树生产代码已发布，CI真实成功，产物已下载核验；仍无真机验收。以下最新结论覆盖所有历史章节。**
+
+- 首次实查远端 head 仍为 `82bf8e04567323380539117832021639a8f79055`，与 release-state 一致，无他人新增提交；34个白名单文件中33个 blob 相同，唯一未发布差异为 `Sources/HomeGroups.m`。旧本地git HEAD没有作为依据。
+- 仅将这一个文件快进发布为 `f031091092f7cf7e2a7e79cecc8a3a605e7f4a0d`；未强推、reset、重复发布旧成果或修改其他项目/workflow。发布后34/34白名单blob一致，之后STATUS仅追加本地交付说明，不再为文档重跑CI。
+- 仓库 `yuku00/LinkCard-Public`，分支 `wechat-unified/initial-20261101`；release-state、实查分支head、run head_sha及artifact head_sha一致。
+- CI：https://github.com/yuku00/LinkCard-Public/actions/runs/41277007885 ，completed / success；编译与上传均成功。
+- 产物：https://github.com/yuku00/LinkCard-Public/actions/runs/41277007885/artifacts/13071840910 。本地ZIP：`artifacts/WeChatUnified-41277007885.zip`；dylib：`artifacts/run-41277007885/WeChatUnified.dylib`。
+
+## 同步加固已纳入
+
+HomeGroups.m 已包含 setNormalSessions 返回前同步投影、置顶计数setter同步apply、配置/页签变化调用签名门控的 MainSessionMgr.onNeedReload 重建宿主派生缓存，以及会话getter解码异常返回nil的回退。未扩展功能、未删除或削弱测试。首页分组最小生产链已编码并编译通过，历史“未实现/待CI”不再代表当前状态；宿主实际行为仍未验收。
+
+## 核验结果
+
+- 15项结构检查；MessageLogic 21条原生断言；GroupLogic 32条原生断言；HomeLogic分类、原对象索引、折叠置顶、计数、恢复、自定义删除及账号隔离测试；主题ZIP原生测试；WUStats XCTest18项、0失败：实际CI全部通过。
+- 严格 `-Werror` 编译链接通过，arm64 MH_DYLIB，iOS最低16.6 / SDK18.5。
+- ZIP 134858字节，SHA256 `054f6046f199c70f8a7eeaefe7eceed7c0e02d00bd3e600e6f43fade6de0497a`，本地实算匹配GitHub digest，ZIP CRC检查通过。
+- dylib 321792字节，SHA256 `eb2f8e6128a5b05ec9018ca81f3838be1f9e718e626584237b9a992f1578d5d3`，匹配包内SHA256SUMS；本地二进制头确认64-bit arm64 MH_DYLIB。
+- CI实际执行 `codesign --verify --strict` 成功；日志及包内signature.txt含 valid on disk / satisfies its Designated Requirement / Signature=adhoc。不是Linux本地codesign或分发签名。
+- 证据：`artifacts/recovery-audit.json`、`ci-artifacts-41277007885.json`、`ci-41277007885.log`、`verification-41277007885.json`及runs.json。归档只含dylib、文档与检查日志，不含测试可执行/mock库。
+- 全部网络经自己的本地tools/api.html标签及严格TLS桥；凭据仅环境引用，无-k、无密钥输出、无大型工具安装。
+
+## 未验收边界
+
+未执行TrollFools注入、微信宿主加载、真实收发/撤回/删除；未验证关闭恢复、切号、复用、后台更新/原地数组变更、折叠置顶与点击索引一致性及性能。源码/纯逻辑测试/签名通过不能代替iOS16.6、微信8.0.70真机兼容验收。AI、ActionBar/Dock、在线主题、红包详情、视频解析继续排除；不宣称全项目完成。
+
+---
+
+# 历史：2026-11-01 0.3.1 分组与手动工具栏：中断恢复交付
+
+## 最新结论
+
+**确切增量CI已成功，产物已下载并核验；不是全项目完成，未做微信宿主真机验收。** 前任务在提交严格编译修复与生命周期补丁后无文本结束，不代表构建失败。本轮只恢复查询、核对增量源码与成功产物、更新交付文档；没有重做实现、重跑成功构建、reset或重复发布。
+
+- 仓库：`yuku00/LinkCard-Public`，独立分支：`wechat-unified/initial-20261101`。
+- 远端分支头、release-state、Actions head_sha、artifact workflow_run.head_sha均为 `54e770622e4eff757685a424e35292d594fa3a8f`。
+- CI：https://github.com/yuku00/LinkCard-Public/actions/runs/41274413299 ，实际 `completed / success`，编译及上传步骤成功。旧runs.json记录的68899e3b…失败已被本次实查更新，不能用旧记录判定新commit失败。
+- GitHub产物：https://github.com/yuku00/LinkCard-Public/actions/runs/41274413299/artifacts/13070760778 （可能需要登录）。
+- 相对0.3.0成功commit `9d09db169be76b49bca0b60c7585b3c318e3ffd3` 为2个快进commit、11条变更路径，全在发布白名单与wechat-unified/目录；未修改他项目或workflow，无强推。29项发布源码/测试/README/workflow与成功commit逐项Git blob一致；STATUS仅因本轮后补交付说明不同。本地旧HEAD和未提交成果完整保留。
+- 使用自己的tools/api.html标签及现有环境凭据，原生严格TLS；无Key输出、无-k、未安装工具链。上传白名单不含原库、转储或凭据；本轮没有上传。
+
+## 增量真实接入与功能边界
+
+1. **官方添加的单个表情分组已编码并接入**：Core安装Groups，设置页可进入账号分组管理；Hook真实EmoticonBoardCrossCollectionEmoticonPageCell列表及窄生命周期，所有签名先检查。只有原列表含custom_emoticon_pid且全列表可解码MD5时才筛选；全部/未分组/自定义组、MD5移动、删组映射及账号原子配置有实际路径。未知结构/整包/最近使用保持原样，不写宿主列表、数据库或媒体。预览图选择、改名排序等未实现。
+2. **关闭/切号保护有源码路径，不等于真机验收**：总开关关闭返回原列表；独立分组关闭筛选保留全部项，移除自有按钮；inset仅仍等于自有预期值时恢复，避免覆盖宿主后续修改。账号不明/切换使旧页失效，复用/章节切换清标识等待新列表；操作校验账号、代次、可见及前台条件。切号后即时刷新、布局与真实点击索引仍需宿主验证。
+3. **手动工具栏已接入**：账号配置仅允许搜索/统计/设置，默认不选；聊天页头“工具”菜单只显示选择且签名可用动作，执行前重验账号、会话、代次及前台。关闭/不选移除自有工具按钮，保留宿主按钮；没有仓库/朋友圈/语音包/Dock假入口。注意原有独立统计按钮仍随总开关出现，独立搜索仍按旧开关；“默认不选”仅指新工具菜单，不意味着所有旧按钮都隐藏。
+4. **首页电报分组仍未实现**：现有MainSessionMgr数组及计数证据不足以闭合原生session用户名、私信/其他分类及点击索引/置顶计数协议；没有修改首页数组、表头或手势，没有伪开关。默认全部/私信/群聊/其他及自定义分组需求仍保留。
+5. 全部AI、ActionBar/系统键盘Dock、在线主题、红包详情、抖音/B站视频解析继续排除。其余既有未实现项以STATUS完整表为准，本轮不扩大范围。
+
+## 构建与产物证据
+
+- 实际CI：13项结构检查通过；GroupLogic 32条原生断言通过（筛选/占位/删组/隔离/校验/工具白名单）；MessageLogic 21条原生断言、主题ZIP原生测试、WUStats XCTest 18项/0失败均保留且通过。
+- arm64 iOS dylib严格warnings-as-errors编译链接成功；平台记录IOS minos16.6 / SDK18.5；仅系统框架/库依赖，归档不含测试可执行或mock库。
+- Artifact ID `13070760778`；ZIP `artifacts/WeChatUnified-41274413299.zip`，116552字节。
+- ZIP SHA256 `3e36b74b19947fe46d315d3d9b2b699ac021d1bc18f1696ba61365112d52d1ee`，本地实算与GitHub digest一致。
+- dylib `artifacts/run-41274413299/WeChatUnified.dylib`，287584字节。
+- dylib SHA256 `35b07707c25f4bdfe5701ff235150a4ff9daa2f573ed37c8e56672e8ee80e581`，本地实算与CI SHA256SUMS一致；解析本地头确认64-bit arm64 MH_DYLIB。
+- CI真实执行codesign --verify --strict成功；日志及归档signature.txt均为valid on disk / satisfies its Designated Requirement / Signature=adhoc。此处是核对CI签名证据，不是声称Linux本地运行了codesign，也不是开发者分发签名或兼容保证。
+- 证据：`artifacts/ci-41274413299.log`、`ci-artifacts-41274413299.json`、`remote-audit-41274413299.json`、`runs.json`及成功归档。包内STATUS保留构建当时版本，本文与本地STATUS是核验后的说明，未额外发布。
+- 未进行TrollFools注入、宿主加载、真实收发/撤回/删除、关闭恢复/切号/复用真机测试或性能验收。未重复旧产物核验及全项目逆向。
+
+---
+
+# 历史记录：2026-11-01 0.3.0 主题 / 日月 / 美化交付结果
+
+## 最新结论（中断恢复后实查）
+
+**成功构建、下载和核验；未做真机验收，不是全项目完成。** 恢复自己的本地 api.html 标签后，原有严格 TLS 传输桥正常，未更换凭据、未降级 TLS。此前 poll 工具中断不是最新 CI 编译失败；不需要重复发布已成功的源码。
+
+- 仓库 `yuku00/LinkCard-Public`，独立分支 `wechat-unified/initial-20261101`。
+- 实查远端分支头及成功 Actions head_sha 均为 `9d09db169be76b49bca0b60c7585b3c318e3ffd3`。
+- CI：https://github.com/yuku00/LinkCard-Public/actions/runs/41270961089 ，`completed / success`；编译、上传均成功。
+- 相对0.2.0交付 `6efc7696…` 为3个快进commit、13个变更路径，全部在 `wechat-unified/` 白名单，未改变其他项目或workflow。核验时全部26项发布白名单文件（包括workflow）本地Git blob哈希与远端逐一相等。随后仅更新本地本报告和STATUS交付说明，未再上传；包内STATUS是成功构建时版本。
+- 本地git HEAD仍为 `cb0704e`，有保留的未提交/未跟踪成果；发布走受限GitHub API而非本地git push，不能以本地HEAD误判远端版本。本次没有reset、清理或重写源码。
+
+## 本轮实际新增与完整链核查
+
+- 本地PNG/ZIP导入：系统文件选择、有界ZIP32 stored/deflate与CRC、路径/链接/重叠/尺寸检查、PNG解码校验、自有UUID目录事务发布、预览/名称排序/删除确认均有实际源码链。
+- 主题与气泡独立选择已接配置和资源读取；共5个资源Hook（3个MMThemeManager实例方法、2个UIImage类方法），先取原IMP，缺图或不可用回原图。缓存含尺寸、scale、明暗、拉伸帽及渲染模式；内存警告清缓存。关闭/配置变化清缓存并恢复可见标准UIImageView及UIButton已映射原图。
+- 日月外观限整合设置与NewSettingViewController；绘制太阳/云/月/星，点按/拖动只在值变化时对原UISwitch发送一次ValueChanged，取消零发送；保留原业务target及可访问性，关闭移除外观和附加target。不是微信明暗模式切换。
+- 美化实际接入搜索栏、消息引用、聊天时间标签、首页右上角加号菜单、Toast、首页左滑菜单；原布局先行，保存/恢复背景、裁剪及圆角。
+- 缺口：完整资源别名、BubbleInfo显式暗色上下文、宿主自有缓存/自绘视图即时热刷新未实现，可能要重新进入页面；SVG/CAR/XML/CSS不渲染；表情/文件专项、发送/发表按钮、完整弹窗、聊天附件加号、左滑首尾精细几何未实现。日月未复刻弹簧参数。本轮未引入AI、ActionBar/Dock、红包详情、在线主题、视频解析。
+
+## 编译、测试和产物证据
+
+- Xcode16.4 / iPhoneOS SDK18.5，arm64、最低iOS16.6，warnings-as-errors编译链接成功。
+- 本地重新运行11项结构检查全部通过；成功CI同样11项通过。MessageLogic原生21断言、主题ZIP原生测试（stored/deflate、UTF-8、路径、符号链接、CRC、边界/截断/名称/大小）、WUStats XCTest18项/0失败均见实际日志。没有删除原生测试。
+- 前两次主题CI真实失败分别为发布脚本存在性假设（41270666249）与 `Style` 冲突系统MacTypes符号（41270798221）；原代理已修为仅在发布脚本存在时检查白名单，以及使用 `WUStyleSurface`。最新成功版本仍保留主题原生测试与源码存在/构建接入检查。
+- Artifact ID `13069043195`；ZIP `artifacts/WeChatUnified-41270961089.zip`，99433字节。
+- ZIP SHA256 `0351b60196564c02f9df7f10e220bda42aeeaa9ebfb6ed9c47b41ad8efa56b89`，实算匹配GitHub digest。
+- dylib `artifacts/run-41270961089/WeChatUnified.dylib`，253168字节。
+- dylib SHA256 `d09793940b72c18d9d57945aec0c53935a170372cbb582124494e7a54bc5449b`，实算匹配CI SHA256SUMS。
+- 本地解析Mach-O头确认64-bit arm64 / MH_DYLIB。CI日志与归档signature.txt均记录 `valid on disk`、`satisfies its Designated Requirement`、`Signature=adhoc`。平台日志为IOS minos16.6/sdk18.5；依赖仅系统框架/库。归档无测试可执行或mock库。
+- 证据：`artifacts/ci-41270961089.log`、`artifacts/ci-artifacts-41270961089.json`、`artifacts/remote-audit-41270961089.json`、`artifacts/runs.json`。
+- 仍未执行目标微信加载、TrollFools注入、真实开关回退/复用/切号/性能验收。源码检查、macOS原生测试、ad-hoc签名均不能替代宿主真机验证。
+
+---
+
+# 历史记录：0.2.0 消息交互增量
+
+
+## 当前结论
+
+0.2.0消息交互增量已实际编码、集成、上传、编译并下载核验。**这是全项目的开发增量，不是全清单完成；没有执行真实宿主、发消息、撤回/删除消息或领取红包。**
+
+- 仓库：yuku00/LinkCard-Public
+- 独立分支：wechat-unified/initial-20261101
+- 最终commit：`6efc7696e1e87dfa5ff26f17bfeb3edd094d3d30`
+- 最终Actions：https://github.com/yuku00/LinkCard-Public/actions/runs/41269652364
+- 结论：completed / success，head_sha与上述commit一致。
+- 发布审计：相对上一交付6197cfc…新增3个快进commit，实际变更15个路径，全部位于wechat-unified/白名单；未修改其他项目、未强推、未发布原库/转储/用户数据/密钥。workflow原有隔离配置未改变。
+
+## 本轮实际功能diff
+
+1. 当前会话搜索：聊天页头追加按钮，调用经签名检查的宿主onSearchItem；不是设置页手动链接搜索，不保存搜索历史。
+2. 回拨确认：只拦通话消息onClicked；冻结账号、会话、cell/wrap、消息身份及通话内容，确认后原IMP只调用一次；取消、关闭、复用、离页、后台或代次改变均取消。
+3. 防撤回：严格XML、ID、会话与真实发送者检查，保留已收到的他人本地消息；自己的撤回放行；无提示插入、无恢复未收到内容的承诺。
+4. 多选撤回：独立“撤回所选”入口，读取宿主选择集；仅自身有效120秒内消息，长/短宿主撤回接口签名核验后二选一，逐条已请求/跳过/未知；绝不DelMsg、不替换宿主最后一个按钮、不自动重试。
+5. WCRefine语义表情复读部分：仅47型表情，25×25图片按钮、透明度1、圆角6；确认后新建并重置消息对象，仅一次AddEmoticonMsg，没有通用AddMsg/HBHelper回退。
+6. 消息合并显示：群/私聊开关、同发送者相邻分组、时间/系统节点断组、头像置底；只影响头像/名称显示，复用、布局和停用恢复，不改消息ID/正文/数据库。
+7. 红包提醒部分：宿主入站处理后识别红包，前台按会话显示名提醒，账号/会话/服务器ID有界去重；已加载同会话cell可定位；不自动领取、不查询金额/人数。
+8. 非AI统计：合入并行代理源码后，已补真实生产binding，不是不可用菜单。接当前账号/会话/generation、CMessageMgr、wrap解码及静态证据0/0起始游标。先独立核对对象/32位参数及输出指针语义，再钉住实际encoding；200条/页、20000上限、无推进停止；最终排序/热词/汇总转后台不可变快照。当前会话总数/类型、时间分布、发言榜、回复/开场/破冰/连发/热词等有实际读取链。
+
+## 编译与测试
+
+- Xcode 16.4 / iPhoneOS SDK 18.5，arm64，最低iOS16.6，warnings-as-errors编译链接成功。
+- 9项本地/CI结构防护通过：针对非预期删除、排除功能、密钥、重复Hook等；不再全局禁止AddMsg一类需求接口。
+- MessageLogic真实macOS原生可执行测试：21个断言通过（XML/ID、身份、撤回窗口、相邻分组）。
+- WUStats真实独立XCTest bundle：18项通过、0失败；含分页、去重、群时间差、DST、取消、切号、错误签名、零游标启动、后台汇总取消。mock CMessageMgr只在测试bundle，不进入dylib。
+- 首轮CI 41269020855失败于原生XCTest宏数组逗号拆参；已实际修复并增加异步等待，未删测试。
+- 第二轮41269321941已成功；最后加入确认弹窗生命周期、红包前台覆盖和两项回归后，41269652364再次成功。
+- ad-hoc签名及codesign --verify --strict通过；不等于开发者分发签名或真机兼容验收。
+
+## 已下载并核验的产物
+
+- Artifact ID：13068144002
+- ZIP：`artifacts/WeChatUnified-41269652364.zip`，76533字节。
+- ZIP SHA256：`ad6980f4b1dcbb9abf59602e3c7bb7adff893a76afb28d523b6a601692ad7865`，与GitHub digest相等。
+- dylib：`artifacts/run-41269652364/WeChatUnified.dylib`，215552字节。
+- dylib SHA256：`0a3c8923c5f7930d6fbdf293d2b5e9bc797ad349b9f3328bb676a61714ed43db`，与CI SHA256SUMS一致。
+- 本地Mach-O头核验64-bit arm64 / MH_DYLIB；平台日志IOS minos16.6；依赖仅系统框架及系统库。归档没有测试可执行/mock库。
+- 日志：`artifacts/ci-41269652364.log`；远端路径审计：`artifacts/remote-audit-41269652364.json`。
+- 全程本地api.html原生严格TLS桥，凭据仅环境变量；未安装大型工具链。
+
+## 明确未完成及下一步
+
+- 拍一拍发送前确认：sendPat:已证为同步BOOL；缺安全冻结目标的发送前UI动作协议，不能靠返回假成功或异步重放补齐。未实现，无开关。
+- 表情复读：长按下载、用户主题图标、持久崩溃操作账本未实现；不能称完整WCRefine语义，也不保证跨重启恰好一次。
+- 红包提醒：跨会话导航、未加载消息定位、系统后台通知未实现。
+- 统计：全账号排行/访问榜、共同群/画像、App消息补页及完整历程等未完成；普通消息分页不能冒充全部历史或全部统计。
+- 便捷朋友圈半屏+rp、伪集赞本地、激励广告与一般去广告等仍完整保留在STATUS，本轮未擅自删改这些模块。
+- 目标微信完整构建号、TrollFools加载、开关回退实效、服务端撤回/送达、真实统计页语义及性能仍需隔离设备验收。CI通过不能替代这些检查。
+
+主工程所有修改已持久落盘；实现接口依据与专项交接另记于workspace/wechat-unified/implementation-message-20261101.md。
+
+## 0.3.0 中断恢复即时核验（2026-11-01）
+已重建自己的本地 api.html 标签并恢复严格 TLS 查询。远端独立分支头为 `9d09db169be76b49bca0b60c7585b3c318e3ffd3`；对应 Actions `41270961089` 实际 completed/success，编译和上传步骤成功。此前 poll 中断不是本次编译失败。Artifact `13069043195`，99433 字节。正在核对下载内容和本轮源码；旧版0.2.0报告保留为历史，不代表最新产物。未进行真机验收。

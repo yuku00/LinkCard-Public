@@ -23,6 +23,19 @@
 @implementation ThrowEditor
 - (instancetype)initWithTextType { @throw [NSException exceptionWithName:@"test" reason:nil userInfo:nil]; }
 @end
+@interface ImageEditor : Editor
+@property(nonatomic,strong) NSArray *selection;
+- (instancetype)initWithImages:(NSArray *)images contacts:(id)contacts;
+@end
+@implementation ImageEditor
+- (instancetype)initWithImages:(NSArray *)images contacts:(id)contacts { assert(contacts==nil); if((self=[super init])) self.selection=images; return self; }
+@end
+@interface BadImageEditor : Editor
+- (instancetype)initWithImages:(int)images contacts:(id)contacts;
+@end
+@implementation BadImageEditor
+- (instancetype)initWithImages:(int)images contacts:(id)contacts { abort(); }
+@end
 int main(void) { @autoreleasepool {
     NSFileManager *fm=NSFileManager.defaultManager; NSError *e=nil;
     NSURL *root=[NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString] isDirectory:YES];
@@ -58,5 +71,9 @@ int main(void) { @autoreleasepool {
     assert(!WUDraftsTextView([NSObject new]));
     assert([[NSData dataWithContentsOfURL:index] isEqual:bad]);
     assert([fm removeItemAtURL:root error:&e]);
-    puts("Drafts production storage and host ABI tests passed (text only; no media restore claim)");
+    NSArray *images=@[@"synthetic selection object"];
+    ImageEditor *imageEditor=WUDraftsCreateImageEditor(ImageEditor.class,images);
+    assert([imageEditor.selection isEqual:images]); assert(!WUDraftsCreateImageEditor(BadImageEditor.class,images)); assert(!WUDraftsCreateImageEditor(ImageEditor.class,@[]));
+    assert([WUDraftsObject(imageEditor,@"selection") isEqual:images]); assert(!WUDraftsObject(imageEditor,@"hash"));
+    puts("Drafts production storage and host ABI tests passed (text and image-init ABI; not host verification)");
 } return 0; }

@@ -45,7 +45,20 @@ id WUDraftsCreateEditor(Class cls) {
     if(!WUDraftsEditorAvailable(cls)) return nil;
     @try { return [(id<WUDraftHostInit>)[cls alloc] initWithTextType]; } @catch(NSException *e) { return nil; }
 }
-id WUDraftsTextView(id editor) {
-    if(!editor || !ObjectGetter(object_getClass(editor),NSSelectorFromString(@"textView"))) return nil;
-    @try { NSInvocation *v=[NSInvocation invocationWithMethodSignature:[editor methodSignatureForSelector:NSSelectorFromString(@"textView")]]; v.target=editor; v.selector=NSSelectorFromString(@"textView"); [v invoke]; __unsafe_unretained id result=nil; [v getReturnValue:&result]; return result; } @catch(NSException *e) { return nil; }
+id WUDraftsObject(id editor, NSString *selector) {
+    if(!editor || !ObjectGetter(object_getClass(editor),NSSelectorFromString(selector))) return nil;
+    @try { NSInvocation *v=[NSInvocation invocationWithMethodSignature:[editor methodSignatureForSelector:NSSelectorFromString(selector)]]; v.target=editor; v.selector=NSSelectorFromString(selector); [v invoke]; __unsafe_unretained id result=nil; [v getReturnValue:&result]; return result; } @catch(NSException *e) { return nil; }
+}
+id WUDraftsTextView(id editor) { return WUDraftsObject(editor,@"textView"); }
+@protocol WUDraftImageInit
+- (instancetype)initWithImages:(NSArray *)images contacts:(id)contacts;
+@end
+id WUDraftsCreateImageEditor(Class cls, NSArray *images) {
+    if(!cls || !images.count) return nil;
+    Method m=class_getInstanceMethod(cls,NSSelectorFromString(@"initWithImages:contacts:"));
+    if(!m || method_getNumberOfArguments(m)!=4) return nil;
+    char *r=method_copyReturnType(m); BOOL ok=!strcmp(r,"@"); free(r);
+    for(unsigned i=2;i<4;i++) { char *t=method_copyArgumentType(m,i); ok=ok && !strcmp(t,"@"); free(t); }
+    if(!ok) return nil;
+    @try { return [(id<WUDraftImageInit>)[cls alloc] initWithImages:images contacts:nil]; } @catch(NSException *e) { return nil; }
 }
