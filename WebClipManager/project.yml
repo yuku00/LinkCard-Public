@@ -1,0 +1,52 @@
+name: WebClipManager
+options:
+  bundleIdPrefix: org.example
+  deploymentTarget:
+    iOS: '16.0'
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    TARGETED_DEVICE_FAMILY: '1,2'
+    CODE_SIGNING_ALLOWED: NO
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: '0.1.0'
+targets:
+  WebClipManager:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - path: ThirdParty
+        buildPhase: resources
+      - path: NOTICE
+        buildPhase: resources
+    dependencies:
+      - sdk: libsqlite3.tbd
+      - sdk: libz.tbd
+    info:
+      path: Config/Info.plist
+      properties:
+        CFBundleDisplayName: WebClip 管理
+        UILaunchScreen: {}
+        UIApplicationSupportsIndirectInputEvents: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.example.WebClipManager
+        CODE_SIGN_ENTITLEMENTS: Config/TrollStore.entitlements
+  WebClipManagerTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: WebClipManager
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  WebClipManager:
+    build:
+      targets:
+        WebClipManager: all
+        WebClipManagerTests: [test]
+    test:
+      targets: [WebClipManagerTests]

@@ -1,0 +1,23 @@
+WebClip Manager — third-party notices
+
+Apple Notes format mapping and schema:
+  Project: threeplanetssoftware/apple_cloud_notes_parser
+  URL: https://github.com/threeplanetssoftware/apple_cloud_notes_parser
+  Revision: 4754a2b62686570cca46690d101079e80cf6ae66
+  Copyright (c) 2019 Three Planets Software
+  License: MIT; full text in ThirdParty/AppleCloudNotesParser/LICENSE.txt
+
+The upstream proto/notestore.proto is reproduced as notestore.proto.txt for
+reference (not generated or compiled). Sources/AppleNoteBody.swift ports the
+NoteStoreProto.document (2) -> Document.note (3) -> Note.note_text (2)
+field mapping to a bounded Swift wire reader. The gzip/body extraction order
+is based on lib/AppleNote.rb; table/column mapping is based on lib/AppleNoteStore.rb.
+SQLite snapshot, container discovery, user interface, and bounded wire-reader
+implementation are project code. This is not a port of the full Ruby exporter.
+No upstream personal-note fixtures, decrypted notes, or attachments are included.
+The upstream schema includes its own historical attribution comments; retained.
+The license and this notice are bundled in the app via project.yml resources.
+
+Bascter-Main/NotesExporter was investigated but NOT incorporated: no license
+was published at reviewed revision 2c539be3f2b725d4038a8a74460848e214b558ac.
+No code from GPL macOS exporters has been copied into this MIT project.

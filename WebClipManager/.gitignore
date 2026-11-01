@@ -1,0 +1,15 @@
+.DS_Store
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+build/
+package/
+Config/Info.plist
+*.ipa
+*.zip
+*.webclipbackup
+*.webclip/
+*.mobileprovision
+*.p12
+*.key
+xcuserdata/
