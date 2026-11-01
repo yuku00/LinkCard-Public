@@ -38,6 +38,26 @@ class Guardrails(unittest.TestCase):
         self.assertNotIn('UIPasteboard',SRC)
     def test_no_embedded_credentials(self):
         self.assertIsNone(re.search(r'gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{30,}',SRC))
+    def test_theme_local_boundaries(self):
+        archive=(ROOT/'Sources/ThemeArchive.m').read_text()
+        theme=(ROOT/'Sources/Themes.m').read_text()
+        for required in ['inflateInit2(&z,-MAX_WBITS)', 'crc32(', 'NSIntersectionRange', '512', '32*1024*1024', '64*1024*1024', '0170000']:
+            self.assertIn(required, archive)
+        for required in ['themePack', 'bubblePack', 'RestoreVisibleImages', 'O_NOFOLLOW', 'UIImage', 'UIControlStateNormal', 'NSUUID.UUID.UUIDString', 'NSCache', 'PackPath', 'ValidPNG']:
+            self.assertIn(required,theme)
+        self.assertNotIn('loadColorFrom',theme)
+        self.assertNotIn('replacementResourcePath',theme)
+        self.assertNotIn('NSURLSession',theme)
+        self.assertIn('tests/theme_archive.m',(ROOT/'tools/build.sh').read_text())
+        self.assertIn('tests/theme_archive.m',(ROOT/'tools/release.py').read_text())
+    def test_scoped_sunmoon(self):
+        skin=(ROOT/'Sources/SunMoon.m').read_text()
+        self.assertEqual(skin.count('sendActionsForControlEvents:UIControlEventValueChanged'),1)
+        self.assertNotIn('WUHook(@"UISwitch"',SRC)
+        self.assertIn('cancelTrackingWithEvent',skin)
+        self.assertIn('sw.on!=on',skin)
+        self.assertIn('accessibilityElementsHidden=YES',skin)
+        self.assertIn('removeTarget:skin',skin)
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()
         for word in ['未实现','无伪开关','便捷朋友圈','ActionBar','全部 AI','未执行']:

@@ -1,4 +1,4 @@
-# WeChat Unified 0.2.0 — message interaction development increment
+# WeChat Unified 0.3.0 — local PNG theme and scoped appearance increment
 
 Independent Objective-C source implementation; no original plugin binary, source dump, assets, account data, credentials, AI client or remote service is included. Publication is prepared for the `wechat-unified/` directory on a dedicated branch. Build and publication status must be checked against the dedicated GitHub Actions run for the exact source commit; local structural tests alone do not prove compilation or device compatibility. Existing projects are untouched.
 
@@ -8,7 +8,15 @@ This is a small functional first delivery, **not the whole requested feature set
 
 Default: interception and appearance switches remain OFF. This increment adds evidence-gated current-chat search, callback confirmation, received-message local anti-revoke, a separate selected-own-message recall action, regular emoticon repeat, adjacent-avatar grouping and foreground red-packet reminders. Recall and repeat are actual user-confirmed host submissions, not delivery promises; no host deletion fallback or automatic retry exists. Partial/unavailable subfeatures are listed in STATUS.md, notably pre-send pat confirmation, repeat download/theme icons and cross-chat red-packet positioning. Read-only current-session statistics have a production binding, semantic ABI gate and bounded pagination; final aggregation uses a background immutable snapshot. It is not all-account/all-statistics coverage.
 
-Only device preferences are persisted, using atomic writes, checked file fsync, backup and O_NOFOLLOW. Message records and account contexts stay in memory. No original binaries, reverse-engineering dumps, production user data or credentials are published. Process-local submission deduplication is not a durable crash ledger or an exactly-once server guarantee.
+Device preferences and explicitly user-imported local PNG theme copies are persisted. Configuration uses atomic writes, checked file fsync, backup and O_NOFOLLOW; theme import uses a private staging directory and rename into a UUID-owned pack. Message records and account contexts stay in memory. No original binaries, reverse-engineering dumps, production user data or credentials are published. Process-local submission deduplication is not a durable crash ledger or an exactly-once server guarantee.
+
+## Local themes and scoped appearance
+
+Settings → local tools → import/manage themes accepts a legal local PNG or ZIP. The independent theme and bubble selections never overwrite each other; blank bubble means follow theme. ZIP32 supports stored/deflate using Apple's system zlib, without downloaded dependencies. Limits: 32 MiB archive, 512 entries, 8 MiB per entry, 64 MiB total expansion, bounded compression ratio; encrypted/multi-volume/ZIP64/symlink/special-file/traversal/duplicate/overlapping archives are rejected. PNGs are decoded and checked (4096 per side, 8M pixels). Recursive input names are flattened; conflicting basenames reject the whole import. Only validated PNGs and our metadata enter the private repository, never the host bundle. Unsupported SVG/CAR/XML/CSS counts are visible and those formats are not rendered or copied. Import is background work, selection persists separately, deletion confirms and touches only an imported copy.
+
+Resource replacements check original signatures, preserve original fallback and available stretch insets/rendering mode, and cache by pack/path, dark mode, size and scale. Only basic `_dark` fallback is synthesized: this is not the sample's complete alias/color/CAR pipeline. Disable/selection changes clear caches and restore identifiable visible standard image/button holders. Host caches, custom-drawn images and explicit BubbleInfo dark overrides are not fully covered; revisit pages when necessary. Full live refresh and full-format fidelity are not claimed.
+
+Programmatic sun/cloud/moon/star skins are restricted to our settings and the verified host settings page. Tap/drag updates the original UISwitch and emits one ValueChanged only when its value changes; cancellation emits none. Original accessibility and business targets remain. Search, quote, time-label, home-plus, Toast and verified home-swipe surfaces retain baseline colors/clipping/radii and restore before original layouts or when disabled. No global UIButton/UIView/UISwitch appearance hooks. File/emoticon surfaces, exact send-button filtering and complete popup/swipe geometry remain unimplemented.
 
 ## Build
 

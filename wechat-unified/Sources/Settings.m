@@ -27,18 +27,19 @@
 @end
 @implementation WUSettings
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"微信整合 · 0.2.0";
-    self.rows=@[@[@"enabled",@"启用已实现功能"],@[@"ads",@"公众号列表去广告"],@[@"keywords",@"朋友圈字面关键词屏蔽"],@[@"inputBorder",@"输入框描边"],@[@"noticeBorder",@"聊天系统通知描边"],@[@"separators",@"首页列表隐藏分割线"],@[@"chatSearch",@"聊天页头当前会话搜索"],@[@"callbackConfirm",@"通话记录回拨前确认"],@[@"antiRevoke",@"保留收到的被撤回消息（无提示插入）"],@[@"multiRevoke",@"多选撤回自身消息（不删除）"],@[@"repeatEmoticon",@"表情标签 · 常规复读（部分）"],@[@"mergeGroup",@"群聊相邻头像合并显示"],@[@"mergePrivate",@"私聊相邻头像合并显示"],@[@"mergeBottom",@"合并头像置底"],@[@"redReminder",@"红包前台提醒（部分定位）"]];
+    [super viewDidLoad]; self.title=@"微信整合 · 0.3.0";
+    self.rows=@[@[@"enabled",@"启用已实现功能"],@[@"ads",@"公众号列表去广告"],@[@"keywords",@"朋友圈字面关键词屏蔽"],@[@"inputBorder",@"输入框描边"],@[@"noticeBorder",@"聊天系统通知描边"],@[@"separators",@"首页列表隐藏分割线"],@[@"chatSearch",@"聊天页头当前会话搜索"],@[@"callbackConfirm",@"通话记录回拨前确认"],@[@"antiRevoke",@"保留收到的被撤回消息（无提示插入）"],@[@"multiRevoke",@"多选撤回自身消息（不删除）"],@[@"repeatEmoticon",@"表情标签 · 常规复读（部分）"],@[@"mergeGroup",@"群聊相邻头像合并显示"],@[@"mergePrivate",@"私聊相邻头像合并显示"],@[@"mergeBottom",@"合并头像置底"],@[@"redReminder",@"红包前台提醒（部分定位）"],@[@"themes",@"本地PNG主题 / 独立气泡"],@[@"sunMoon",@"设置页日月开关外观"],@[@"searchSurface",@"搜索栏圆角柔和背景"],@[@"referSurface",@"消息引用卡片美化"],@[@"plusSurface",@"首页右上角加号菜单美化"],@[@"toastSurface",@"宿主Toast圆角背景"],@[@"timeSurface",@"聊天时间标签胶囊背景"],@[@"swipeSurface",@"首页左滑菜单圆角卡片"]];
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"完成" style:UIBarButtonItemStyleDone target:self action:@selector(done)];
     self.tableView.backgroundColor=UIColor.systemGroupedBackgroundColor;
     self.navigationController.navigationBar.prefersLargeTitles=YES;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:WUChanged object:nil];
 }
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
-- (void)refresh { [self.tableView reloadData]; }
+- (void)viewDidLayoutSubviews { [super viewDidLayoutSubviews]; WUStyleSettingSwitches(self); }
+- (void)refresh { [self.tableView reloadData]; [self.view setNeedsLayout]; }
 - (void)done { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 3; }
-- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?self.rows.count:(s==1?2:1); }
+- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?self.rows.count:(s==1?3:1); }
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return @[@"本期实现（默认关闭，先小范围测试）",@"本地工具",@"宿主适配状态"][s]; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
     if(s==0) return @"只显示有执行路径的开关；灰色表示当前宿主缺接口/签名。消息动作在聊天页，执行前确认并重验上下文。拍一拍同步BOOL协议尚未安全适配，没有伪开关。复读长按下载/主题图标及红包跨会话定位尚未完成。";
@@ -46,8 +47,8 @@
     return @"目标 iOS 16.6 / 微信暂按 8.0.70。签名匹配≠功能已验收。尚无真机验证，完整未完成清单见源码 STATUS.md。无 AI、无 ActionBar、无系统 Dock 修改、无奖励伪报。";
 }
 - (BOOL)available:(NSString *)key {
-    if([key isEqual:@"enabled"]) return YES;
-    NSDictionary *map=@{@"ads":@"BrandTL",@"keywords":@"WCFacade",@"inputBorder":@"MMGrowTextView",@"noticeBorder":@"SystemMessageCellView",@"separators":@"NewMainFrameViewController"};
+    if([key isEqual:@"enabled"] || [key isEqual:@"sunMoon"]) return YES;
+    NSDictionary *map=@{@"ads":@"BrandTL",@"keywords":@"WCFacade",@"inputBorder":@"MMGrowTextView",@"noticeBorder":@"SystemMessageCellView",@"separators":@"NewMainFrameViewController",@"themes":@"MMThemeManager",@"searchSurface":@"WCSearchBar",@"referSurface":@"MMInputMsgReferView",@"plusSurface":@"MainFrameActionFloatView",@"toastSurface":@"MMToastView",@"timeSurface":@"ChatTimeCellView",@"swipeSurface":@"NewMainFrameCell"};
     if(!map[key]) return WUMessageAvailable(key);
     for(NSString *line in WUHookStatus()) if([line containsString:map[key]] && [line hasSuffix:@"— installed"]) return YES;
     return NO;
@@ -61,7 +62,7 @@
         sw.on=[WUValue(key) boolValue]; sw.enabled=[self available:key];
         if(!sw.enabled) cell.detailTextLabel.text=@"本宿主不可用；不会启用空开关";
         [sw addTarget:self action:@selector(change:) forControlEvents:UIControlEventValueChanged]; cell.accessoryView=sw; cell.selectionStyle=UITableViewCellSelectionStyleNone;
-    } else { cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; cell.textLabel.text=p.section==2?@"查看接口检测（不含聊天数据）":(p.row==0?@"编辑朋友圈屏蔽词":@"识别链接 / 外部浏览器打开"); }
+    } else { cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; cell.textLabel.text=p.section==2?@"查看接口检测（不含聊天数据）":(p.row==0?@"编辑朋友圈屏蔽词":(p.row==1?@"识别链接 / 外部浏览器打开":@"导入和管理本地主题 / 气泡")); }
     return cell;
 }
 - (void)alert:(NSString *)message {
@@ -74,6 +75,7 @@
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p {
     [t deselectRowAtIndexPath:p animated:YES]; if(p.section==0) return;
     if(p.section==2) { [self alert:[WUHookStatus() componentsJoinedByString:@"\n"]]; return; }
+    if(p.row==2) { WUShowThemes(self); return; }
     if(p.row==1) { WUShowLinks(self); return; }
     [self.navigationController pushViewController:[WUWords new] animated:YES];
 }
@@ -101,4 +103,6 @@ static void Appeared(UIViewController *v,SEL s,BOOL animated) {
     NSMutableArray *items=[v.navigationItem.rightBarButtonItems mutableCopy] ?: [NSMutableArray array];
     if(![items containsObject:entry.button]) { [items addObject:entry.button]; v.navigationItem.rightBarButtonItems=items; }
 }
-void WUInstallSettings(void) { WUHook(@"NewSettingViewController",@"viewDidAppear:",NO,"v",@[[NSString stringWithUTF8String:@encode(BOOL)]],(IMP)Appeared,&settingsAppear); }
+static IMP settingLayout;
+static void SettingsLayout(UIViewController *v,SEL s) { ((void(*)(id,SEL))settingLayout)(v,s); WUStyleSettingSwitches(v); }
+void WUInstallSettings(void) { WUHook(@"NewSettingViewController",@"viewDidLayoutSubviews",NO,"v",@[],(IMP)SettingsLayout,&settingLayout); WUHook(@"NewSettingViewController",@"viewDidAppear:",NO,"v",@[[NSString stringWithUTF8String:@encode(BOOL)]],(IMP)Appeared,&settingsAppear); }

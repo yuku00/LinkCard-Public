@@ -15,4 +15,8 @@ BOOL WUMessageAvailable(NSString *key);
 void WUInstallSettings(void);
 void WUShowSettings(UIViewController *owner);
 void WUShowLinks(UIViewController *owner);
+void WUInstallSurfaces(void);
+void WUInstallThemes(void);
+void WUShowThemes(UIViewController *owner);
+void WUStyleSettingSwitches(UIViewController *controller);
 FOUNDATION_EXPORT NSString *const WUChanged;
