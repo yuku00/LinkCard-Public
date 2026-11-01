@@ -15,8 +15,8 @@ NSString *WCMRuntimeJSON(void) {
     NSDictionary *expected = @{
         @"platform-application": @YES,
         @"application-identifier": @"org.example.WebClipManager",
-        @"com.apple.private.security.container-required": @"org.example.WebClipManager",
-        @"com.apple.private.security.no-container": [NSNull null],
+        @"com.apple.private.security.container-required": @NO,
+        @"com.apple.private.security.no-container": @YES,
         @"com.apple.private.security.no-sandbox": @YES,
         @"com.apple.private.security.storage.AppDataContainers": @YES,
         @"com.apple.private.security.storage.Notes": @YES,
@@ -42,7 +42,10 @@ NSString *WCMRuntimeJSON(void) {
                 match = own && [expected[key] isKindOfClass:[NSString class]] ? @"match" : @"mismatch";
             } else { label = @"unexpected-type"; match = @"mismatch"; }
             CFRelease(value);
-        } else if (task && !error) { label = @"absent"; match = @"mismatch"; }
+        } else if (task && !error) {
+            label = @"absent";
+            match = expected[key] == [NSNull null] ? @"match" : @"mismatch";
+        }
         values[key] = label; matches[key] = match;
         if (error) CFRelease(error);
     }

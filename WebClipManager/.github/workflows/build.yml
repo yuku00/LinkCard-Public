@@ -1,4 +1,4 @@
-name: WebClipManager build11 container and readonly helper candidate (manual)
+name: WebClipManager build12 UIKit direct read integration (manual)
 on:
   workflow_dispatch:
     inputs:
@@ -24,13 +24,15 @@ jobs:
           /tmp/webclip-checks/bin/python Tools/test_entitlement_der.py
           /tmp/webclip-checks/bin/python Tools/test_notes_format.py
           /tmp/webclip-checks/bin/python Tools/test_webclips_access.py
-          /tmp/webclip-checks/bin/python Tools/test_build11_policy.py
+          /tmp/webclip-checks/bin/python Tools/test_build12_policy.py
+          python3 Tools/test_helper_spawn_failure.py
           python3 Tools/test_helper_transport.py
       - name: Generate project
         run: xcodegen generate
       - name: Run synthetic unit tests
         run: |
-          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for k,v in d["devices"].items() if "iOS" in k for x in v if "iPhone" in x["name"]))')
+          xcrun simctl list runtimes
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); pairs=[(k,x) for k,v in d["devices"].items() if "iOS" in k for x in v if "iPhone" in x["name"]]; pairs.sort(key=lambda p:("iOS-16-" not in p[0], p[0], p[1]["name"])); assert pairs, "No iOS simulator"; k,x=pairs[0]; print("SELECTED RUNTIME: "+k+"; iOS16 runtime available="+str("iOS-16-" in k),file=sys.stderr); print(x["udid"])')
           xcodebuild test -project WebClipManager.xcodeproj -scheme WebClipManager -destination "platform=iOS Simulator,id=$DEVICE" -resultBundlePath TestResults.xcresult CODE_SIGNING_ALLOWED=NO CODE_SIGN_ENTITLEMENTS=""
       - name: Preserve synthetic XCTest results
         if: ${{ always() }}
@@ -45,8 +47,6 @@ jobs:
           xcodebuild -project WebClipManager.xcodeproj -scheme WebClipManager -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
           mkdir -p package/Payload
           cp -R build/Build/Products/Release-iphoneos/WebClipManager.app package/Payload/
-          xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=16.0 -fobjc-arc -framework Foundation Helper/main.m -o package/Payload/WebClipManager.app/WebClipReadHelper
-          chmod 755 package/Payload/WebClipManager.app/WebClipReadHelper
           cp Config/TrollStore.entitlements package/
           cd package && zip -qry ../WebClipManager-unsigned.zip Payload TrollStore.entitlements
       - name: Optional explicit entitlement signing
@@ -58,7 +58,6 @@ jobs:
           brew info --json=v2 ldid > ldid-provenance.json
           BIN=package/Payload/WebClipManager.app/WebClipManager
           test -f "$BIN"
-          ldid -SConfig/Helper.entitlements package/Payload/WebClipManager.app/WebClipReadHelper
           ldid -SConfig/TrollStore.entitlements "$BIN"
           ldid -e "$BIN" > signed-entitlements.plist
           python3 -c 'import plistlib; expected=plistlib.load(open("Config/TrollStore.entitlements","rb")); actual=plistlib.load(open("signed-entitlements.plist","rb")); assert actual == expected, "Signed entitlements mismatch"; print("Verified signed entitlements:", actual)'

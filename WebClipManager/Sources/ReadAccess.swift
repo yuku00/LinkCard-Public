@@ -8,6 +8,15 @@ struct AccessError: Codable, Sendable {
     let underlyingPOSIX: Int?
     let operation: String
     let category: String
+    var helperStage: String? = nil
+    var helperSpawned: Bool? = nil
+    var helperStatusValid: Bool? = nil
+    var helperExit: Int? = nil
+    var helperWaitErrno: Int? = nil
+
+    static let helperStages: Set<String> = ["validate", "lstat", "fileType", "pipe", "allocate", "fcntl",
+        "actionsInit", "actionsCloseRead", "actionsDupOutput", "actionsCloseWrite", "actionsOpenInput", "actionsOpenError",
+        "attrInit", "attrFlags", "spawn", "read", "waitpid", "poll", "timeout", "outputLimit", "childExit", "complete", "unknown"]
 
     static func capture(_ error: Error) -> AccessError {
         let top = error as NSError
@@ -18,7 +27,7 @@ struct AccessError: Codable, Sendable {
             guard let next = current.userInfo[NSUnderlyingErrorKey] as? NSError else { break }
             current = next
         }
-        let operations = ["lstat", "openDirectory", "fdopendir", "readdir", "openFile", "fstat", "fileType"]
+        let operations = ["lstat", "openDirectory", "fdopendir", "readdir", "openFile", "fstat", "fileType", "helperTransport", "helperRead"]
         let rawOperation = top.userInfo["operation"] as? String ?? ""
         let category: String
         switch posix {
@@ -29,12 +38,22 @@ struct AccessError: Codable, Sendable {
         case Int(EPERM): category = "operationNotPermittedCauseUndetermined"
         default: category = "otherFailure"
         }
-        return AccessError(domain: [NSPOSIXErrorDomain, NSCocoaErrorDomain].contains(top.domain) ? top.domain : "other",
+        var result = AccessError(domain: [NSPOSIXErrorDomain, NSCocoaErrorDomain].contains(top.domain) ? top.domain : "other",
             code: top.code, underlyingPOSIX: posix,
             operation: operations.contains(rawOperation) ? rawOperation : "scan", category: category)
+        if rawOperation == "helperTransport", let stage = top.userInfo["helperStage"] as? String, helperStages.contains(stage) {
+            result.helperStage = stage
+            result.helperSpawned = top.userInfo["helperSpawned"] as? Bool
+            result.helperStatusValid = top.userInfo["helperStatusValid"] as? Bool
+            result.helperWaitErrno = top.userInfo["helperWaitErrno"] as? Int
+            if result.helperStatusValid == true { result.helperExit = top.userInfo["helperExit"] as? Int }
+        }
+        return result
     }
     var summary: String {
-        "\(operation): \(domain)/\(code), POSIX=\(underlyingPOSIX.map(String.init) ?? "none"), \(category)"
+        let base = "\(operation): \(domain)/\(code), POSIX=\(underlyingPOSIX.map(String.init) ?? "none"), \(category)"
+        guard let helperStage else { return base }
+        return base + ", stage=\(helperStage), spawned=\(helperSpawned == true), statusValid=\(helperStatusValid == true), exit=\(helperExit.map(String.init) ?? "unavailable"), waitErrno=\(helperWaitErrno ?? 0)"
     }
 }
 

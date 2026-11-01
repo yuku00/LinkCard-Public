@@ -1,6 +1,10 @@
-# WebClip Manager — build8 启动回归恢复
+# WebClip Manager — build12 UIKit 直接读取
 
-> 当前版本以 [build8 恢复说明](Docs/BUILD8-STARTUP-RECOVERY.md) 为准：恢复 build6 容器签名，保留系统 HOME；UIKit 首页先手动采集并复制当前进程诊断，再打开完整主界面。未声称解决 iOS16.6 真机闪退或 EPERM；删除继续禁用。下方 build6 及更早内容为历史记录。
+> 当前实现与验证边界以 [build12 说明](Docs/BUILD12-UIKIT-DIRECT-READ.md) 为准。使用与 build9 相同的非容器权限和系统 HOME，以纯 UIKit 双页业务界面直接扫描书签、只读解析 Notes 并导出。生产入口不再呈现诊断首页/SwiftUI hosting，不再通过受阻 helper 读取。没有新增权限或 root 操作。**尚无本构建 iOS16.6/TrollStore 真机验证，不得称已修复真机问题；删除禁用。**
+
+## build8 历史记录
+
+> build8 的历史行为见 [build8 恢复说明](Docs/BUILD8-STARTUP-RECOVERY.md)，不代表当前入口。
 
 ## build6 历史记录
 

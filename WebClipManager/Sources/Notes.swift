@@ -45,10 +45,24 @@ final class NotesModel: ObservableObject {
     @Published var notes: [ImportedNote] = []
     @Published var selected: Set<UUID> = []
     @Published var busy = false
-    @Published var status = "当前候选尚未接通设备 Notes 辅助进程；可导入文本文件。"
+    @Published var status = "尚未读取。仅在确认后读取未锁定正文。"
     @Published var failures: [String] = []
     func loadAppleNotes() async {
-        status = "设备 Notes 读取尚未接通；本次不访问数据库。可使用文本导入。"
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        NotesReadDiagnostic.record(state: "reading")
+        do {
+            let batch = try await Task.detached { try AppleNotesStore.load() }.value
+            notes = batch.notes
+            selected = Set(notes.map(\.id))
+            failures = []
+            status = batch.summary
+            NotesReadDiagnostic.record(state: "loaded")
+        } catch {
+            status = "读取失败，保留原批次。" + AccessError.capture(error).summary
+            NotesReadDiagnostic.record(state: "failed", error: error)
+        }
     }
     func clear() {
         notes = []; selected = []; failures = []

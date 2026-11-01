@@ -36,10 +36,20 @@ enum HelperReader {
         }
         var output: UnsafeMutablePointer<UInt8>?
         var length = 0
-        var status: Int32 = 0
-        let error = wcm_helper_run(executable.path, "webclip-list", 8000, &output, &length, &status)
-        StartupLog.helper(error: error, status: status)
-        guard error == 0, let output else { throw ClipError.invalid("辅助进程失败 errno=\(error)，exit/signal=\(status)") }
+        var status: Int32 = -255
+        var diagnostic = WCMHelperDiagnostic()
+        let error = wcm_helper_run(executable.path, "webclip-list", 8000, &output, &length, &status, &diagnostic)
+        let stage = diagnostic.stage.map { String(cString: $0) } ?? "unknown"
+        StartupLog.helper(error: error, status: status, stage: stage, spawned: diagnostic.spawned != 0,
+                          statusValid: diagnostic.statusValid != 0, waitError: diagnostic.waitError)
+        guard error == 0 else {
+            var info: [String: Any] = ["operation": "helperTransport", "helperStage": stage,
+                "helperSpawned": diagnostic.spawned != 0, "helperStatusValid": diagnostic.statusValid != 0,
+                "helperWaitErrno": Int(diagnostic.waitError)]
+            if diagnostic.statusValid != 0 { info["helperExit"] = Int(status) }
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(error), userInfo: info)
+        }
+        guard let output else { throw ReadAccess.failure("helperTransport", EIO) }
         defer { free(output) }
         do { return try decode(Data(bytes: output, count: length)) }
         catch let error as NSError where error.domain == NSPOSIXErrorDomain { throw error }

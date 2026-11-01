@@ -84,7 +84,6 @@ actor Repository {
 
     func scan() throws -> Scan {
         StartupLog.record("S10_REPOSITORY_SCAN_ENTERED")
-        if root == Self.deviceRoot { return try HelperReader.scan() }
         try check(root, directory: true)
         let entries = try ReadAccess.entries(root)
         var result = Scan()
@@ -128,7 +127,6 @@ actor Repository {
     }
 
     func backup(ids: [String]) throws -> Backup {
-        guard root != Self.deviceRoot else { throw ClipError.invalid("此候选仅接通只读书签扫描；设备目录完整备份尚未接入辅助进程。") }
         var entries: [[String: Any]] = []
         var results: [ItemResult] = []
         var used = 0

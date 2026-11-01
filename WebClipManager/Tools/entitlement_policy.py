@@ -1,10 +1,11 @@
 """Build9: explicit noncontainer profile, without HOME rebinding or extra storage rights."""
 BUNDLE_ID = 'org.example.WebClipManager'
-BUILD = '11'
+BUILD = '12'
 ALLOWED_ENTITLEMENTS = {
     'platform-application': True,
     'application-identifier': BUNDLE_ID,
-    'com.apple.private.security.container-required': BUNDLE_ID,
+    'com.apple.private.security.container-required': False,
+    'com.apple.private.security.no-container': True,
     'com.apple.private.security.no-sandbox': True,
     'com.apple.private.security.storage.AppDataContainers': True,
     'com.apple.private.security.storage.Notes': True,
@@ -61,7 +62,7 @@ def self_test():
     validate_entitlements(ALLOWED_ENTITLEMENTS)
     for bad in [dict(ALLOWED_ENTITLEMENTS, **{'get-task-allow': True}),
                 dict(ALLOWED_ENTITLEMENTS, **{'application-identifier': 'com.trollscript.dom'}),
-                dict(ALLOWED_ENTITLEMENTS, **{'com.apple.private.security.container-required': False}),
+                dict(ALLOWED_ENTITLEMENTS, **{'com.apple.private.security.container-required': BUNDLE_ID}),
                 {'com.apple.private.security.no-sandbox': True}]:
         try:
             validate_entitlements(bad)

@@ -5,12 +5,12 @@ final class StartupDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     func application(_ application: UIApplication, didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         StartupLog.record("S1_DID_FINISH_LAUNCHING")
-        let window = UIWindow(frame: UIScreen.main.bounds)
-        window.rootViewController = StartupViewController()
-        self.window = window
-        window.makeKeyAndVisible()
-        StartupLog.record("S2_WINDOW_VISIBLE_REQUESTED")
         return true
+    }
+    func application(_ application: UIApplication, configurationForConnecting session: UISceneSession, options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        let config = UISceneConfiguration(name: "Main", sessionRole: session.role)
+        config.delegateClass = BusinessSceneDelegate.self
+        return config
     }
 }
 

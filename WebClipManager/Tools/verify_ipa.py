@@ -109,4 +109,6 @@ def inspect(path, require_icon=True, helper=False):
 
 if __name__ == '__main__':
     inspect(sys.argv[1], require_icon='--allow-missing-icon' not in sys.argv[2:])
-    inspect(sys.argv[1], require_icon=False, helper=True)
+    # Build12 does not ship or invoke a helper. Validate the actual sole executable.
+    with zipfile.ZipFile(sys.argv[1]) as archive:
+        assert 'Payload/WebClipManager.app/WebClipReadHelper' not in archive.namelist()

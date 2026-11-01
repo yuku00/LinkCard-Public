@@ -11,6 +11,31 @@ final class HelperProtocolTests: XCTestCase {
         }
         XCTAssertThrowsError(try HelperReader.decode(Data(repeating: 65, count: 8 * 1024 * 1024 + 1)))
     }
+    func testSpawnErrorRetainsNativeCodeAndInvalidExit() throws {
+        let error = NSError(domain: NSPOSIXErrorDomain, code: 1, userInfo: [
+            "operation": "helperTransport", "helperStage": "spawn", "helperSpawned": false,
+            "helperStatusValid": false, "helperExit": 0, "helperWaitErrno": 0])
+        let captured = AccessError.capture(error)
+        XCTAssertEqual(captured.domain, NSPOSIXErrorDomain)
+        XCTAssertEqual(captured.code, 1)
+        XCTAssertEqual(captured.underlyingPOSIX, 1)
+        XCTAssertEqual(captured.operation, "helperTransport")
+        XCTAssertEqual(captured.helperStage, "spawn")
+        XCTAssertEqual(captured.helperSpawned, false)
+        XCTAssertEqual(captured.helperStatusValid, false)
+        XCTAssertNil(captured.helperExit)
+        XCTAssertTrue(captured.summary.contains("exit=unavailable"))
+        let encoded = try JSONEncoder().encode(captured)
+        let decoded = try JSONDecoder().decode(AccessError.self, from: encoded)
+        XCTAssertEqual(decoded.helperStage, "spawn")
+        XCTAssertNil(decoded.helperExit)
+    }
+    func testHelperReadPreservesNativeError() {
+        let captured = AccessError.capture(ReadAccess.failure("helperRead", 1))
+        XCTAssertEqual(captured.operation, "helperRead")
+        XCTAssertEqual(captured.code, 1)
+        XCTAssertNil(captured.helperStatusValid)
+    }
     @MainActor func testNotesDeviceReadIsExplicitlyUnavailable() async {
         let model = NotesModel()
         await model.loadAppleNotes()

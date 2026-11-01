@@ -21,7 +21,7 @@ enum StartupLog {
                         let n = read(fd, &bytes, bytes.count)
                         if n > 0 {
                             let safe = String(decoding: bytes.prefix(n), as: UTF8.self).split(separator: "\n").filter {
-                                $0.range(of: #"^\[WCM-(STARTUP|HELPER)\] (build=[0-9]+ S[0-9]+_[A-Z_]+|errno=[0-9]+ exit=-?[0-9]+)$"#, options: .regularExpression) != nil
+                                $0.range(of: #"^\[WCM-(STARTUP|HELPER)\] (build=[0-9]+ S[0-9]+_[A-Z_]+|errno=[0-9]+ exit=-?[0-9]+|stage=[A-Za-z]+ errno=[0-9]+ spawned=[01] statusValid=[01] exit=(unavailable|-?[0-9]+) waitErrno=[0-9]+)$"#, options: .regularExpression) != nil
                             }
                             return "自身容器固定阶段日志（不含个人数据）\n" + safe.joined(separator: "\n")
                         }
@@ -37,9 +37,11 @@ enum StartupLog {
         let line = "[WCM-STARTUP] build=\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown") \(stage)"
         append(line)
     }
-    static func helper(error: Int32, status: Int32) {
+    static func helper(error: Int32, status: Int32, stage: String, spawned: Bool, statusValid: Bool, waitError: Int32) {
+        guard AccessError.helperStages.contains(stage) else { return }
         lock.lock(); defer { lock.unlock() }
-        append("[WCM-HELPER] errno=\(error) exit=\(status)")
+        let exit = statusValid ? String(status) : "unavailable"
+        append("[WCM-HELPER] stage=\(stage) errno=\(error) spawned=\(spawned ? 1 : 0) statusValid=\(statusValid ? 1 : 0) exit=\(exit) waitErrno=\(waitError)")
     }
     private static func append(_ line: String) {
         lines.append(line)
