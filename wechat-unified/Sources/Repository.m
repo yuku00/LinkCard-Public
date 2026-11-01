@@ -127,6 +127,9 @@
     }]]; [self presentViewController:a animated:YES completion:nil];
 }
 @end
+BOOL WUIsRepositoryController(UIViewController *controller) {
+    return [controller isKindOfClass:UINavigationController.class] && [[(UINavigationController *)controller topViewController] isKindOfClass:WURepositoryController.class];
+}
 void WUShowRepository(UIViewController *owner, WURepositoryBinding *binding) {
     if(!NSThread.isMainThread || owner.presentedViewController || !owner.viewIfLoaded.window || !binding.current || !binding.current()) return;
     WURepositoryController *v=[[WURepositoryController alloc] initWithStyle:UITableViewStyleInsetGrouped]; v.binding=binding;

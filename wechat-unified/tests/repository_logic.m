@@ -45,6 +45,8 @@ int main(void) { @autoreleasepool {
     NSURL *file=[dir URLByAppendingPathComponent:@"61.plist"]; CHECK([[@"bad plist" dataUsingEncoding:NSUTF8StringEncoding] writeToURL:file atomically:YES]); CHECK(WURepositoryLoad(dir,@"a",&e)==nil);
     NSData *before=[NSData dataWithContentsOfURL:file]; CHECK(!WURepositorySave(dir,@"a",@[bad],&e)); CHECK([before isEqual:[NSData dataWithContentsOfURL:file]]);
     NSURL *blocked=[dir URLByAppendingPathComponent:@"blocked"]; CHECK([before writeToURL:blocked atomically:YES]); CHECK(!WURepositorySave(blocked,@"a",@[entry],&e));
+    NSURL *occupied=[dir URLByAppendingPathComponent:@"63.plist"]; CHECK([NSFileManager.defaultManager createDirectoryAtURL:occupied withIntermediateDirectories:NO attributes:nil error:&e]); CHECK(!WURepositorySave(dir,@"c",@[entry],&e));
+    NSData *wrongAccount=[NSPropertyListSerialization dataWithPropertyList:@{@"version":@1,@"account":@"b",@"items":@[entry]} format:NSPropertyListBinaryFormat_v1_0 options:0 error:&e]; CHECK([wrongAccount writeToURL:[dir URLByAppendingPathComponent:@"64.plist"] atomically:YES]); CHECK(WURepositoryLoad(dir,@"d",&e)==nil);
     Sender *sender=[Sender new]; CHECK(WURepositoryCanInvoke(sender,@"sendMsg:toContactUsrName:")); CHECK(WURepositoryCanInvoke(sender,@"ForwardMsg:ToContact:"));
     CHECK(!WURepositoryCanInvoke(sender,@"wrong:target:")); CHECK(!WURepositoryCanInvoke(sender,@"width:target:")); CHECK(!WURepositoryCanInvoke(sender,@"missing:target:"));
     CHECK([WURepositoryInvoke(sender,@"wrong:target:",@"a",@"b") hasPrefix:@"失败"]); CHECK(sender.calls==0);

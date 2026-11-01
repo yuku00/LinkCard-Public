@@ -7,4 +7,5 @@
 @property(nonatomic,copy) NSArray *(^capture)(void);
 @property(nonatomic,copy) NSString *(^send)(NSDictionary *part);
 @end
+BOOL WUIsRepositoryController(UIViewController *controller);
 void WUShowRepository(UIViewController *owner, WURepositoryBinding *binding);

@@ -141,7 +141,7 @@ class Guardrails(unittest.TestCase):
             self.assertIn(required,repo)
         for required in ['NSDataWritingAtomic', 'root[@"account"] isEqual:a', '1024*1024', 'method_getNumberOfArguments(m)!=4', 'submitted=YES; [v invoke]', '已请求（非送达）']:
             self.assertIn(required,logic)
-        for required in ['RepositorySource', 'ForwardMessageLogicController', 'ForwardMsg:ToContact:', 'sendMsg:toContactUsrName:', 'gen==generation', 'OpenRepository(owner)', '[Info(wrap) isEqual:identity]']:
+        for required in ['RepositorySource', 'ForwardMessageLogicController', 'ForwardMsg:ToContact:', 'sendMsg:toContactUsrName:', 'gen==generation', 'OpenRepository(owner)', '[Info(wrap) isEqual:identity]', '!WUIsRepositoryController(presented)', 'v.navigationController.topViewController==v']:
             self.assertIn(required,messages)
         self.assertNotIn('350',repo)
         self.assertNotIn('removeItem',repo+logic)

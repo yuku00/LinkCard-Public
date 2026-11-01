@@ -8,7 +8,9 @@ int main(void) { @autoreleasepool {
     assert(WUValidAccountOptions(@{@"account-A":@{@"emoji":base,@"toolbar":@[]}}));
     assert(!WUValidAccountOptions(@{@"":@{}}));
     assert(!WUValidAccountOptions(@{@"A":@{@"unknown":@YES}}));
-    assert(!WUValidAccountOptions(@{@"A":@{@"toolbar":@[@"repository"]}}));
+    // Unsupported actions still reject; repository is now an explicitly implemented manual action.
+    assert(!WUValidAccountOptions(@{@"A":@{@"toolbar":@[@"autoReply"]}}));
+    assert(WUValidAccountOptions(@{@"A":@{@"toolbar":@[@"repository"]}}));
     assert(!WUValidAccountOptions(@{@"A":@{@"toolbar":@[@"search",@"search"]}}));
     assert(WUValidMD5(a)); assert(!WUValidMD5(@"bad")); assert(!WUValidMD5(@"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
     NSArray *ids=@[a,@"custom_emoticon_pid",b];
@@ -34,7 +36,8 @@ int main(void) { @autoreleasepool {
     bad=[s mutableCopy]; bad[@"membership"]=@{a:@"missing"}; assert(!WUValidAccountOptions(@{@"A":@{@"emoji":bad}}));
     bad=[s mutableCopy]; bad[@"groups"]=@[@{@"id":gid,@"name":@""}]; assert(!WUValidAccountOptions(@{@"A":@{@"emoji":bad}}));
     bad=[s mutableCopy]; bad[@"groups"]=@[@{@"id":gid,@"name":@"One"},@{@"id":gid,@"name":@"Two"}]; assert(!WUValidAccountOptions(@{@"A":@{@"emoji":bad}}));
-    assert([WUToolbarActions(@[@"search",@"repository",@"stats",@"search",@"settings"]) isEqual:(@[@"search",@"stats",@"settings"])]);
+    assert([WUToolbarActions(@[@"search",@"autoReply",@"stats",@"search",@"settings"]) isEqual:(@[@"search",@"stats",@"settings"])]);
+    assert([WUToolbarActions(@[@"repository",@"search",@"repository"]) isEqual:(@[@"repository",@"search"])]);
     assert(WUToolbarActions(NSNull.null).count==0);
-    puts("GroupLogic: 32 native assertions passed (filter, placeholder, deletion, isolation, validation, manual toolbar allowlist)");
+    puts("GroupLogic: 34 native assertions passed (filter, placeholder, deletion, isolation, validation, manual toolbar allowlist)");
 } return 0; }

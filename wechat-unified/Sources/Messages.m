@@ -221,7 +221,7 @@ static void ChatAppeared(UIViewController *v,SEL s,BOOL animated) {
 static void ChatDisappeared(UIViewController *v,SEL s,BOOL animated) {
     UIViewController *presented=v.presentedViewController;
     BOOL ownStats=[presented isKindOfClass:UINavigationController.class] && [[(UINavigationController *)presented topViewController] isKindOfClass:NSClassFromString(@"WUStatsController")];
-    if(!ownStats && !WUIsMomentsSheet(presented)) CancelPending();
+    if(!ownStats && !WUIsMomentsSheet(presented) && !WUIsRepositoryController(presented)) CancelPending();
     ((void(*)(id,SEL,BOOL))chatDisappearOriginal)(v,s,animated);
 }
 
@@ -469,7 +469,7 @@ static void OpenRepository(UIViewController *owner) {
     WURepositoryBinding *binding=[WURepositoryBinding new]; binding.account=account; binding.target=target;
     BOOL (^current)(void)=^BOOL{
         UIViewController *v=weak;
-        return v && v.viewIfLoaded.window && UIApplication.sharedApplication.applicationState==UIApplicationStateActive && [WUValue(@"enabled") boolValue] && [account isEqual:Account()] && gen==generation && [target isEqual:Session(v)] && [WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:@"repository"];
+        return v && (v.viewIfLoaded.window || WUIsRepositoryController(v.presentedViewController)) && (!v.navigationController || v.navigationController.topViewController==v) && UIApplication.sharedApplication.applicationState==UIApplicationStateActive && [WUValue(@"enabled") boolValue] && [account isEqual:Account()] && gen==generation && [target isEqual:Session(v)] && [WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:@"repository"];
     };
     binding.current=current;
     binding.capture=^NSArray *{
