@@ -5,14 +5,17 @@ enum ExperimentalDelete {
     static func run(_ clip: Clip, firstConfirmed: Bool, secondConfirmed: Bool,
                     progress: (String) -> Void = { _ in },
                     backup: (Clip) throws -> Void = RecycleStore.backupTest,
+                    enabled: () -> Bool = { DeleteSettings().isEnabled },
                     bridge: (String) -> [AnyHashable: Any] = { WCMExperimentalDelete($0) }) throws -> String {
         guard firstConfirmed && secondConfirmed else { return "已取消；未备份或删除。" }
-        guard clip.title == "WCM-DELETE-TEST", !clip.removalDisallowed else {
-            throw ClipError.invalid("只允许未禁止移除的 WCM-DELETE-TEST 单项")
+        guard enabled() else { throw ClipError.invalid("删除开关已关闭") }
+        guard !clip.removalDisallowed else {
+            throw ClipError.invalid("此书签禁止移除")
         }
         try backup(clip) // Includes verification of this transaction's manifest and identifier.
+        guard enabled() else { throw ClipError.invalid("删除开关已关闭；已创建回收副本，未删除") }
         progress("备份已验证，正在核验策略并尝试系统删除…")
-        let result = bridge(clip.id) // Bridge rechecks original title, policy, ID and path.
+        let result = bridge(clip.id) // Bridge rechecks policy, ID and path.
         guard result["called"] as? Bool == true else {
             return "已备份但拒绝删除：\(result["reason"] as? String ?? "未知错误")。副本保护有限。"
         }

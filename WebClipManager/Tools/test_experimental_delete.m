@@ -34,7 +34,7 @@ static void run(NSDictionary *plist, Class cls, BOOL expected) {
 int main(void) { @autoreleasepool {
     root = [[[NSTemporaryDirectory() stringByResolvingSymlinksInPath] stringByAppendingPathComponent:NSUUID.UUID.UUIDString] copy];
     NSCAssert([[NSFileManager defaultManager] createDirectoryAtPath:[root stringByAppendingPathComponent:ident] withIntermediateDirectories:YES attributes:nil error:NULL], @"mkdir");
-    NSDictionary *base=@{@"Title":@"WCM-DELETE-TEST", @"ConfigurationIsManaged":@NO};
+    NSDictionary *base=@{@"Title":@"普通书签", @"ConfigurationIsManaged":@NO};
     run(base,Mock.class,YES); run(base,NoConfig.class,YES);
     NSString *exact = [root stringByAppendingPathComponent:ident];
     pathOverride = [exact stringByAppendingString:@"/"]; run(base,Mock.class,NO);

@@ -60,7 +60,7 @@ struct DiagnosticReport: Codable {
         let cls: AnyClass? = NSClassFromString("UIWebClip")
         var presence: [String: Bool] = [:]
         // Metadata inspection only. Never allocate UIWebClip or invoke these methods.
-        for name in ["removeFromDisk", "requestIconUpdateInSpringBoard"] {
+        for name in ["removeFromDisk"] {
             presence["instance." + name] = cls.map { class_getInstanceMethod($0, NSSelectorFromString(name)) != nil } ?? false
         }
         presence["class.webClipWithIdentifier:"] = cls.map {

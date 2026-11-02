@@ -6,8 +6,9 @@ import Darwin
 final class BackgroundStore {
     private let parent: URL
     private let verifyAncestors: Bool
-    private let directory = "org.example.WebClipManager.background"
-    private let imageName = "background.jpg"
+    enum Purpose { case background, deletionSettings }
+    private let directory: String
+    private let imageName: String
     private let limit = 12 * 1024 * 1024
 
     // /var is an OS alias for /private/var on iOS. Rewrite only this
@@ -22,7 +23,15 @@ final class BackgroundStore {
     static func normalizeSystemVar(_ url: URL) -> URL {
         mapSystemAlias(url, alias: "/var", target: "/private/var")
     }
-    init(parent: URL? = nil) {
+    init(parent: URL? = nil, purpose: Purpose = .background) {
+        switch purpose {
+        case .background:
+            directory = "org.example.WebClipManager.background"
+            imageName = "background.jpg"
+        case .deletionSettings:
+            directory = "org.example.WebClipManager.deletion-settings"
+            imageName = "settings.dat"
+        }
         if let parent = parent {
             self.parent = Self.normalizeSystemVar(parent)
             self.verifyAncestors = false // XCTest supplies a private temporary parent.

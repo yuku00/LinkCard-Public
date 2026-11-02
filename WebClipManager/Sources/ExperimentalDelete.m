@@ -46,7 +46,7 @@ static NSString *checkPlist(int dir) {
     close(fd); if (n < 0) return @"读取 Info.plist 失败";
     id p = [NSPropertyListSerialization propertyListWithData:data options:NSPropertyListImmutable format:NULL error:NULL];
     if (![p isKindOfClass:NSDictionary.class]) return @"Info.plist 无效";
-    if (![p[@"Title"] isKindOfClass:NSString.class] || ![p[@"Title"] isEqual:@"WCM-DELETE-TEST"]) return @"标题不是 WCM-DELETE-TEST";
+    if (![p[@"Title"] isKindOfClass:NSString.class]) return @"标题无效";
     for (NSString *key in @[@"ConfigurationIsManaged", @"RemovalDisallowed"]) {
         id value = p[key];
         if (!value) {

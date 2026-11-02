@@ -67,8 +67,8 @@ enum RecycleStore {
         guard WCMRecycleRemove(store, name) == 0 else { throw ClipError.invalid("清理失败（错误码 \(errno)）") }
     }
     static func backupTest(_ clip: Clip) throws {
-        guard clip.title == "WCM-DELETE-TEST", !clip.removalDisallowed else {
-            throw ClipError.invalid("只允许备份标题完全匹配且未禁止移除的测试书签")
+        guard !clip.removalDisallowed else {
+            throw ClipError.invalid("此书签禁止移除")
         }
         let source = try openPath("/private/var/mobile/Library/WebClips", createLast: false)
         defer { close(source) }

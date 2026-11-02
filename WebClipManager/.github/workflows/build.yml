@@ -1,4 +1,4 @@
-name: WebClipManager build25 WebClips entitlement candidate (manual)
+name: WebClipManager build26 (manual)
 on:
   workflow_dispatch:
     inputs:

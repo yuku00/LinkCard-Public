@@ -291,12 +291,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     var duplicatesOnly = false
     private var menuButton: UIBarButtonItem!
     private var lastGridWidth: CGFloat = 0
-    private let deleteLogKey = "experimentalDeleteLastResult"
-    private func recordDelete(_ text: String) {
-        status = text
-        UserDefaults.standard.set(text, forKey: deleteLogKey)
-        update()
-    }
+    private let deleteSettings = DeleteSettings()
     var gridColumns: Int { traitCollection.preferredContentSizeCategory.isAccessibilityCategory || tableView.bounds.width < 320 ? 1 : 2 }
     private var gridItemHeight: CGFloat {
         let head = UIFont.preferredFont(forTextStyle: .headline).lineHeight
@@ -437,15 +432,14 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
                 UIAction(title: title, attributes: disabled, state: screenFilter == filter ? .on : .off) { [weak self] _ in self?.screenFilter = filter; self?.update() }
             }
             actions.append(UIMenu(title: "显示模式", options: .displayInline, children: screenActions))
-            actions.append(UIAction(title: "测试书签：仅备份（不删除）", attributes: busy || selected.count != 1 ? .disabled : []) { [weak self] _ in
-                self?.confirmTestBackup()
+            actions.append(UIAction(title: "启用删除", attributes: disabled, state: deleteSettings.isEnabled ? .on : .off) { [weak self] _ in
+                guard let self = self, !self.busy else { return }
+                do { try self.deleteSettings.setEnabled(!self.deleteSettings.isEnabled) }
+                catch { self.recycleMessage("无法保存设置", "删除设置未保存：\(error.localizedDescription)") }
+                self.update()
             })
-            actions.append(UIAction(title: "实验性：删除单个测试书签…", attributes: busy || selected.count != 1 ? .disabled : []) { [weak self] _ in
-                self?.confirmExperimentalDelete()
-            })
-            actions.append(UIAction(title: "查看上次实验删除结果", attributes: disabled) { [weak self] _ in
-                guard let self = self else { return }
-                self.recycleMessage("上次实验删除结果", UserDefaults.standard.string(forKey: self.deleteLogKey) ?? "尚无记录。")
+            actions.append(UIAction(title: "删除所选（\(selected.count)）…", attributes: busy || selected.isEmpty || !deleteSettings.isEnabled ? .disabled : []) { [weak self] _ in
+                self?.confirmDelete()
             })
             actions.append(UIAction(title: "回收站", attributes: disabled) { [weak self] _ in self?.showRecycle() })
             actions.append(UIAction(title: "精确重复 URL", attributes: disabled, state: duplicatesOnly ? .on : .off) { [weak self] _ in
@@ -505,62 +499,82 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "好", style: .default)); present(alert, animated: true)
     }
-    private func confirmTestBackup(_ target: Clip? = nil) {
-        let candidate = target ?? (selected.count == 1 ? clips.first(where: { $0.id == selected.first }) : nil)
-        guard let clip = candidate, clip.title == "WCM-DELETE-TEST" else {
-            let alert = UIAlertController(title: "仅限测试书签", message: "请先新建一个标题精确为 WCM-DELETE-TEST 的可丢弃主屏幕书签，重新读取并仅选择该项。", preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: "好", style: .cancel)); present(alert, animated: true); return
+    private func confirmDelete(_ target: Clip? = nil) {
+        guard !busy, deleteSettings.isEnabled else {
+            recycleMessage("删除未启用", "请先在菜单中启用删除。")
+            return
         }
-        let alert = UIAlertController(title: "备份可丢弃测试书签？", message: "只复制到本机应用专属回收目录，不删除系统书签或修改 Safari。可在回收站中恢复或清理副本。", preferredStyle: .alert)
+        let targets = target.map { [$0] } ?? clips.filter { selected.contains($0.id) }
+        guard !targets.isEmpty, target != nil || targets.count == selected.count else {
+            recycleMessage("无法删除", "所选项目已变化，请重新读取并选择。")
+            return
+        }
+        let hidden = target == nil ? hiddenSelectionCount : 0
+        let alert = UIAlertController(title: "删除 \(targets.count) 项书签？", message: "包含隐藏选中 \(hidden) 项。将先备份到回收站，再尝试删除书签文件；桌面残留图标请手动移除。", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        alert.addAction(UIAlertAction(title: "仅备份", style: .default) { [weak self] _ in
-            guard let self = self, !self.busy else { return }
-            self.busy = true; self.status = "正在备份测试书签…"; self.update()
-            Task { [weak self] in
-                let result = await Task.detached { Result { try RecycleStore.backupTest(clip) } }.value
-                guard let self = self else { return }
-                self.busy = false
-                switch result {
-                case .success: self.status = "测试书签备份完成（backupOnly）；未删除源，也未验证桌面登记。"
-                case .failure(let error): self.status = "备份失败：\(error.localizedDescription)"
-                }
-                self.update()
-            }
+        alert.addAction(UIAlertAction(title: "备份并删除", style: .destructive) { [weak self] _ in
+            guard let self = self, !self.busy, self.deleteSettings.isEnabled else { return }
+            self.hasAttemptedInitialRead = true
+            self.busy = true
+            self.status = "正在备份并删除 \(targets.count) 项…"
+            self.update()
+            Task { await self.deleteBatch(targets) }
         })
         present(alert, animated: true)
     }
-    private func confirmExperimentalDelete(_ target: Clip? = nil) {
-        let candidate = target ?? (selected.count == 1 ? clips.first(where: { $0.id == selected.first }) : nil)
-        guard !busy, let clip = candidate else { recycleMessage("无法操作", "正在处理或选择已失效，请重新读取。"); return }
-        guard clip.title == "WCM-DELETE-TEST" else {
-            recycleMessage("普通书签暂不可删除", "为保护数据，实验只允许标题精确为 WCM-DELETE-TEST 的可丢弃主屏幕书签。请在 Safari 新建该名称的主屏幕书签，返回本应用重新读取后长按它。受管或策略未知仍会拒绝。"); return
+    private func deleteBatch(_ targets: [Clip]) async {
+        var successes = Set<String>()
+        var failures: [(Clip, String)] = []
+        var successDetails: [String] = []
+        for clip in targets {
+            guard deleteSettings.isEnabled else {
+                failures.append((clip, "删除开关已关闭")); continue
+            }
+            let outcome = await Task.detached { () -> (Bool, String) in
+                var response: [AnyHashable: Any] = [:]
+                do {
+                    let text = try ExperimentalDelete.run(clip, firstConfirmed: true, secondConfirmed: true, bridge: { id in
+                        let value = WCMExperimentalDelete(id)
+                        response = value
+                        return value
+                    })
+                    return (response["called"] as? Bool == true && response["returned"] as? Bool == true && response["source"] as? String == "不存在", text)
+                } catch { return (false, error.localizedDescription) }
+            }.value
+            if outcome.0 {
+                successes.insert(clip.id)
+                clips.removeAll { $0.id == clip.id }
+                selected.remove(clip.id)
+                successDetails.append("\(clip.title)：\(outcome.1)")
+            } else {
+                failures.append((clip, outcome.1))
+                selected.insert(clip.id)
+            }
         }
-        let id = clip.id
-        let warning = "实验性功能，仅供可丢弃测试对象。将尝试系统删除，回收站副本保护有限，不能作为唯一备份；恢复不保证图标或元数据。不会清理 Safari。"
-        let first = UIAlertController(title: "实验删除测试书签？", message: warning, preferredStyle: .alert)
-        first.addAction(UIAlertAction(title: "取消", style: .cancel))
-        first.addAction(UIAlertAction(title: "继续", style: .destructive) { [weak self] _ in
-            guard let self = self, !self.busy else { return }
-            let second = UIAlertController(title: "再次确认单项实验删除？", message: "仅对 \(id) 先备份、再核验并最多调用一次系统删除。\n" + warning, preferredStyle: .alert)
-            second.addAction(UIAlertAction(title: "取消", style: .cancel))
-            second.addAction(UIAlertAction(title: "备份并尝试删除", style: .destructive) { [weak self] _ in
-                guard let self = self, !self.busy else { return }
-                self.busy = true; self.recordDelete("\(id)：正在备份测试书签…")
-                Task { [weak self] in
-                    let result = await Task.detached { Result { try ExperimentalDelete.run(clip, firstConfirmed: true, secondConfirmed: true, progress: { message in
-                        DispatchQueue.main.async { [weak self] in self?.recordDelete("\(id)：" + message) }
-                    }) } }.value
-                    guard let self = self else { return }; self.busy = false
-                    switch result {
-                    case .success(let message): self.recordDelete("\(id)：" + message)
-                    case .failure(let error): self.recordDelete("\(id)：备份失败或预检未完成，未调用删除：\(error.localizedDescription)")
-                    }
-                    self.recycleMessage("实验删除结果", self.status)
-                }
-            })
-            first.dismiss(animated: true) { self.present(second, animated: true) }
-        })
-        present(first, animated: true)
+        var scanNote = ""
+        do {
+            let scan = try await repository.scan()
+            // Partial scans may omit unreadable entries; keep the known local rows in that case.
+            var merged = scan.clips.filter { !successes.contains($0.id) }
+            let scannedIDs = Set(merged.map(\.id))
+            let required = scan.issues.isEmpty ? Set(failures.map { $0.0.id }) : Set(clips.map(\.id))
+            merged.append(contentsOf: clips.filter { required.contains($0.id) && !scannedIDs.contains($0.id) && !successes.contains($0.id) })
+            clips = merged
+            readState = scan.issues.isEmpty ? "loaded" : "partial"
+            if !scan.issues.isEmpty { scanNote = "\n列表部分读取异常，已保留已有项目。" }
+        } catch {
+            scanNote = "\n刷新失败，保留当前列表：" + AccessError.capture(error).summary
+        }
+        selected.subtract(successes)
+        selected.formUnion(failures.map { $0.0.id })
+        status = "删除成功 \(successes.count) 项，失败 \(failures.count) 项。" + scanNote
+        if !successDetails.isEmpty { status += "\n" + successDetails.joined(separator: "\n") }
+        if !failures.isEmpty {
+            status += "\n" + failures.map { "\($0.0.title)：\($0.1)" }.joined(separator: "\n")
+        }
+        busy = false
+        update()
+        recycleMessage("删除结果", status)
     }
     private func confirmClearMemory() {
         let alert = UIAlertController(title: "清除读取结果？", message: "仅清除当前内存中的读取结果和选择，不修改系统书签或备忘录。", preferredStyle: .alert)
@@ -609,7 +623,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
                 let scan = try await repository.scan()
                 clips = scan.clips; selected = []
                 readState = scan.issues.isEmpty ? "loaded" : "partial"
-                status = "读取 \(clips.count) 项 · 跳过/异常 \(scan.issues.count) 项。普通批量删除禁用；仅提供可丢弃测试书签实验入口。"
+                status = "读取 \(clips.count) 项 · 跳过/异常 \(scan.issues.count) 项。"
                 if let failure = scan.firstFailure { status += "\n" + failure.summary }
             } else {
                 let loader = notesLoader
@@ -628,7 +642,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         section == 0 ? 1 : (mode == .clips ? max(1, (visibleClips.count + gridColumns - 1) / gridColumns) : max(1, visibleNotes.count))
     }
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        section == 0 ? "只读 · \(readState)" : "显示 \(visibleIDs.count) 项 · 已选 \(selected.count) 项 · 隐藏已选 \(hiddenSelectionCount) 项"
+        section == 0 ? (mode == .clips ? "\(readState) · 删除\(deleteSettings.isEnabled ? "已启用" : "已关闭")" : "只读 · \(readState)") : "显示 \(visibleIDs.count) 项 · 已选 \(selected.count) 项 · 隐藏已选 \(hiddenSelectionCount) 项"
     }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         if indexPath.section == 1 && mode == .clips && !visibleClips.isEmpty {
@@ -676,11 +690,8 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         let clip = visibleClips[index]
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
             UIMenu(children: [
-                UIAction(title: "删除（实验）…", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self?.confirmExperimentalDelete(clip) }
-                },
-                UIAction(title: "备份测试书签…", image: UIImage(systemName: "archivebox")) { [weak self] _ in
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self?.confirmTestBackup(clip) }
+                UIAction(title: "删除…", image: UIImage(systemName: "trash"), attributes: self?.deleteSettings.isEnabled == true ? .destructive : [.disabled, .destructive]) { [weak self] _ in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self?.confirmDelete(clip) }
                 },
                 UIAction(title: "详情", image: UIImage(systemName: "info.circle")) { [weak self] _ in
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
