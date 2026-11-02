@@ -434,6 +434,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
             actions.append(UIAction(title: "测试书签：仅备份（不删除）", attributes: busy || selected.count != 1 ? .disabled : []) { [weak self] _ in
                 self?.confirmTestBackup()
             })
+            actions.append(UIAction(title: "回收站", attributes: disabled) { [weak self] _ in self?.showRecycle() })
             actions.append(UIAction(title: "精确重复 URL", attributes: disabled, state: duplicatesOnly ? .on : .off) { [weak self] _ in
                 guard let self = self else { return }; self.duplicatesOnly.toggle(); self.update()
             })
@@ -449,12 +450,54 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         tableView.reloadData()
     }
     func updateSearchResults(for searchController: UISearchController) { update() }
+    private func showRecycle() {
+        do {
+            let entries = try RecycleStore.entries()
+            let alert = UIAlertController(title: "回收站（\(entries.count)）", message: "仅应用专属副本；无完整清单的条目只能清理。恢复不覆盖现有目录，不保证图标注册、布局或登录状态。", preferredStyle: .actionSheet)
+            for (index, entry) in entries.enumerated() {
+                alert.addAction(UIAlertAction(title: entry.identifier == nil ? "未完成副本 \(index + 1)" : "副本 \(index + 1)", style: .default) { [weak self] _ in self?.showRecycleEntry(entry) })
+            }
+            if !entries.isEmpty {
+                alert.addAction(UIAlertAction(title: "清空专属回收副本…", style: .destructive) { [weak self] _ in self?.confirmRecycleClear(entries, second: false) })
+            }
+            alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+            if let pop = alert.popoverPresentationController { pop.barButtonItem = menuButton }
+            present(alert, animated: true)
+        } catch { recycleMessage("无法打开回收站", error.localizedDescription) }
+    }
+    private func showRecycleEntry(_ entry: RecycleStore.Entry) {
+        let alert = UIAlertController(title: "回收副本", message: entry.identifier == nil ? "清单不完整，只能清理。" : "恢复仅复制文件，不覆盖已有目录；不保证图标注册、布局或登录状态。", preferredStyle: .alert)
+        if entry.identifier != nil {
+            alert.addAction(UIAlertAction(title: "无覆盖恢复", style: .default) { [weak self] _ in
+                do { try RecycleStore.restore(entry.name); self?.recycleMessage("文件已恢复", "未验证桌面图标注册、布局或登录状态。") }
+                catch { self?.recycleMessage("恢复失败", error.localizedDescription) }
+            })
+        }
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        present(alert, animated: true)
+    }
+    private func confirmRecycleClear(_ entries: [RecycleStore.Entry], second: Bool) {
+        let alert = UIAlertController(title: second ? "再次确认永久清空？" : "清空回收副本？", message: "仅清理应用专属回收目录内 \(entries.count) 个副本（含未完成项），不操作源书签或 Safari。此操作不可撤销。", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: second ? "永久清空" : "继续", style: .destructive) { [weak self] _ in
+            guard let self = self else { return }
+            if !second { self.confirmRecycleClear(entries, second: true); return }
+            var failed = 0
+            for entry in entries { do { try RecycleStore.remove(entry.name) } catch { failed += 1 } }
+            self.recycleMessage("清理结束", "失败 \(failed) 项；源书签和 Safari 未由此操作修改。")
+        })
+        present(alert, animated: true)
+    }
+    private func recycleMessage(_ title: String, _ message: String) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "好", style: .default)); present(alert, animated: true)
+    }
     private func confirmTestBackup() {
         guard selected.count == 1, let id = selected.first, let clip = clips.first(where: { $0.id == id }), clip.title == "WCM-DELETE-TEST" else {
             let alert = UIAlertController(title: "仅限测试书签", message: "请先新建一个标题精确为 WCM-DELETE-TEST 的可丢弃主屏幕书签，重新读取并仅选择该项。", preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "好", style: .cancel)); present(alert, animated: true); return
         }
-        let alert = UIAlertController(title: "备份可丢弃测试书签？", message: "只复制到本机应用专属回收目录，不删除系统书签或修改 Safari。当前版本没有系统删除、回收站列表或恢复功能。", preferredStyle: .alert)
+        let alert = UIAlertController(title: "备份可丢弃测试书签？", message: "只复制到本机应用专属回收目录，不删除系统书签或修改 Safari。可在回收站中恢复或清理副本。", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         alert.addAction(UIAlertAction(title: "仅备份", style: .default) { [weak self] _ in
             guard let self = self, !self.busy else { return }

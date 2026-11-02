@@ -1,4 +1,4 @@
-name: WebClipManager build16 initial read and background (manual)
+name: WebClipManager build18 recycle candidate (manual)
 on:
   workflow_dispatch:
     inputs:
@@ -27,6 +27,8 @@ jobs:
           /tmp/webclip-checks/bin/python Tools/test_build12_policy.py
           python3 Tools/test_helper_spawn_failure.py
           python3 Tools/test_helper_transport.py
+          python3 Tools/test_recycle_copy.py
+          python3 Tools/test_recycle_operations.py
       - name: Generate project
         run: xcodegen generate
       - name: Run synthetic unit tests
