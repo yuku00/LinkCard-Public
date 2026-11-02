@@ -5,7 +5,7 @@ NSDictionary *WUAccountOptions(NSString *account) {
     id accounts=WUValue(@"accounts"); return accounts[account]?:@{};
 }
 BOOL WUSaveAccountOption(NSString *account, NSString *key, id value) {
-    if(!NSThread.isMainThread || !account.length || ![account isEqual:WUCurrentAccount()] || ![@[@"emoji",@"toolbar",@"home",@"momentsCache"] containsObject:key]) return NO;
+    if(!NSThread.isMainThread || !account.length || ![account isEqual:WUCurrentAccount()] || ![@[@"emoji",@"toolbar",@"home",@"momentsCache",@"toolbarLayout"] containsObject:key]) return NO;
     NSMutableDictionary *accounts=[WUValue(@"accounts") mutableCopy]?:[NSMutableDictionary dictionary];
     NSMutableDictionary *options=[accounts[account] mutableCopy]?:[NSMutableDictionary dictionary]; options[key]=value; accounts[account]=options;
     return WUValidAccountOptions(accounts) && WUSave(@"accounts",accounts);
@@ -152,21 +152,23 @@ static void Reuse(UIView *v,SEL s) { ResetPage(v); WUEmojiPage *p=Page(v); p.inv
 - (BOOL)save:(NSDictionary *)state {
     if(![self current] || !WUSaveAccountOption(self.account,@"emoji",state)) { [self notice:@"未保存：账号变化、数据超限或写盘失败。原分组保留。请关闭后重新打开。 "]; return NO; } return YES;
 }
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 4; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 5; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s {
     if(![self current]) return 0;
-    return s==3?1:(s==0?4+[EmojiState(self.account)[@"groups"] count]:(s==1?self.identifiers.count:11));
+    return s==4?4:(s==3?1:(s==0?4+[EmojiState(self.account)[@"groups"] count]:(s==1?self.identifiers.count:11)));
 }
-- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return @[@"官方添加的单个表情",@"已打开面板中的表情（点按移动）",@"聊天工具栏 · 手动选择动作",@"首页会话分组"][s]; }
+- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return @[@"官方添加的单个表情",@"已打开面板中的表情（点按移动）",@"聊天工具栏 · 手动选择动作",@"首页会话分组",@"聊天工具显示方式"][s]; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
     if(![self current]) return @"账号不可核验或已经切换，请关闭后重新打开；不会使用上个账号的配置。";
     if(s==0) return emojiReady?@"分组按账号保存；长按自定义分组可改名或前后排序，左滑删除仅移除映射，不删媒体。先打开添加的单个表情面板。只有识别到添加占位且全部MD5可核验时才筛选；整包、最近使用保持原样。":@"此宿主缺少官方表情列表或生命周期签名，当前不可启用。";
     if(s==1) return @"仅当前账号宿主列表的MD5，不复制媒体、不读取聊天数据库。没有可核验列表时不提供手工假数据入口。";
+    if(s==4) return @"按账号保存：原菜单或本地网格；动作与顺序沿用上方选择。不会改系统键盘或输入栏。";
     if(s==3) return @"全部、私信、群聊、其他及自定义组；宿主签名与原会话快照通过后才筛选。";
     return @"默认不选任何动作；点按选择，长按已选动作可前移或后移，数字表示菜单顺序；聊天页头仅列出所选且可用动作。仓库须确认目标才发送。链接使用微信原长按菜单→多选，再点聊天工具；不自动改写气泡链接。";
 }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0;
+    if(p.section==4) { NSArray *modes=@[@"menu",@"grid2",@"grid3",@"grid4"]; cell.textLabel.text=@[@"原工具菜单",@"网格 · 2列",@"网格 · 3列",@"网格 · 4列"][p.row]; NSString *mode=WUAccountOptions(self.account)[@"toolbarLayout"]?:@"menu"; if([mode isEqual:modes[p.row]]) cell.accessoryType=UITableViewCellAccessoryCheckmark; return cell; }
     if(p.section==3) { cell.textLabel.text=@"首页电报分组"; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; return cell; }
     NSDictionary *state=EmojiState(self.account);
     if(p.section==0) {
@@ -196,6 +198,7 @@ static void Reuse(UIView *v,SEL s) { ResetPage(v); WUEmojiPage *p=Page(v); p.inv
 }
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p {
     [t deselectRowAtIndexPath:p animated:YES]; if(![self current]) return;
+    if(p.section==4) { NSArray *modes=@[@"menu",@"grid2",@"grid3",@"grid4"]; if(!WUSaveAccountOption(self.account,@"toolbarLayout",modes[p.row])) [self notice:@"保存失败，原布局保留。"]; return; }
     if(p.section==3) { WUShowHomeGroups(self); return; }
     if(p.section==2) {
         NSString *key=@[@"search",@"stats",@"settings",@"moments",@"repository",@"emojiSave",@"voiceForward",@"voicePacks",@"messageLinks",@"imageEmoji",@"emoticonLibrary"][p.row]; NSMutableArray *actions=[WUToolbarActions(WUAccountOptions(self.account)[@"toolbar"]) mutableCopy];

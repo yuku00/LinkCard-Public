@@ -6,6 +6,10 @@ int main(void) { @autoreleasepool {
     NSDictionary *base=WUEmptyEmojiGroups();
     assert(WUValidAccountOptions(@{}));
     assert(WUValidAccountOptions(@{@"account-A":@{@"emoji":base,@"toolbar":@[]}}));
+    for(NSString *layout in @[@"menu",@"grid2",@"grid3",@"grid4"]) assert(WUValidAccountOptions(@{@"A":@{@"toolbarLayout":layout,@"toolbar":@[@"search",@"stats"]},@"B":@{@"toolbarLayout":@"menu"}}));
+    assert(!WUValidAccountOptions(@{@"A":@{@"toolbarLayout":@"grid5"}}));
+    assert(!WUValidAccountOptions(@{@"A":@{@"toolbarLayout":@42}}));
+    assert(!WUValidAccountOptions(@{@"A":@{@"toolbarLayout":@{} }}));
     assert(!WUValidAccountOptions(@{@"":@{}}));
     assert(!WUValidAccountOptions(@{@"A":@{@"unknown":@YES}}));
     // Unsupported actions still reject; repository is now an explicitly implemented manual action.

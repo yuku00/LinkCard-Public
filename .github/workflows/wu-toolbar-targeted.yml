@@ -1,0 +1,23 @@
+name: Toolbar targeted Apple checks
+on:
+  push:
+    branches: [wu-toolbar-20261102]
+permissions:
+  contents: read
+jobs:
+  targeted:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile changed iOS modules
+        working-directory: wechat-unified
+        run: |
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=16.6 -fobjc-arc -fobjc-arc-exceptions -fblocks -fsyntax-only -Wall -Wextra -Werror -Wno-unused-parameter -Wno-nullability-completeness Sources/GroupLogic.m Sources/Groups.m Sources/Messages.m
+      - name: Run account layout logic tests
+        working-directory: wechat-unified
+        run: |
+          xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/group_logic.m Sources/GroupLogic.m Sources/HomeLogic.m -framework Foundation -o /tmp/wu-group-test
+          /tmp/wu-group-test
+          python3 tests/test_chat_layout.py
