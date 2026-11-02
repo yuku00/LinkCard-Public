@@ -18,7 +18,7 @@ static WUVoiceDisplay *layoutOwner;
 @property(nonatomic) BOOL layoutObserved, layoutConsumedDuration;
 - (BOOL)valid;
 @end
-static unsigned Duration(id message, SEL cmd) {
+static unsigned WUVoiceProjectedDuration(id message, SEL cmd) {
     unsigned host=((unsigned(*)(id,SEL))durationOriginal)(message,cmd);
     if(!NSThread.isMainThread) return host;
     WUVoiceDisplay *d=layoutOwner;
@@ -94,7 +94,7 @@ void WUInstallVoiceDisplay(void) {
        !WUMatches(class_getInstanceMethod(modelClass,NSSelectorFromString(@"messageWrap")),"@",@[]) ||
        !WUMatches(class_getInstanceMethod(messageClass,NSSelectorFromString(@"m_uiVoiceTime")),"I",@[]) ||
        !WUMatches(class_getInstanceMethod(messageClass,NSSelectorFromString(@"m_uiMessageType")),"I",@[])) return;
-    if(!durationOriginal) WUHook(@"CMessageWrap",@"m_uiVoiceTime",NO,"I",@[],(IMP)Duration,&durationOriginal);
+    if(!durationOriginal) WUHook(@"CMessageWrap",@"m_uiVoiceTime",NO,"I",@[],(IMP)WUVoiceProjectedDuration,&durationOriginal);
     if(!textOriginal) WUHook(@"VoiceMessageViewModel",@"voiceTimeStirng",NO,"@",@[],(IMP)TimeText,&textOriginal);
 }
 NSString *WUVoiceDisplaySourceVersion(NSString *path) {
