@@ -1,4 +1,4 @@
-name: WebClipManager build24 device-only experimental delete (manual)
+name: WebClipManager build25 WebClips entitlement candidate (manual)
 on:
   workflow_dispatch:
     inputs:

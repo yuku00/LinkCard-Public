@@ -15,6 +15,7 @@ NSString *WCMRuntimeJSON(void) {
     NSDictionary *expected = @{
         @"platform-application": @YES,
         @"application-identifier": @"org.example.WebClipManager",
+        @"com.apple.private.WebClips.read-write": @YES,
         @"com.apple.private.security.container-required": @NO,
         @"com.apple.private.security.no-container": @YES,
         @"com.apple.private.security.no-sandbox": @YES,

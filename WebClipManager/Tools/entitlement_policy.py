@@ -1,9 +1,10 @@
 """Build9: explicit noncontainer profile, without HOME rebinding or extra storage rights."""
 BUNDLE_ID = 'org.example.WebClipManager'
-BUILD = '24'
+BUILD = '25'
 ALLOWED_ENTITLEMENTS = {
     'platform-application': True,
     'application-identifier': BUNDLE_ID,
+    'com.apple.private.WebClips.read-write': True,
     'com.apple.private.security.container-required': False,
     'com.apple.private.security.no-container': True,
     'com.apple.private.security.no-sandbox': True,
@@ -60,7 +61,8 @@ def decode_der(data):
 
 def self_test():
     validate_entitlements(ALLOWED_ENTITLEMENTS)
-    for bad in [dict(ALLOWED_ENTITLEMENTS, **{'get-task-allow': True}),
+    for bad in [dict(ALLOWED_ENTITLEMENTS, **{'com.apple.private.WebClips.read-write': False}),
+                dict(ALLOWED_ENTITLEMENTS, **{'get-task-allow': True}),
                 dict(ALLOWED_ENTITLEMENTS, **{'application-identifier': 'com.trollscript.dom'}),
                 dict(ALLOWED_ENTITLEMENTS, **{'com.apple.private.security.container-required': BUNDLE_ID}),
                 {'com.apple.private.security.no-sandbox': True}]:

@@ -50,7 +50,7 @@ final class StorageAndRuntimeTests: XCTestCase {
         let report = try XCTUnwrap(RuntimePermissions.capture())
         XCTAssertTrue(["available", "unknown"].contains(report.entitlementAPI))
         XCTAssertTrue(["available", "unknown"].contains(report.sandboxAPI))
-        XCTAssertEqual(report.entitlements.count, 8)
+        XCTAssertEqual(report.entitlements.count, 9)
         XCTAssertEqual(report.sandboxFilterType & 1, 1)
         XCTAssertEqual(Set(report.entitlements.keys), Set(report.expectedComparison.keys))
         for value in report.entitlements.values {
