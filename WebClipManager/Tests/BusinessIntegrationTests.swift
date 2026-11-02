@@ -43,10 +43,11 @@ final class BusinessIntegrationTests: XCTestCase {
         await list.loadItems() // same async handler invoked after the real confirmation action
         XCTAssertEqual(list.readState, "loaded")
         XCTAssertEqual(list.clips.count, 1)
-        let cell = list.tableView(list.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
-        XCTAssertEqual((cell as? GlassCell)?.titleLabel.text, "Synthetic Bookmark")
-        XCTAssertNotNil((cell as? GlassCell)?.iconView.image) // Missing icon uses a placeholder.
-        list.tableView(list.tableView, didSelectRowAt: IndexPath(row: 0, section: 1))
+        let row = try XCTUnwrap(list.tableView(list.tableView, cellForRowAt: IndexPath(row: 0, section: 1)) as? ClipGridRow)
+        let grid = row.grid
+        let cell = list.collectionView(grid, cellForItemAt: IndexPath(item: 0, section: 0)) as? ClipGridCell
+        XCTAssertNotNil(cell?.iconView.image) // Missing icon uses a placeholder.
+        list.collectionView(grid, didSelectItemAt: IndexPath(item: 0, section: 0))
         XCTAssertEqual(list.selected, ["fixture.webclip"])
         let stage = try await list.prepareExport(markdown: false)
         XCTAssertEqual(stage.urls.count, 1)

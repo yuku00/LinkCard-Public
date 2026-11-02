@@ -1,4 +1,4 @@
-name: WebClipManager build14 background and cards (manual)
+name: WebClipManager build15 grid regression (manual)
 on:
   workflow_dispatch:
     inputs:

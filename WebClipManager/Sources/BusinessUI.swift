@@ -169,8 +169,77 @@ final class GlassCell: UITableViewCell {
     }
 }
 
+final class ClipGridCell: UICollectionViewCell {
+    private let glass = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+    let iconView = UIImageView()
+    private let titleLabel = UILabel()
+    private let urlLabel = UILabel()
+    private let check = UIImageView(image: UIImage(systemName: "checkmark.circle.fill"))
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        glass.translatesAutoresizingMaskIntoConstraints = false
+        glass.clipsToBounds = true; glass.layer.cornerRadius = 20; glass.layer.cornerCurve = .continuous
+        glass.layer.borderWidth = 1 / UIScreen.main.scale
+        contentView.addSubview(glass)
+        let header = UIStackView(arrangedSubviews: [iconView, UIView(), check])
+        header.axis = .horizontal; header.alignment = .center
+        iconView.contentMode = .scaleAspectFit
+        iconView.backgroundColor = .tertiarySystemFill; iconView.layer.cornerRadius = 10; iconView.clipsToBounds = true
+        check.tintColor = .systemBlue; check.contentMode = .scaleAspectFit
+        titleLabel.font = .preferredFont(forTextStyle: .headline); titleLabel.adjustsFontForContentSizeCategory = true; titleLabel.numberOfLines = 2
+        urlLabel.font = .preferredFont(forTextStyle: .caption1); urlLabel.adjustsFontForContentSizeCategory = true; urlLabel.textColor = .secondaryLabel; urlLabel.numberOfLines = 2
+        let stack = UIStackView(arrangedSubviews: [header, titleLabel, urlLabel])
+        stack.axis = .vertical; stack.spacing = 6; stack.translatesAutoresizingMaskIntoConstraints = false
+        glass.contentView.addSubview(stack)
+        NSLayoutConstraint.activate([
+            glass.leadingAnchor.constraint(equalTo: contentView.leadingAnchor), glass.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            glass.topAnchor.constraint(equalTo: contentView.topAnchor), glass.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: glass.contentView.leadingAnchor, constant: 12), stack.trailingAnchor.constraint(equalTo: glass.contentView.trailingAnchor, constant: -12),
+            stack.topAnchor.constraint(equalTo: glass.contentView.topAnchor, constant: 12), stack.bottomAnchor.constraint(lessThanOrEqualTo: glass.contentView.bottomAnchor, constant: -12),
+            iconView.widthAnchor.constraint(equalToConstant: 44), iconView.heightAnchor.constraint(equalToConstant: 44),
+            check.widthAnchor.constraint(equalToConstant: 22), check.heightAnchor.constraint(equalToConstant: 22)
+        ])
+        isAccessibilityElement = true
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    func configure(_ clip: Clip, selected: Bool) {
+        iconView.image = clip.icon.flatMap { GlassCell.thumbnail($0) } ?? UIImage(systemName: "bookmark")
+        titleLabel.text = clip.title; urlLabel.text = clip.url
+        check.isHidden = !selected
+        glass.layer.borderColor = (selected ? UIColor.systemBlue : UIColor.separator).resolvedColor(with: traitCollection).cgColor
+        glass.layer.borderWidth = selected ? 2 : 1 / UIScreen.main.scale
+        accessibilityLabel = "\(clip.title)，\(clip.url)"
+        accessibilityValue = selected ? "已选中" : "未选中"
+        accessibilityTraits = selected ? [.button, .selected] : .button
+        accessibilityIdentifier = "contentRow"
+    }
+}
+
+final class ClipGridRow: UITableViewCell {
+    let grid: UICollectionView
+    let height: NSLayoutConstraint
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        let layout = UICollectionViewFlowLayout()
+        layout.minimumInteritemSpacing = 10; layout.minimumLineSpacing = 10
+        grid = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        height = grid.heightAnchor.constraint(equalToConstant: 150)
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        backgroundColor = .clear; selectionStyle = .none
+        grid.backgroundColor = .clear; grid.isScrollEnabled = false
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        grid.register(ClipGridCell.self, forCellWithReuseIdentifier: "clip")
+        grid.accessibilityIdentifier = "webclipsGridRow"
+        contentView.addSubview(grid)
+        NSLayoutConstraint.activate([grid.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            grid.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            grid.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 5),
+            grid.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -5), height])
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+}
+
 @MainActor
-final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocumentPickerDelegate, PHPickerViewControllerDelegate {
+final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocumentPickerDelegate, PHPickerViewControllerDelegate, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
     enum Mode { case clips, notes }
     let mode: Mode
     let repository: Repository
@@ -181,15 +250,31 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     private(set) var status = "尚未读取。点击读取按钮开始；不自动访问个人内容。"
     private(set) var readState = "notRead"
     var selected: Set<String> = []
-    private let search = UISearchController(searchResultsController: nil)
+    let search = UISearchController(searchResultsController: nil)
     private var staging: ExportStaging?
     private var backgroundPicker: UIDocumentPickerViewController?
     private var exportButton: UIBarButtonItem!
     private var readButton: UIBarButtonItem!
-    private var selectButton: UIBarButtonItem!
-    private var clearButton: UIBarButtonItem!
+    enum ScreenFilter { case all, full, nonFull }
+    var screenFilter: ScreenFilter = .all
+    var duplicatesOnly = false
+    private var menuButton: UIBarButtonItem!
+    private var lastGridWidth: CGFloat = 0
+    var gridColumns: Int { traitCollection.preferredContentSizeCategory.isAccessibilityCategory || tableView.bounds.width < 320 ? 1 : 2 }
+    private var gridItemHeight: CGFloat {
+        let head = UIFont.preferredFont(forTextStyle: .headline).lineHeight
+        let sub = UIFont.preferredFont(forTextStyle: .caption1).lineHeight
+        return ceil(44 + 12 + 2 * head + 2 * sub + 24)
+    }
     private var query: String { search.searchBar.text ?? "" }
-    var visibleClips: [Clip] { clips.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.url.localizedCaseInsensitiveContains(query) || $0.id.localizedCaseInsensitiveContains(query) } }
+    var visibleClips: [Clip] {
+        let duplicates = duplicatesOnly ? Repository.duplicateIDs(clips) : []
+        return clips.filter { clip in
+            let matchesQuery = query.isEmpty || clip.title.localizedCaseInsensitiveContains(query) || clip.url.localizedCaseInsensitiveContains(query) || clip.id.localizedCaseInsensitiveContains(query)
+            let matchesScreen = screenFilter == .all || (screenFilter == .full && clip.fullScreen) || (screenFilter == .nonFull && !clip.fullScreen)
+            return matchesQuery && matchesScreen && (!duplicatesOnly || duplicates.contains(clip.id))
+        }
+    }
     var visibleNotes: [ImportedNote] { notes.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.text.localizedCaseInsensitiveContains(query) } }
     init(mode: Mode, repository: Repository, notesLoader: @escaping @Sendable () throws -> AppleNotesBatch) {
         self.mode = mode; self.repository = repository; self.notesLoader = notesLoader
@@ -207,6 +292,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         tableView.estimatedRowHeight = 72
         tableView.separatorStyle = .none
         tableView.register(GlassCell.self, forCellReuseIdentifier: "glass")
+        tableView.register(ClipGridRow.self, forCellReuseIdentifier: "gridRow")
         navigationItem.leftBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "paintpalette"), menu: UIMenu(title: "自定义背景", children: [
             UIAction(title: "从照片选择", image: UIImage(systemName: "photo")) { [weak self] _ in self?.choosePhoto() },
             UIAction(title: "从文件选择", image: UIImage(systemName: "folder")) { [weak self] _ in self?.chooseFile() },
@@ -228,11 +314,10 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         readButton.accessibilityIdentifier = "readItems"
         exportButton = UIBarButtonItem(title: "导出", style: .plain, target: self, action: #selector(confirmExport))
         exportButton.accessibilityIdentifier = "exportItems"
-        navigationItem.rightBarButtonItems = [exportButton, readButton]
-        selectButton = UIBarButtonItem(title: "选择结果", style: .plain, target: self, action: #selector(selectVisible))
-        clearButton = UIBarButtonItem(title: "清除内存", style: .plain, target: self, action: #selector(clearMemory))
-        toolbarItems = [selectButton, UIBarButtonItem(systemItem: .flexibleSpace), clearButton]
-        navigationController?.setToolbarHidden(false, animated: false)
+        menuButton = UIBarButtonItem(image: UIImage(systemName: "ellipsis.circle"), menu: UIMenu(title: "", children: []))
+        menuButton.accessibilityLabel = "筛选与批量操作"
+        navigationItem.rightBarButtonItems = [menuButton, exportButton, readButton]
+        navigationController?.setToolbarHidden(true, animated: false)
         update()
     }
     @objc private func refreshBackground() {
@@ -298,18 +383,55 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         alert.addAction(UIAlertAction(title: "好", style: .default))
         present(alert, animated: true)
     }
+    private var visibleIDs: Set<String> {
+        Set(mode == .clips ? visibleClips.map(\.id) : visibleNotes.map { $0.id.uuidString })
+    }
+    private var hiddenSelectionCount: Int { selected.subtracting(visibleIDs).count }
     private func update() {
-        guard isViewLoaded else { return }
+        guard isViewLoaded, readButton != nil, exportButton != nil, menuButton != nil else { return }
         readButton.isEnabled = !busy
         exportButton.isEnabled = !busy && !selected.isEmpty
-        selectButton.isEnabled = !busy
-        clearButton.isEnabled = !busy
+        let disabled: UIMenuElement.Attributes = busy ? .disabled : []
+        var actions: [UIMenuElement] = []
+        if mode == .clips {
+            let filters: [(String, ScreenFilter)] = [("全部", .all), ("全屏", .full), ("非全屏", .nonFull)]
+            let screenActions = filters.map { title, filter in
+                UIAction(title: title, attributes: disabled, state: screenFilter == filter ? .on : .off) { [weak self] _ in self?.screenFilter = filter; self?.update() }
+            }
+            actions.append(UIMenu(title: "显示模式", options: .displayInline, children: screenActions))
+            actions.append(UIAction(title: "精确重复 URL", attributes: disabled, state: duplicatesOnly ? .on : .off) { [weak self] _ in
+                guard let self = self else { return }; self.duplicatesOnly.toggle(); self.update()
+            })
+        }
+        actions.append(UIAction(title: "选择全部当前结果（\(visibleIDs.count)）", attributes: busy || visibleIDs.isEmpty ? .disabled : []) { [weak self] _ in
+            guard let self = self else { return }; self.selected.formUnion(self.visibleIDs); self.update()
+        })
+        actions.append(UIAction(title: "清除全部选择（\(selected.count)）", attributes: busy || selected.isEmpty ? .disabled : []) { [weak self] _ in
+            self?.selected.removeAll(); self?.update()
+        })
+        actions.append(UIAction(title: "清除读取结果", attributes: busy ? .disabled : []) { [weak self] _ in self?.confirmClearMemory() })
+        menuButton.menu = UIMenu(title: "筛选与批量操作", children: actions)
         tableView.reloadData()
     }
-    func updateSearchResults(for searchController: UISearchController) { tableView.reloadData() }
+    func updateSearchResults(for searchController: UISearchController) { update() }
+    private func confirmClearMemory() {
+        let alert = UIAlertController(title: "清除读取结果？", message: "仅清除当前内存中的读取结果和选择，不修改系统书签或备忘录。", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "清除读取结果", style: .destructive) { [weak self] _ in self?.clearMemory() })
+        present(alert, animated: true)
+    }
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        let width = tableView.bounds.width
+        if abs(width - lastGridWidth) > 0.5 { lastGridWidth = width; tableView.reloadData() }
+    }
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        if previousTraitCollection?.preferredContentSizeCategory != traitCollection.preferredContentSizeCategory { update() }
+    }
     @objc func selectVisible() {
         let ids = mode == .clips ? visibleClips.map(\.id) : visibleNotes.map { $0.id.uuidString }
-        if Set(ids).isSubset(of: selected) { selected.subtract(ids) } else { selected.formUnion(ids) }
+        selected.formUnion(ids)
         update()
     }
     @objc func clearMemory() {
@@ -354,21 +476,28 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     }
     override func numberOfSections(in tableView: UITableView) -> Int { 2 }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        section == 0 ? 1 : (mode == .clips ? visibleClips.count : visibleNotes.count)
+        section == 0 ? 1 : (mode == .clips ? max(1, (visibleClips.count + gridColumns - 1) / gridColumns) : max(1, visibleNotes.count))
     }
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        section == 0 ? "只读 · \(readState)" : "结果 · 已选择 \(selected.count) 项"
+        section == 0 ? "只读 · \(readState)" : "显示 \(visibleIDs.count) 项 · 已选 \(selected.count) 项 · 隐藏已选 \(hiddenSelectionCount) 项"
     }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        if indexPath.section == 1 && mode == .clips && !visibleClips.isEmpty {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "gridRow", for: indexPath) as! ClipGridRow
+            cell.grid.tag = indexPath.row
+            cell.grid.dataSource = self; cell.grid.delegate = self
+            cell.height.constant = gridItemHeight
+            cell.grid.collectionViewLayout.invalidateLayout()
+            cell.grid.reloadData()
+            return cell
+        }
         let cell = tableView.dequeueReusableCell(withIdentifier: "glass", for: indexPath) as! GlassCell
         if indexPath.section == 0 {
             cell.configure(title: status, subtitle: nil, icon: nil, selected: false, status: true)
             cell.accessibilityIdentifier = "readStatus"
-        } else if mode == .clips {
-            let clip = visibleClips[indexPath.row]
-            let icon = clip.icon.flatMap { GlassCell.thumbnail($0) } ?? UIImage(systemName: "bookmark")
-            cell.configure(title: clip.title, subtitle: clip.url, icon: icon, selected: selected.contains(clip.id))
-            cell.accessibilityIdentifier = "contentRow"
+        } else if mode == .clips || visibleNotes.isEmpty {
+            let hasData = mode == .clips ? !clips.isEmpty : !notes.isEmpty
+            cell.configure(title: hasData ? "没有匹配结果" : "暂无读取结果", subtitle: hasData ? "尝试调整搜索或筛选。隐藏选择仍会保留。" : "点击页头读取；读取失败不代表源数据为空。", icon: nil, selected: false, status: true)
         } else {
             let note = visibleNotes[indexPath.row]
             cell.configure(title: note.title, subtitle: note.text, icon: nil, selected: selected.contains(note.id.uuidString))
@@ -378,14 +507,30 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     }
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        guard !busy, indexPath.section == 1 else { return }
-        let id = mode == .clips ? visibleClips[indexPath.row].id : visibleNotes[indexPath.row].id.uuidString
+        guard !busy, indexPath.section == 1, mode == .notes, !visibleNotes.isEmpty else { return }
+        toggleSelection(visibleNotes[indexPath.row].id.uuidString)
+    }
+    private func toggleSelection(_ id: String) {
         if !selected.insert(id).inserted { selected.remove(id) }
         update()
     }
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int { max(0, min(gridColumns, visibleClips.count - collectionView.tag * gridColumns)) }
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "clip", for: indexPath) as! ClipGridCell
+        let clip = visibleClips[collectionView.tag * gridColumns + indexPath.item]
+        cell.configure(clip, selected: selected.contains(clip.id))
+        return cell
+    }
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        guard !busy else { return }; toggleSelection(visibleClips[collectionView.tag * gridColumns + indexPath.item].id)
+    }
+    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, sizeForItemAt indexPath: IndexPath) -> CGSize {
+        let columns = gridColumns
+        return CGSize(width: floor((collectionView.bounds.width - CGFloat(columns - 1) * 10) / CGFloat(columns)), height: gridItemHeight)
+    }
     @objc func confirmExport() {
         guard !busy, !selected.isEmpty else { return }
-        let alert = UIAlertController(title: "导出所选 \(selected.count) 项？", message: "含搜索隐藏项。文件可能包含私人内容；选择云盘可能由系统同步。备忘录仅导出正文，不是完整富文本/附件备份。", preferredStyle: .alert)
+        let alert = UIAlertController(title: "导出所选 \(selected.count) 项？", message: "共 \(selected.count) 项，含隐藏已选 \(hiddenSelectionCount) 项。文件可能包含私人内容；选择云盘可能由系统同步。备忘录仅导出正文，不是完整富文本/附件备份。", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         for markdown in (mode == .notes ? [false, true] : [false]) {
             let title = mode == .clips ? "备份所选书签" : (markdown ? "Markdown 原文" : "TXT 原文")
