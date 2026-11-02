@@ -50,6 +50,23 @@ int main(void) { @autoreleasepool {
     NSData *styleBefore=[NSData dataWithContentsOfFile:[dir stringByAppendingPathComponent:@"config.json"]];
     CHECK(!WUSave(@"themeOptions",@{@"sort":@"unknown"})); CHECK(!WUSave(@"surfaceStyles",@{@"searchSurface":@{@"radius":@(-1)}}));
     CHECK([[NSData dataWithContentsOfFile:[dir stringByAppendingPathComponent:@"config.json"]] isEqual:styleBefore]);
+    for(NSString *role in @[@"referMessageSurface",@"textPreviewSurface",@"quickReplySurface",@"hostPopupSurface"]) {
+        CHECK(!WUEnabled(role));
+        CHECK(WUSave(role,@YES));
+        NSDictionary *style=@{@"radius":@12,@"background":@"#123456",@"backgroundDark":@"#abcdef",@"fontSize":@18};
+        NSMutableDictionary *all=[WUValue(@"surfaceStyles") mutableCopy]; all[role]=style;
+        CHECK(WUSave(@"surfaceStyles",all));
+        close(configDir); configDir=open(dir.fileSystemRepresentation,O_RDONLY|O_DIRECTORY|O_NOFOLLOW); snapshot=ReadConfig(@"config.json");
+        CHECK([WUValue(role) boolValue] && [WUValue(@"surfaceStyles")[role] isEqual:style]);
+        CHECK(!WUEnabled(role)); CHECK(WUSave(@"enabled",@YES)); CHECK(WUEnabled(role));
+        NSData *saved=[NSData dataWithContentsOfFile:[dir stringByAppendingPathComponent:@"config.json"]];
+        CHECK(!WUSave(role,@"YES")); all[role]=@{@"radius":@(-1)};
+        CHECK(!WUSave(@"surfaceStyles",all));
+        CHECK([[NSData dataWithContentsOfFile:[dir stringByAppendingPathComponent:@"config.json"]] isEqual:saved]);
+        CHECK(WUSave(role,@NO)); snapshot=ReadConfig(@"config.json");
+        CHECK(!WUEnabled(role) && [WUValue(@"surfaceStyles")[role] isEqual:style]);
+        CHECK(WUSave(@"enabled",@NO));
+    }
     NSDictionary *on=@{@"enabled":@YES,@"monitor":@[@"friend"],@"exclude":@[@"excluded"],@"days":@30};
     NSMutableDictionary *off=[on mutableCopy]; off[@"enabled"]=@NO;
     CHECK(WUSaveAccountOption(@"A",@"momentsCache",on));

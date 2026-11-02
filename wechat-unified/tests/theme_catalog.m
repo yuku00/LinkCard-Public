@@ -37,8 +37,9 @@ int main(void) { @autoreleasepool {
     assert(!WUValidThemeOptions(@{@"pinned":@[a,a]})&&!WUValidThemeOptions(@{@"sort":@"random"}));
     assert(WUValidSurfaceStyles(@{@"inputBorder":@{@"radius":@0,@"fontSize":@20,@"textDark":@"#fafaff80"}}));
     assert(WUValidSurfaceStyles(@{@"chatSendSurface":@{@"radius":@8,@"background":@"#123456"},@"chatAttachmentSurface":@{@"tint":@"#abcdef"}}));
+    assert(WUValidSurfaceStyles(@{@"referMessageSurface":@{@"radius":@12,@"backgroundDark":@"#123456"},@"textPreviewSurface":@{@"radius":@14}}));
     NSMutableDictionary *allStyles=[NSMutableDictionary dictionary]; for(NSString *role in WUSurfaceRoles()) allStyles[role]=@{};
-    assert(allStyles.count==12 && WUValidSurfaceStyles(allStyles));
+    assert(allStyles.count==16 && WUValidSurfaceStyles(allStyles));
     assert(!WUValidSurfaceStyles(@{@"inputBorder":@{@"radius":@(NAN)}}));
     assert(!WUValidSurfaceStyles(@{@"inputBorder":@{@"background":@"url(http://x)"}}));
     assert(!WUValidSurfaceStyles(@{@"guessedSendButton":@{@"radius":@12}}));

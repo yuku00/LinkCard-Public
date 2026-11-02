@@ -42,7 +42,9 @@ def upload():
     allowed += ['tests/WUStatsHistoryTests.m','tests/history-events/comment_history.m','tests/history-events/extract_callback.py','tests/history-events/test_contract.py']
     allowed += ['Sources/EmoticonLibrary.h','Sources/EmoticonLibrary.m','Sources/EmoticonLibraryBindings.inc','Sources/EmoticonLibraryLogic.h','Sources/EmoticonLibraryLogic.m','Sources/EmoticonLibrarySafety.h','Sources/EmoticonSubmission.h','Sources/EmoticonSubmission.m','tests/emoticon_library_atomic.c','tests/emoticon_library_native.m','tests/test_emoticon_library_contract.py','tools/test_emoticon_library.sh']
     allowed += ['tests/hook_ownership.m','tools/test_hook_ownership.py']
-    allowed += ['Sources/VoicePath.h']
+    allowed += ['Sources/VoicePath.h','Sources/WUSilkEncode.h','Sources/WUSilkEncode.c','tests/silk_encode.c','Sources/ChatGrid.inc']
+    allowed += ['tests/test_incremental_safety.py','tests/test_emoticon_library_contract.py','tests/test_chat_layout.py']
+    allowed += ['tests/test_reply_surface.py','tests/test_quick_reply_surface.py','tests/test_host_popup_surface.py','tests/test_chat_surface.py','evidence/host-popups/WeToast.h','evidence/host-popups/MMToastView.h','evidence/host-popups/MMTipsViewController.h','evidence/host-popups/PROVENANCE.md','tools/targeted_surface_ci.py']
     # Exact manifest closure only: no SDK repository/history, binaries or private media.
     vendor=json.loads((ROOT/'Vendor/manifest.json').read_text())
     for name,digest in vendor['sha256'].items():

@@ -40,6 +40,21 @@ NSArray<NSDictionary *> *WUHubRows(NSArray<NSDictionary *> *registry, NSDictiona
     }];
     return [out copy];
 }
+NSArray<NSDictionary *> *WUHubFilterRows(NSArray<NSDictionary *> *rows, NSString *query) {
+    if(![rows isKindOfClass:NSArray.class]) return @[];
+    if(![query isKindOfClass:NSString.class]) return [rows copy];
+    query=[query stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if(!query.length) return [rows copy];
+    NSMutableArray *result=[NSMutableArray array];
+    for(id row in rows) {
+        if(![row isKindOfClass:NSDictionary.class]) continue;
+        for(NSString *key in @[@"title",@"group",@"controller"]) {
+            id text=row[key];
+            if([text isKindOfClass:NSString.class] && [text rangeOfString:query options:NSCaseInsensitiveSearch|NSDiacriticInsensitiveSearch].location!=NSNotFound) { [result addObject:row]; break; }
+        }
+    }
+    return [result copy];
+}
 NSDictionary *WUHubSetEntry(NSDictionary *o, NSString *identifier, NSString *name, NSString *group, BOOL hidden) {
     if(!WUHubValidOptions(o) || !WUHubValidControllerName(identifier) || !Text(name,80) || !Text(group,40)) return nil;
     name=[name stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
@@ -48,6 +63,17 @@ NSDictionary *WUHubSetEntry(NSDictionary *o, NSString *identifier, NSString *nam
     NSMutableDictionary *out=[o mutableCopy],*names=[o[@"names"] mutableCopy],*groups=[o[@"groups"] mutableCopy];
     NSMutableArray *h=[o[@"hidden"] mutableCopy]; [h removeObject:identifier]; if(hidden) [h addObject:identifier];
     names[identifier]=name; groups[identifier]=group; out[@"names"]=names; out[@"groups"]=groups; out[@"hidden"]=h;
+    return WUHubValidOptions(out)?[out copy]:nil;
+}
+NSDictionary *WUHubResetEntry(NSDictionary *o, NSString *identifier) {
+    if(!WUHubValidOptions(o) || !WUHubValidControllerName(identifier)) return nil;
+    NSMutableDictionary *out=[o mutableCopy];
+    for(NSString *key in @[@"names",@"groups"]) {
+        NSMutableDictionary *values=[o[key] mutableCopy]; [values removeObjectForKey:identifier]; out[key]=values;
+    }
+    for(NSString *key in @[@"hidden",@"order"]) {
+        NSMutableArray *values=[o[key] mutableCopy]; [values removeObject:identifier]; out[key]=values;
+    }
     return WUHubValidOptions(out)?[out copy]:nil;
 }
 NSDictionary *WUHubMove(NSDictionary *o, NSArray<NSDictionary *> *registry, NSString *identifier, NSInteger delta) {
