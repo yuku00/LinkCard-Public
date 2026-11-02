@@ -35,18 +35,18 @@ final class ExperimentalDeleteTests: XCTestCase {
         let data = try PropertyListSerialization.data(fromPropertyList: value, format: .xml, options: 0)
         try data.write(to: URL(fileURLWithPath: root + "/" + id + "/Info.plist"))
     }
-    private func run(_ cls: AnyClass = DeleteMock.self) -> [AnyHashable: Any] {
+    private func runBridge(_ cls: AnyClass = DeleteMock.self) -> [AnyHashable: Any] {
         WCMExperimentalDeleteForTesting(id, root, cls)
     }
     func testOneCallAndPostcondition() {
-        let r = run(); XCTAssertEqual(r["called"] as? Bool, true); XCTAssertEqual(r["returned"] as? Bool, true)
+        let r = runBridge(); XCTAssertEqual(r["called"] as? Bool, true); XCTAssertEqual(r["returned"] as? Bool, true)
         XCTAssertEqual(r["source"] as? String, "仍存在"); XCTAssertEqual(DeleteMock.calls, 1)
     }
     func testWrongABIPathIdentifierAndRuntimeManagedRefuse() {
-        XCTAssertEqual(run(BadABI.self)["called"] as? Bool, false)
-        DeleteMock.pathOverride = root + "/other.webclip"; XCTAssertEqual(run()["called"] as? Bool, false)
-        DeleteMock.pathOverride = nil; DeleteMock.selected = "other.webclip"; XCTAssertEqual(run()["called"] as? Bool, false)
-        DeleteMock.selected = id; DeleteMock.blocked = true; XCTAssertEqual(run()["called"] as? Bool, false)
+        XCTAssertEqual(runBridge(BadABI.self)["called"] as? Bool, false)
+        DeleteMock.pathOverride = root + "/other.webclip"; XCTAssertEqual(runBridge()["called"] as? Bool, false)
+        DeleteMock.pathOverride = nil; DeleteMock.selected = "other.webclip"; XCTAssertEqual(runBridge()["called"] as? Bool, false)
+        DeleteMock.selected = id; DeleteMock.blocked = true; XCTAssertEqual(runBridge()["called"] as? Bool, false)
         XCTAssertEqual(DeleteMock.calls, 0)
     }
     func testUnknownAndManagedPlistRefuse() throws {
@@ -56,13 +56,13 @@ final class ExperimentalDeleteTests: XCTestCase {
             ["Title":"WCM-DELETE-TEST", "ConfigurationIsManaged":false, "RemovalDisallowed":1],
             ["Title":"other", "ConfigurationIsManaged":false, "RemovalDisallowed":false]
         ]
-        for p in cases { try plist(p); XCTAssertEqual(run()["called"] as? Bool, false) }
+        for p in cases { try plist(p); XCTAssertEqual(runBridge()["called"] as? Bool, false) }
         XCTAssertEqual(DeleteMock.calls, 0)
     }
     func testSymlinkRefused() throws {
         try FileManager.default.moveItem(atPath: root + "/" + id, toPath: root + "/real")
         try FileManager.default.createSymbolicLink(atPath: root + "/" + id, withDestinationPath: root + "/real")
-        XCTAssertEqual(run()["called"] as? Bool, false); XCTAssertEqual(DeleteMock.calls, 0)
+        XCTAssertEqual(runBridge()["called"] as? Bool, false); XCTAssertEqual(DeleteMock.calls, 0)
     }
     func testCancellationAndBackupFailureNeverCallBridge() throws {
         let clip = Clip(id: id, title: "WCM-DELETE-TEST", url: "", fullScreen: false, removalDisallowed: false, icon: nil)
