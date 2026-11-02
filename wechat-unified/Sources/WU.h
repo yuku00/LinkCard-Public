@@ -22,6 +22,8 @@ BOOL WUInputPulseAvailable(void);
 BOOL WUHomeSearchAvailable(void);
 BOOL WUCardSurfaceAvailable(NSString *key);
 BOOL WUChatButtonSurfaceAvailable(NSString *key);
+BOOL WUTextPreviewSurfaceAvailable(void);
+BOOL WUQuickReplySurfaceAvailable(void);
 void WURestoreMessageSurface(UIView *cell);
 void WURefreshMessageSurface(UIView *cell, NSString *role);
 void WUInstallMessages(void);

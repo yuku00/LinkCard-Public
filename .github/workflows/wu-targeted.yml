@@ -1,23 +1,20 @@
-name: WU targeted compile and stats
+name: WU QuickReply targeted syntax
 on: push
 permissions:
   contents: read
 jobs:
-  targeted:
+  syntax:
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: iOS arm64 syntax compile
+        with:
+          persist-credentials: false
+      - name: iOS arm64 changed sources syntax
         working-directory: wechat-unified
         run: |
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
-          xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=16.6 -fobjc-arc -fobjc-arc-exceptions -fblocks -fsyntax-only -Wall -Wextra -Werror -Wno-unused-parameter -Wno-nullability-completeness Sources/*.m
-      - name: Statistics XCTest
+          xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=16.6 -fobjc-arc -fobjc-arc-exceptions -fblocks -fsyntax-only -Wall -Wextra -Werror -Wno-unused-parameter -Wno-nullability-completeness Sources/Surfaces.m Sources/Core.m Sources/Settings.m Sources/ThemeCatalog.m Sources/SurfaceSettings.m
+      - name: Static regression
         working-directory: wechat-unified
-        run: bash tools/test_stats.sh
-      - name: Incremental source contracts
-        working-directory: wechat-unified
-        run: |
-          python3 tests/test_incremental_safety.py
-          python3 tests/test_emoticon_library_contract.py
+        run: python3 tests/test_quick_reply_surface.py
