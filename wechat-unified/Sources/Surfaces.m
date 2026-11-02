@@ -1,13 +1,19 @@
 #import "WU.h"
 #import "InteractionLogic.h"
 #import <QuartzCore/QuartzCore.h>
-static NSHashTable<UIView *> *styled;
-static char childrenKey,cardKey,referTargetKey;
+static NSHashTable<UIView *> *styled, *textBubbleCells, *childSurfaceRoots;
+static char childrenKey,cardKey,referTargetKey,bubbleImageKey;
 static NSMutableSet<NSString *> *cardRoles;
 static void Restore(UIView *v);
 void WURestoreMessageSurface(UIView *cell) {
+    if(cell) [textBubbleCells removeObject:cell];
     UIView *target=objc_getAssociatedObject(cell,&cardKey);
-    if(target) Restore(target);
+    if(target) {
+        NSDictionary *imageState=objc_getAssociatedObject(target,&bubbleImageKey);
+        if(imageState && [(UIImageView *)target image]==imageState[@"applied"]) [(UIImageView *)target setImage:imageState[@"old"]];
+        objc_setAssociatedObject(target,&bubbleImageKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        Restore(target);
+    }
     objc_setAssociatedObject(cell,&cardKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 static IMP searchLayout,referLayout,plusLayout,toastLayout,timeLayout,swipeLayout;
@@ -30,13 +36,26 @@ static void WUStyleSurface(UIView *v,NSString *key,CGFloat radius) {
 BOOL WUCardSurfaceAvailable(NSString *key) { return [cardRoles containsObject:key]; }
 void WURefreshMessageSurface(UIView *cell,NSString *role) {
     WURestoreMessageSurface(cell);
-    if(![@[@"fileSurface",@"emoticonSurface"] containsObject:role] || !cell.window) return;
+    if(![@[@"fileSurface",@"emoticonSurface",@"textBubbleSurface"] containsObject:role] || !cell.window) return;
+    if([role isEqual:@"textBubbleSurface"]) {
+        Class textClass=NSClassFromString(@"TextMessageCellView");
+        if(!textClass || ![textClass isSubclassOfClass:UIView.class] || ![cell isKindOfClass:textClass]) return;
+    }
     // m_bgImageView is the existing evidence-backed CommonMessageCellView background role.
     id target=nil; @try { target=[cell valueForKey:@"m_bgImageView"]; } @catch(NSException *e) { return; }
     if(![target isKindOfClass:UIImageView.class] || target==cell || ![target isDescendantOfView:cell]) return;
     [cardRoles addObject:role];
     WUStyleSurface(target,role,14);
-    if(WUEnabled(role)) objc_setAssociatedObject(cell,&cardKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if(WUEnabled(role)) {
+        objc_setAssociatedObject(cell,&cardKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        UIImageView *imageView=target;
+        if([role isEqual:@"textBubbleSurface"] && imageView.image && !CGRectIsEmpty(imageView.bounds)) {
+            UIImage *old=imageView.image, *applied=[UIImage new];
+            objc_setAssociatedObject(target,&bubbleImageKey,@{@"old":old,@"applied":applied},OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [textBubbleCells addObject:cell];
+            imageView.image=applied;
+        }
+    }
 }
 static void Search(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))searchLayout)(v,s); WUStyleSurface(v,@"searchSurface",14); }
 static id CheckedObjectGetter(id object,NSString *name);
@@ -62,9 +81,9 @@ static void Plus(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))plusLayout)(v,
 static void Toast(UIView *v,SEL s) { RestoreHostPopup(v); Restore(v); ((void(*)(id,SEL))toastLayout)(v,s); WUStyleSurface(v,@"toastSurface",16); RefreshHostPopup(v); }
 static void RestoreChildren(UIView *v) { for(UIView *c in objc_getAssociatedObject(v,&childrenKey)) Restore(c); objc_setAssociatedObject(v,&childrenKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
 static void TimeLabels(UIView *v,NSMutableArray *out,NSUInteger depth) { if(depth>4||out.count>=12) return; if([v isKindOfClass:UILabel.class]) { WUStyleSurface(v,@"timeSurface",6); [out addObject:v]; return; } for(UIView *c in v.subviews) TimeLabels(c,out,depth+1); }
-static void Time(UIView *v,SEL s) { RestoreChildren(v); ((void(*)(id,SEL))timeLayout)(v,s); if(!WUEnabled(@"timeSurface")) return; NSMutableArray *a=[NSMutableArray array]; TimeLabels(v,a,0); objc_setAssociatedObject(v,&childrenKey,a,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
+static void Time(UIView *v,SEL s) { RestoreChildren(v); ((void(*)(id,SEL))timeLayout)(v,s); [childSurfaceRoots addObject:v]; if(!WUEnabled(@"timeSurface")) return; NSMutableArray *a=[NSMutableArray array]; TimeLabels(v,a,0); objc_setAssociatedObject(v,&childrenKey,a,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
 static void Swipe(UIView *v,SEL s) {
-    RestoreChildren(v); ((void(*)(id,SEL))swipeLayout)(v,s); if(!WUEnabled(@"swipeSurface")) return;
+    RestoreChildren(v); ((void(*)(id,SEL))swipeLayout)(v,s); [childSurfaceRoots addObject:v]; if(!WUEnabled(@"swipeSurface")) return;
     Class base=NSClassFromString(@"MMBaseMultiMenuTableViewCell"); Ivar ivar=base?class_getInstanceVariable(base,"_menuContentView"):NULL;
     if(!base||![v isKindOfClass:base]||!ivar||ivar_getTypeEncoding(ivar)[0]!='@') return;
     id menu=object_getIvar(v,ivar); if(![menu isKindOfClass:UIView.class]||![menu isDescendantOfView:v]) return;
@@ -220,7 +239,13 @@ static void QuickReplyWindow(UIView *view,SEL sel) {
     [quickReplies addObject:view]; if(view.window) [view setNeedsLayout];
 }
 void WUInstallSurfaces(void) {
-    static dispatch_once_t once; dispatch_once(&once, ^{ styled=NSHashTable.weakObjectsHashTable; cardRoles=[NSMutableSet set]; [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(UIView *v in styled) { Restore(v); [v setNeedsLayout]; } [styled removeAllObjects]; }]; });
+    static dispatch_once_t once; dispatch_once(&once, ^{ styled=NSHashTable.weakObjectsHashTable; textBubbleCells=NSHashTable.weakObjectsHashTable; cardRoles=[NSMutableSet set]; [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(UIView *cell in textBubbleCells.allObjects) { WURestoreMessageSurface(cell); [cell setNeedsLayout]; } for(UIView *v in styled) { Restore(v); [v setNeedsLayout]; } [styled removeAllObjects]; }]; });
+    static dispatch_once_t childOnce; dispatch_once(&childOnce, ^{
+        childSurfaceRoots=NSHashTable.weakObjectsHashTable;
+        [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){
+            for(UIView *root in childSurfaceRoots.allObjects) { RestoreChildren(root); [root setNeedsLayout]; }
+        }];
+    });
     static dispatch_once_t popupOnce; dispatch_once(&popupOnce, ^{
         hostPopups=NSHashTable.weakObjectsHashTable;
         [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){
