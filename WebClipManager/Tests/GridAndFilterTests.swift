@@ -148,6 +148,7 @@ import UIKit
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         window.rootViewController = tabs; window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil }
+        tabs.view.layoutIfNeeded()
         let nav = try XCTUnwrap(tabs.viewControllers?.first as? UINavigationController)
         let clips = try XCTUnwrap(nav.viewControllers.first as? BusinessList)
         await waitForState(clips, "failed")

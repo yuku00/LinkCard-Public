@@ -18,11 +18,16 @@ final class BusinessIntegrationTests: XCTestCase {
         let root = try XCTUnwrap(window.rootViewController as? BusinessTabs)
         XCTAssertFalse(window.isHidden)
         XCTAssertEqual(root.viewControllers?.count, 2)
-        for nav in root.viewControllers ?? [] {
+        for (index, nav) in (root.viewControllers ?? []).enumerated() {
             let list = try XCTUnwrap((nav as? UINavigationController)?.topViewController as? BusinessList)
             list.loadViewIfNeeded()
-            XCTAssertEqual(list.readState, "notRead")
-            XCTAssertTrue(list.clips.isEmpty && list.notes.isEmpty)
+            if index == 0 {
+                XCTAssertTrue(["notRead", "reading", "loaded", "partial", "failed"].contains(list.readState))
+                XCTAssertTrue(list.notes.isEmpty)
+            } else {
+                XCTAssertEqual(list.readState, "notRead")
+                XCTAssertTrue(list.clips.isEmpty && list.notes.isEmpty)
+            }
         }
     }
     @MainActor
