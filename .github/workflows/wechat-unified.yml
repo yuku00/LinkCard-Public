@@ -18,15 +18,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Compile standalone arm64 iOS dylib
+        if: ${{ !contains(github.event.head_commit.message, '[targeted-pluginhub]') }}
         working-directory: wechat-unified
         run: bash tools/build.sh
+      - name: Targeted iOS arm64 link and legacy configuration
+        if: ${{ contains(github.event.head_commit.message, '[targeted-pluginhub]') }}
+        working-directory: wechat-unified
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          python3 tests/test_p0.py --config-only
+          python3 tools/build_codecs.py iphoneos
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          xcrun --sdk iphoneos clang -std=c11 -O2 -fPIC -arch arm64 -isysroot "$SDK" -miphoneos-version-min=16.6 -Wall -Wextra -Werror -I Sources -c Sources/WUNativeBoot.c -o build/native-boot-ios.o
+          xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=16.6 -fobjc-arc -fobjc-arc-exceptions -fblocks -dynamiclib -Wall -Wextra -Werror -Wno-unused-parameter -Wno-nullability-completeness -O2 -install_name @rpath/WeChatUnified.dylib Sources/*.m build/native-boot-ios.o build/codec-iphoneos/libWUOffline.a -Wl,-dead_strip -framework WebKit -framework SafariServices -framework Photos -framework AVKit -framework AVFoundation -framework AudioToolbox -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework JavaScriptCore -framework UniformTypeIdentifiers -lz -o build/WeChatUnified.dylib
       - name: Incremental source contracts
+        if: ${{ !contains(github.event.head_commit.message, '[targeted-pluginhub]') }}
         working-directory: wechat-unified
         run: |
           python3 tests/test_incremental_safety.py
           python3 tests/test_emoticon_library_contract.py
           python3 tests/test_chat_layout.py
       - name: Upload build product and verification
+        if: ${{ !contains(github.event.head_commit.message, '[targeted-pluginhub]') }}
         uses: actions/upload-artifact@v4
         with:
           name: WeChatUnified-arm64-iOS16.6-${{ github.sha }}

@@ -25,7 +25,6 @@ def upload():
     allowed += ['Sources/VoicePackLogic.h','Sources/VoicePackLogic.m','Sources/VoicePacks.h','Sources/VoicePacks.m','tests/voice_pack_logic.m']
     allowed += ['tests/test_p0.py','tests/p0_config.m','tests/p0_message.m','tests/message_construction.m','Sources/MessageConstruction.h','Sources/MessageConstruction.m']
     allowed += ['Sources/InteractionLogic.h','Sources/InteractionLogic.m','tests/interaction_logic.m']
-    allowed += ['Sources/PluginHub.h','Sources/PluginHub.m','Sources/PluginHubLogic.h','Sources/PluginHubLogic.m','tests/plugin_hub_logic.m']
     allowed += ['Sources/ThemeCatalog.h','Sources/ThemeCatalog.m','Sources/ThemeColors.m','Sources/ThemePrimitives.h','Sources/ThemeLibrary.h','Sources/ThemeLibrary.m','Sources/ThemeRendering.h','Sources/ThemeRendering.m','Sources/SurfaceStyle.m','Sources/SurfaceSettings.m','tests/theme_primitives.c','tests/theme_catalog.m','tests/surface_style_ios.m','tests/run_ui_tests.sh','tests/make_theme_fixtures.py','tests/fixtures/themes/README.md']
     allowed += ['Sources/WUStatsDetails.m','Sources/DraftVideoRestore.m','Sources/LocalVideoContainer.h','Sources/MomentsCacheComments.h','tests/WUStatsCompletionTests.m','tests/voice_pack_files.m','tests/moments_data_completion.m','tests/draft_video_restore.m','tests/local_video_container.c','tools/test_data_completion.sh']
     allowed += ['Sources/WUHostRead.h','Sources/WUHostRead.m','Sources/MomentsHostComments.m','Sources/WUStatsHostProfile.h','Sources/WUStatsHostProfile.m','tests/host_data.m','tools/test_host_data.sh']
@@ -44,6 +43,7 @@ def upload():
     allowed += ['tests/hook_ownership.m','tools/test_hook_ownership.py']
     allowed += ['Sources/VoicePath.h','Sources/WUSilkEncode.h','Sources/WUSilkEncode.c','tests/silk_encode.c','Sources/ChatGrid.inc']
     allowed += ['tests/test_incremental_safety.py','tests/test_emoticon_library_contract.py','tests/test_chat_layout.py']
+    allowed += ['tests/test_reply_surface.py','tests/test_quick_reply_surface.py','tests/test_host_popup_surface.py','tests/test_chat_surface.py','evidence/host-popups/PROVENANCE.md','tools/targeted_surface_ci.py']
     # Exact manifest closure only: no SDK repository/history, binaries or private media.
     vendor=json.loads((ROOT/'Vendor/manifest.json').read_text())
     for name,digest in vendor['sha256'].items():
@@ -65,6 +65,9 @@ def upload():
             blob=api('POST',P+'/git/blobs',{'content':entry.pop('content'),'encoding':'utf-8'})
             assert blob['sha']==local
             changed.append(dict(entry,sha=local))
+    # Remove retired source blobs inherited from the remote base tree.
+    retired=['Sources/PluginHub.h', 'Sources/PluginHub.m', 'Sources/PluginHubLogic.h', 'Sources/PluginHubLogic.m', 'tests/plugin_hub_logic.m']
+    changed += [{"path":"wechat-unified/"+n,"mode":"100644","type":"blob","sha":None} for n in retired if "wechat-unified/"+n in existing]
     if not changed:
         print('No actual changes; no commit or CI triggered.'); return
     tree=api('POST',P+'/git/trees',{'base_tree':commit['tree']['sha'],'tree':changed})

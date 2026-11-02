@@ -81,7 +81,7 @@ class Guardrails(unittest.TestCase):
         # The preference store must not fall back to non-atomic writes. Theme staging
         # and user-requested export use checked Foundation atomic writes separately.
         self.assertNotIn('writeToFile:',core)
-        for key,validator in [('pluginHub','WUHubValidOptions'),('themeOptions','WUValidThemeOptions'),('surfaceStyles','WUValidSurfaceStyles')]:
+        for key,validator in [('themeOptions','WUValidThemeOptions'),('surfaceStyles','WUValidSurfaceStyles')]:
             self.assertIn('@"'+key+'"',core)
             self.assertIn(validator+'(value)',core)
         self.assertIn('Sources/ThemeCatalog.m',(ROOT/'tests/test_p0.py').read_text())
@@ -306,19 +306,6 @@ class Guardrails(unittest.TestCase):
         for key in ['inputPulse','hideHomeSearch','fileSurface','emoticonSurface']:
             self.assertIn(key,(ROOT/'Sources/Settings.m').read_text())
             self.assertGreaterEqual((ROOT/'Sources/Core.m').read_text().count('@"'+key+'"'),2)
-    def test_plugin_hub_search_is_view_only(self):
-        ui=(ROOT/'Sources/PluginHub.m').read_text()
-        logic=(ROOT/'Sources/PluginHubLogic.m').read_text()
-        refresh=ui.split('- (void)refresh {',1)[1].split('- (void)chooseGroup',1)[0]
-        self.assertIn('WUHubRows(self.registry,Options(),self.showHidden)',refresh)
-        self.assertIn('WUHubFilterRows(rows,self.entrySearch.text)',refresh)
-        self.assertIn('textDidChange:',refresh)
-        search=logic.split('NSArray<NSDictionary *> *WUHubFilterRows',1)[1].split('NSDictionary *WUHubSetEntry',1)[0]
-        for field in ['@"title"','@"group"','@"controller"','NSCaseInsensitiveSearch']:
-            self.assertIn(field,search)
-        for forbidden in ['WUSave', 'setObject:', 'removeObject', 'NSUserDefaults']:
-            self.assertNotIn(forbidden,search)
-        self.assertIn('WUHubFilterRows(searchable', (ROOT/'tests/plugin_hub_logic.m').read_text())
     def test_scope_honest(self):
         status=(ROOT/'STATUS.md').read_text()
         for word in ['未实现','无伪开关','便捷朋友圈','ActionBar','全部 AI','未执行']:

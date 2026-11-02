@@ -77,9 +77,6 @@ rm build/message-logic-tests
 xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/theme_archive.m Sources/ThemeArchive.m -framework Foundation -lz -o build/theme-archive-tests
 build/theme-archive-tests | tee build/theme-archive-tests.txt
 rm build/theme-archive-tests
-xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/plugin_hub_logic.m Sources/PluginHubLogic.m -framework Foundation -o build/plugin-hub-tests
-build/plugin-hub-tests | tee build/plugin-hub-tests.txt
-rm build/plugin-hub-tests
 xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/group_logic.m Sources/GroupLogic.m Sources/HomeLogic.m -framework Foundation -o build/group-logic-tests
 build/group-logic-tests | tee build/group-logic-tests.txt
 rm build/group-logic-tests

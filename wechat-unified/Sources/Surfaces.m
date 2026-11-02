@@ -12,10 +12,12 @@ void WURestoreMessageSurface(UIView *cell) {
 }
 static IMP searchLayout,referLayout,plusLayout,toastLayout,timeLayout,swipeLayout;
 static IMP referWindow,toastWindow;
+static void RestoreHostPopup(UIView *view);
+static void RefreshHostPopup(UIView *view);
 static void Restore(UIView *v) { WURestoreConfiguredSurface(v); }
 // Restore before UIKit's original callback, then request a fresh layout if reattached.
 static void ReferWindow(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))referWindow)(v,s); if(v.window) [v setNeedsLayout]; }
-static void ToastWindow(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))toastWindow)(v,s); if(v.window) [v setNeedsLayout]; }
+static void ToastWindow(UIView *v,SEL s) { RestoreHostPopup(v); Restore(v); ((void(*)(id,SEL))toastWindow)(v,s); if(v.window) [v setNeedsLayout]; }
 static void WUStyleSurface(UIView *v,NSString *key,CGFloat radius) {
     WUApplyConfiguredSurface(v,key,radius,YES); if(WUEnabled(key)) [styled addObject:v];
 }
@@ -47,7 +49,7 @@ static void Refer(UIView *v,SEL s) {
     WUStyleSurface(v,role,12);
 }
 static void Plus(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))plusLayout)(v,s); WUStyleSurface(v,@"plusSurface",18); }
-static void Toast(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))toastLayout)(v,s); WUStyleSurface(v,@"toastSurface",16); }
+static void Toast(UIView *v,SEL s) { RestoreHostPopup(v); Restore(v); ((void(*)(id,SEL))toastLayout)(v,s); WUStyleSurface(v,@"toastSurface",16); RefreshHostPopup(v); }
 static void RestoreChildren(UIView *v) { for(UIView *c in objc_getAssociatedObject(v,&childrenKey)) Restore(c); objc_setAssociatedObject(v,&childrenKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
 static void TimeLabels(UIView *v,NSMutableArray *out,NSUInteger depth) { if(depth>4||out.count>=12) return; if([v isKindOfClass:UILabel.class]) { WUStyleSurface(v,@"timeSurface",6); [out addObject:v]; return; } for(UIView *c in v.subviews) TimeLabels(c,out,depth+1); }
 static void Time(UIView *v,SEL s) { RestoreChildren(v); ((void(*)(id,SEL))timeLayout)(v,s); if(!WUEnabled(@"timeSurface")) return; NSMutableArray *a=[NSMutableArray array]; TimeLabels(v,a,0); objc_setAssociatedObject(v,&childrenKey,a,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
@@ -132,8 +134,89 @@ static void TextPreviewLayout(UIViewController *controller,SEL sel) {
 static void TextPreviewDisappear(UIViewController *controller,SEL sel,BOOL animated) {
     RestoreTextPreview(controller); ((void(*)(id,SEL,BOOL))textPreviewDisappear)(controller,sel,animated);
 }
+// WeToast/MMToastView 8.0.54 headers: only the owned backgroundView of a plain toast.
+// MMTipsViewController also exposes wcpay entry points: do not hook that shared container.
+static char hostPopupTargetKey;
+static NSHashTable<UIView *> *hostPopups;
+static BOOL hostPopupAvailable;
+BOOL WUHostPopupSurfaceAvailable(void) { return hostPopupAvailable; }
+static void RestoreHostPopup(UIView *view) {
+    UIView *target=objc_getAssociatedObject(view,&hostPopupTargetKey);
+    if(target) WURestoreConfiguredSurface(target);
+    objc_setAssociatedObject(view,&hostPopupTargetKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static BOOL CheckedFalseGetter(id object,NSString *name) {
+    SEL sel=NSSelectorFromString(name);
+    if(!WUMatches(class_getInstanceMethod(object_getClass(object),sel),@encode(BOOL),@[])) return NO;
+    @try { return !((BOOL(*)(id,SEL))objc_msgSend)(object,sel); } @catch(NSException *e) { return NO; }
+}
+static void RefreshHostPopup(UIView *view) {
+    [hostPopups addObject:view];
+    if(!view.window || object_getClass(view)!=NSClassFromString(@"MMToastView")) return;
+    Class toastClass=NSClassFromString(@"WeToast");
+    if(!toastClass || ![toastClass isSubclassOfClass:UIViewController.class]) return;
+    UIViewController *owner=nil;
+    for(UIResponder *r=view.nextResponder;r;r=r.nextResponder) {
+        if(object_getClass(r)==toastClass) { owner=(id)r; break; }
+        if([r isKindOfClass:UIViewController.class]) return;
+    }
+    if(!owner || CheckedObjectGetter(owner,@"toastView")!=view ||
+       !CheckedFalseGetter(owner,@"blockUserInteraction") || !CheckedFalseGetter(owner,@"loadingStyle")) return;
+    // Positive context allowlist, not a payment-class substring blacklist.
+    id context=CheckedObjectGetter(owner,@"topViewControllerInMainWindow");
+    if(![context isKindOfClass:UIViewController.class] || context==owner) return;
+    Class chatClass=NSClassFromString(@"BaseMsgContentViewController");
+    if(!(chatClass && [context isKindOfClass:chatClass]) &&
+       object_getClass(context)!=NSClassFromString(@"NewMainFrameViewController")) return;
+    if(![(UIViewController *)context viewIfLoaded].window || [(UIViewController *)context presentedViewController]) return;
+    // Custom content/loading/icon variants are deliberately outside this text-toast role.
+    if(CheckedObjectGetter(view,@"customView") || CheckedObjectGetter(view,@"iconImage")) return;
+    id svg=CheckedObjectGetter(view,@"svgIconName");
+    if(svg && (![svg isKindOfClass:NSString.class] || [svg length])) return;
+    id text=CheckedObjectGetter(view,@"text");
+    if(![text isKindOfClass:NSString.class] || ![text length]) return;
+    id target=CheckedObjectGetter(view,@"backgroundView");
+    if(![target isKindOfClass:UIView.class] || target==view || ![target isDescendantOfView:view] ||
+       CGRectIsEmpty([(UIView *)target bounds])) return;
+    hostPopupAvailable=YES;
+    if(!WUEnabled(@"hostPopupSurface")) return;
+    WUApplyConfiguredSurface(target,@"hostPopupSurface",16,YES);
+    objc_setAssociatedObject(view,&hostPopupTargetKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+// The notify view's documented contentView is the banner, not a system notification.
+static IMP quickReplyLayout,quickReplyWindow;
+static char quickReplyTargetKey;
+static NSHashTable<UIView *> *quickReplies;
+static BOOL quickReplyAvailable;
+BOOL WUQuickReplySurfaceAvailable(void) { return quickReplyAvailable; }
+static void RestoreQuickReply(UIView *view) {
+    UIView *target=objc_getAssociatedObject(view,&quickReplyTargetKey);
+    if(target) WURestoreConfiguredSurface(target);
+    objc_setAssociatedObject(view,&quickReplyTargetKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static void QuickReplyLayout(UIView *view,SEL sel) {
+    RestoreQuickReply(view); ((void(*)(id,SEL))quickReplyLayout)(view,sel);
+    [quickReplies addObject:view];
+    if(!view.window) return;
+    id target=CheckedObjectGetter(view,@"contentView");
+    if(![target isKindOfClass:UIView.class] || target==view || ![target isDescendantOfView:view]) return;
+    quickReplyAvailable=YES;
+    if(!WUEnabled(@"quickReplySurface")) return;
+    WUApplyConfiguredSurface(target,@"quickReplySurface",16,YES);
+    objc_setAssociatedObject(view,&quickReplyTargetKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static void QuickReplyWindow(UIView *view,SEL sel) {
+    RestoreQuickReply(view); ((void(*)(id,SEL))quickReplyWindow)(view,sel);
+    [quickReplies addObject:view]; if(view.window) [view setNeedsLayout];
+}
 void WUInstallSurfaces(void) {
     static dispatch_once_t once; dispatch_once(&once, ^{ styled=NSHashTable.weakObjectsHashTable; cardRoles=[NSMutableSet set]; [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(UIView *v in styled) { Restore(v); [v setNeedsLayout]; } [styled removeAllObjects]; }]; });
+    static dispatch_once_t popupOnce; dispatch_once(&popupOnce, ^{
+        hostPopups=NSHashTable.weakObjectsHashTable;
+        [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){
+            for(UIView *view in hostPopups.allObjects) { RestoreHostPopup(view); [view setNeedsLayout]; }
+        }];
+    });
     static dispatch_once_t chatOnce; dispatch_once(&chatOnce, ^{
         chatTools=NSHashTable.weakObjectsHashTable; chatButtonRoles=[NSMutableSet set];
         [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){
@@ -146,6 +229,15 @@ void WUInstallSurfaces(void) {
             for(UIViewController *controller in textPreviews.allObjects) { RestoreTextPreview(controller); [controller.viewIfLoaded setNeedsLayout]; }
         }];
     });
+    static dispatch_once_t quickOnce; dispatch_once(&quickOnce, ^{
+        quickReplies=NSHashTable.weakObjectsHashTable;
+        [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){
+            for(UIView *view in quickReplies.allObjects) { RestoreQuickReply(view); [view setNeedsLayout]; }
+        }];
+    });
+    Class quick=NSClassFromString(@"QuickReplyMsgNotifyView");
+    if(quick && [quick isSubclassOfClass:UIView.class] && WUHook(@"QuickReplyMsgNotifyView",@"didMoveToWindow",NO,"v",@[],(IMP)QuickReplyWindow,&quickReplyWindow))
+        WUHook(@"QuickReplyMsgNotifyView",@"layoutSubviews",NO,"v",@[],(IMP)QuickReplyLayout,&quickReplyLayout);
     Class preview=NSClassFromString(@"TextFloatViewController");
     if(preview && [preview isSubclassOfClass:UIViewController.class] && WUHook(@"TextFloatViewController",@"viewDidDisappear:",NO,"v",@[@"B"],(IMP)TextPreviewDisappear,&textPreviewDisappear))
         WUHook(@"TextFloatViewController",@"viewDidLayoutSubviews",NO,"v",@[],(IMP)TextPreviewLayout,&textPreviewLayout);
@@ -161,6 +253,6 @@ void WUInstallSurfaces(void) {
         WUHook(@"MMInputMsgReferView",@"didMoveToWindow",NO,"v",@[],(IMP)ReferWindow,&referWindow);
     WUHook(@"MainFrameActionFloatView",@"layoutSubviews",NO,"v",@[],(IMP)Plus,&plusLayout);
     Class toast=NSClassFromString(@"MMToastView");
-    if(toast && [toast isSubclassOfClass:UIView.class] && WUHook(@"MMToastView",@"layoutSubviews",NO,"v",@[],(IMP)Toast,&toastLayout))
-        WUHook(@"MMToastView",@"didMoveToWindow",NO,"v",@[],(IMP)ToastWindow,&toastWindow);
+    if(toast && [toast isSubclassOfClass:UIView.class] && WUHook(@"MMToastView",@"didMoveToWindow",NO,"v",@[],(IMP)ToastWindow,&toastWindow))
+        WUHook(@"MMToastView",@"layoutSubviews",NO,"v",@[],(IMP)Toast,&toastLayout);
 }

@@ -13,14 +13,17 @@
 @property(nonatomic) NSUInteger index, pages, scanned;
 @end
 @implementation WUStatsOverviewJob
+- (void)setCandidates:(NSArray *)rows {
+    NSMutableDictionary *known=[NSMutableDictionary dictionary];
+    for(id row in rows) if([row isKindOfClass:NSDictionary.class] && [row[@"username"] isKindOfClass:NSString.class] && [row[@"username"] length] && [@[@"private",@"chatroom"] containsObject:row[@"kind"]]) known[row[@"username"]]=[row copy];
+    NSMutableArray *sessions=[NSMutableArray array];
+    for(NSString *key in [known.allKeys sortedArrayUsingSelector:@selector(compare:)]) [sessions addObject:known[key]];
+    self.sessions=[sessions copy];
+}
 - (instancetype)initWithBinding:(WUStatsBinding *)binding {
     if((self=[super init])) {
         _binding=binding; _range=[binding.dateRange copy]; _zone=[binding.timeZone copy]; _rows=[NSMutableArray array];
-        NSMutableDictionary *known=[NSMutableDictionary dictionary];
-        for(NSDictionary *row in binding.sessions) if([row[@"username"] length] && [@[@"private",@"chatroom"] containsObject:row[@"kind"]]) known[row[@"username"]]=[row copy];
-        NSMutableArray *sessions=[NSMutableArray array];
-        for(NSString *key in [known.allKeys sortedArrayUsingSelector:@selector(compare:)]) [sessions addObject:known[key]];
-        _sessions=[sessions copy];
+        [self setCandidates:binding.sessions];
     } return self;
 }
 - (BOOL)current {
@@ -32,14 +35,26 @@
 }
 - (void)start:(void (^)(NSDictionary *,NSString *))update {
     NSAssert(NSThread.isMainThread,@"main thread required"); if(self.started || self.cancelled) return;
-    self.started=YES; self.update=[update copy]; [self step];
+    self.started=YES; self.update=[update copy];
+    if(![self current]) { [self step]; return; }
+    if(!self.binding.readSessions) { [self step]; return; }
+    __weak typeof(self) weak=self;
+    @try {
+        self.binding.readSessions(^BOOL{ WUStatsOverviewJob *job=weak; return job && [job current]; },^(NSArray *rows, BOOL partial) {
+            WUStatsOverviewJob *job=weak; if(!job || ![job current]) return;
+            // List semantics and coverage are not proven by the public declaration.
+            job.partial=YES;
+            if(rows) [job setCandidates:job.binding.sessions];
+            [job step];
+        });
+    } @catch(__unused NSException *e) { self.partial=YES; [self step]; }
 }
 - (void)finish {
     NSArray *rank=[self.rows sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a,NSDictionary *b){ NSComparisonResult c=[b[@"count"] compare:a[@"count"]]; return c==NSOrderedSame?[a[@"id"] compare:b[@"id"] options:NSLiteralSearch]:c; }];
     BOOL complete=!self.partial && self.index==self.sessions.count;
     NSDictionary *result=@{@"overview":@YES,@"rank":rank,@"myGroups":WUStatsMyGroupRanking(self.rows),@"complete":@(complete),@"scanned":@(self.scanned),@"pages":@(self.pages),@"sessions":@(self.sessions.count),@"processed":@(self.index),@"timezone":self.zone.name};
     void (^notify)(NSDictionary *,NSString *)=self.update; self.update=nil; self.binding=nil; self.child=nil; self.cancelled=YES;
-    if(notify) notify(result,complete?@"完成：仅宿主已加载、可分类会话的本地可见范围":@"部分排行：达到总预算或存在未完成会话，不能代表全账号最常聊");
+    if(notify) notify(result,complete?@"完成：仅宿主已加载、可分类会话的本地可见范围":@"部分排行：会话列表覆盖未知、达到预算或存在未完成会话，不能代表全账号最常聊");
 }
 - (void)step {
     if(![self current]) { void (^notify)(NSDictionary *,NSString *)=self.update; [self cancel]; if(notify) notify(nil,@"已取消：后台、账号、会话或统计开关已变化"); return; }

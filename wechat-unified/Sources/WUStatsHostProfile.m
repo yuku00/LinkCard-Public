@@ -53,6 +53,12 @@ NSDictionary *WUStatsParseMembers(id raw) {
 @property(nonatomic) BOOL rosterAvailable;
 @property(nonatomic) BOOL rosterMalformed;
 @property(nonatomic) NSTimeInterval profileDeadline;
+@property(nonatomic) NSTimeInterval roomDeadline;
+@property(nonatomic,strong) id rosterRaw;
+@property(nonatomic,strong) NSMutableArray *rosterNames;
+@property(nonatomic) NSUInteger rosterIndex;
+@property(nonatomic) NSUInteger rosterCount;
+@property(nonatomic,copy) NSArray *known;
 @property(nonatomic,strong) NSMutableArray *profiles;
 @property(nonatomic,strong) NSMutableArray *common;
 @property(nonatomic,copy) NSDictionary *peer;
@@ -64,20 +70,23 @@ NSDictionary *WUStatsParseMembers(id raw) {
 @property(nonatomic) BOOL truncated;
 @property(nonatomic) BOOL membersComplete;
 - (void)step;
+- (void)readRoster;
+- (void)prepareCandidates;
 @end
 @implementation WUHostProfileRead
 - (BOOL)valid { @try { return self.current && self.current(); } @catch(__unused NSException *e) { return NO; } }
-- (void)drop { self.done=nil; self.current=nil; self.manager=nil; self.profiles=nil; self.common=nil; self.peer=nil; self.members=nil; self.privateIDs=nil; self.friendProfiles=nil; }
+- (void)drop { self.done=nil; self.current=nil; self.manager=nil; self.profiles=nil; self.common=nil; self.peer=nil; self.members=nil; self.privateIDs=nil; self.friendProfiles=nil; self.rosterRaw=nil; self.rosterNames=nil; self.known=nil; self.rooms=nil; }
 - (void)finish {
     if(![self valid]) { [self drop]; return; }
     NSDictionary *friends=WUStatsProfileSummary(@{@"members":self.friendProfiles});
     NSMutableDictionary *friendSummary=[friends mutableCopy];
     [friendSummary addEntriesFromDictionary:@{ @"scanned":@(self.privateIndex),@"nonFriend":@(self.nonFriendCount),@"unknownFriend":@(self.unknownFriendCount),@"truncated":@(self.privateTruncated),@"rosterAvailable":@(self.rosterAvailable),@"rosterMalformed":@(self.rosterMalformed)}];
-    NSDictionary *value=@{@"loadedFriends":[friendSummary copy],@"peer":self.peer,@"members":[self.profiles copy],@"commonGroups":[self.common copy],@"group":@([self.session hasSuffix:@"@chatroom"]),@"membersComplete":@(self.membersComplete),@"roomsChecked":@(self.roomIndex),@"unknownRooms":@(self.unknownRooms),@"truncated":@(self.truncated),@"scope":@"当前联系人/群的本地资料；共同群仅已加载会话中最多50个群。不是完整好友名册或服务器关系证明。"};
+    NSDictionary *value=@{@"loadedFriends":[friendSummary copy],@"peer":self.peer,@"members":[self.profiles copy],@"commonGroups":[self.common copy],@"group":@([self.session hasSuffix:@"@chatroom"]),@"membersComplete":@(self.membersComplete),@"roomsChecked":@(self.roomIndex),@"unknownRooms":@(self.unknownRooms),@"truncated":@(self.truncated),@"scope":@"当前联系人/群的本地资料；共同群来自本地用户名名册及已加载群会话候选，名册范围未经证实，非服务器关系证明。"};
     void (^done)(NSDictionary *)=self.done; [self drop]; if(done) done(value);
 }
 - (void)step {
     if(![self valid]) { [self drop]; return; }
+    if(self.roomIndex<self.rooms.count && NSDate.timeIntervalSinceReferenceDate>=self.roomDeadline) { self.truncated=YES; self.rooms=[self.rooms subarrayWithRange:NSMakeRange(0,self.roomIndex)]; }
     if(self.roomIndex<self.rooms.count) {
         NSString *room=self.rooms[self.roomIndex++];
         id c=Contact(self.manager,room); NSString *raw=WUHostString(Get(c,@"m_nsChatRoomMemList"),262144);
@@ -94,6 +103,7 @@ NSDictionary *WUStatsParseMembers(id raw) {
             });
         }); return;
     }
+    if(!self.profileDeadline) self.profileDeadline=NSDate.timeIntervalSinceReferenceDate+1.5;
     if(self.privateIndex<self.privateIDs.count && NSDate.timeIntervalSinceReferenceDate>=self.profileDeadline) {
         self.privateTruncated=YES;
         self.privateIDs=[self.privateIDs subarrayWithRange:NSMakeRange(0,self.privateIndex)];
@@ -118,38 +128,34 @@ NSDictionary *WUStatsParseMembers(id raw) {
     if(self.memberIndex<self.members.count) dispatch_async(dispatch_get_main_queue(),^{ [self step]; });
     else [self finish];
 }
-@end
-void WUStatsReadHostProfile(id manager, NSString *account, NSString *session, NSArray *sessions, BOOL (^current)(void), void (^done)(NSDictionary *)) {
-    if(!NSThread.isMainThread || !ID(account) || !ID(session) || !current || !done || !current()) return;
-    WUHostProfileRead *job=[WUHostProfileRead new]; job.manager=manager; job.account=[account copy]; job.session=[session copy]; job.current=current; job.done=done;
-    job.peer=WUStatsContactProfile(manager,session,NSDate.date.timeIntervalSince1970); job.profiles=[NSMutableArray array]; job.common=[NSMutableArray array]; job.members=@[]; job.friendProfiles=[NSMutableArray array];
-    NSArray *known=[sessions copy];
-    // Third-party WeChat 8.0.55 CContactMgr header declares getAllContactUserName.
-    // The returned collection's completeness/semantics are not documented; accept
-    // only an array of IDs and keep every result explicitly local and provisional.
-    NSMutableArray *roster=[NSMutableArray array]; BOOL available=NO, malformed=NO;
+- (void)readRoster {
+    if(![self valid]) { [self drop]; return; }
     @try {
-        id raw=WUHostIs(manager,@"CContactMgr")?Get(manager,@"getAllContactUserName"):nil;
-        if([raw isKindOfClass:NSArray.class]) {
-            available=YES; NSUInteger count=[raw count];
-            if(count>20000) { count=20000; malformed=YES; }
-            for(NSUInteger i=0;i<count;i++) {
-                id name=raw[i];
-                if(ID(name)) [roster addObject:[name copy]]; else malformed=YES;
-            }
+        NSUInteger end=MIN(self.rosterIndex+128,self.rosterCount);
+        while(self.rosterIndex<end) {
+            id name=self.rosterRaw[self.rosterIndex++];
+            if(ID(name)) [self.rosterNames addObject:[name copy]]; else self.rosterMalformed=YES;
         }
-    } @catch(__unused NSException *e) { available=NO; malformed=YES; [roster removeAllObjects]; }
-    NSArray *rosterSnapshot=[roster copy]; job.rosterAvailable=available; job.rosterMalformed=malformed;
-    job.profileDeadline=NSDate.timeIntervalSinceReferenceDate+3.0;
+    } @catch(__unused NSException *e) { self.rosterAvailable=NO; self.rosterMalformed=YES; [self.rosterNames removeAllObjects]; self.rosterIndex=self.rosterCount; }
+    if(self.rosterIndex<self.rosterCount) { dispatch_async(dispatch_get_main_queue(),^{ [self readRoster]; }); return; }
+    self.rosterRaw=nil; [self prepareCandidates];
+}
+- (void)prepareCandidates {
+    NSArray *known=self.known, *roster=[self.rosterNames copy]; NSString *session=self.session, *account=self.account;
+    BOOL available=self.rosterAvailable, malformed=self.rosterMalformed;
+    self.rosterNames=nil; self.known=nil;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
         NSMutableOrderedSet *rooms=[NSMutableOrderedSet orderedSet]; BOOL truncated=NO;
         if([session hasSuffix:@"@chatroom"]) [rooms addObject:session];
-        else for(id row in known) {
-            if(![row isKindOfClass:NSDictionary.class]) continue;
-            NSString *name=row[@"username"];
-            if(!ID(name) || ![name hasSuffix:@"@chatroom"] || ![row[@"kind"] isEqual:@"chatroom"]) continue;
-            if(rooms.count==50 && ![rooms containsObject:name]) { truncated=YES; break; }
-            [rooms addObject:[name copy]];
+        else {
+            for(id row in known) {
+                if(![row isKindOfClass:NSDictionary.class] || ![row[@"kind"] isEqual:@"chatroom"]) continue;
+                NSString *name=row[@"username"];
+                if(ID(name) && [name hasSuffix:@"@chatroom"]) [rooms addObject:[name copy]];
+            }
+            for(NSString *name in roster) if([name hasSuffix:@"@chatroom"]) [rooms addObject:name];
+            if(rooms.count>2000) { truncated=YES; [rooms removeObjectsInRange:NSMakeRange(2000,rooms.count-2000)]; }
+            if(malformed) truncated=YES;
         }
         NSMutableSet *unique=[NSMutableSet set];
         for(id row in known) {
@@ -157,14 +163,32 @@ void WUStatsReadHostProfile(id manager, NSString *account, NSString *session, NS
             NSString *name=row[@"username"];
             if(ID(name) && ![name isEqual:account] && ![name hasSuffix:@"@chatroom"]) [unique addObject:[name copy]];
         }
-        for(NSString *name in rosterSnapshot) if(![name isEqual:account] && ![name hasSuffix:@"@chatroom"]) [unique addObject:name];
+        for(NSString *name in roster) if(![name isEqual:account] && ![name hasSuffix:@"@chatroom"]) [unique addObject:name];
         NSArray *all=[[unique allObjects] sortedArrayUsingSelector:@selector(compare:)];
-        NSUInteger limit=available?2000:500;
-        BOOL privateTruncated=all.count>limit || malformed;
+        NSUInteger limit=available?2000:500; BOOL privateTruncated=all.count>limit || malformed;
         NSArray *privateIDs=all.count>limit?[all subarrayWithRange:NSMakeRange(0,limit)]:all;
         NSArray *snapshot=[rooms.array copy];
-        dispatch_async(dispatch_get_main_queue(),^{ job.rooms=snapshot; job.truncated=truncated; job.privateIDs=privateIDs; job.privateTruncated=privateTruncated; [job step]; });
+        dispatch_async(dispatch_get_main_queue(),^{
+            if(![self valid]) { [self drop]; return; }
+            self.rooms=snapshot; self.truncated=truncated; self.privateIDs=privateIDs; self.privateTruncated=privateTruncated;
+            self.roomDeadline=NSDate.timeIntervalSinceReferenceDate+1.5; [self step];
+        });
     });
+}
+@end
+void WUStatsReadHostProfile(id manager, NSString *account, NSString *session, NSArray *sessions, BOOL (^current)(void), void (^done)(NSDictionary *)) {
+    if(!NSThread.isMainThread || !ID(account) || !ID(session) || !current || !done || !current()) return;
+    WUHostProfileRead *job=[WUHostProfileRead new]; job.manager=manager; job.account=[account copy]; job.session=[session copy]; job.current=current; job.done=done;
+    job.peer=WUStatsContactProfile(manager,session,NSDate.date.timeIntervalSince1970); job.profiles=[NSMutableArray array]; job.common=[NSMutableArray array]; job.members=@[]; job.friendProfiles=[NSMutableArray array]; job.known=[sessions copy]; job.rosterNames=[NSMutableArray array];
+    // Public third-party 8.0.55 header: CContactMgr getAllContactUserName; scope is undocumented.
+    @try {
+        id raw=WUHostIs(manager,@"CContactMgr")?Get(manager,@"getAllContactUserName"):nil;
+        if([raw isKindOfClass:NSArray.class]) {
+            job.rosterAvailable=YES; job.rosterRaw=raw; job.rosterCount=MIN([raw count],20000);
+            if([raw count]>20000) job.rosterMalformed=YES;
+        }
+    } @catch(__unused NSException *e) { job.rosterAvailable=NO; job.rosterMalformed=YES; }
+    [job readRoster];
 }
 NSDictionary *WUStatsProfileSummary(NSDictionary *snapshot) {
     if(![snapshot isKindOfClass:NSDictionary.class]) return nil;
@@ -219,7 +243,7 @@ NSArray<NSString *> *WUStatsProfileLines(NSDictionary *p, NSTimeZone *zone) {
         [lines addObject:[NSString stringWithFormat:@"资料性别 %@ · 年龄 %@（字段原值，非关系年限）",sex,peer[@"age"]==NSNull.null?@"未知":[peer[@"age"] description]]];
         [lines addObject:[NSString stringWithFormat:@"地区原值：%@ / %@",[peer[@"country"] length]?peer[@"country"]:@"未知",[peer[@"province"] length]?peer[@"province"]:@"未知"]];
         [lines addObject:[NSString stringWithFormat:@"本地添加日期：%@；来源 %@，不保证首次添加",date(peer[@"added"]),[peer[@"addedSource"] length]?peer[@"addedSource"]:@"未知"]];
-        [lines addObject:[NSString stringWithFormat:@"已确认本地共同群下界 %lu；检查 %@ 个已加载群，%@ 个成员表不完整/未知%@。未发现不等于没有共同群。",(unsigned long)[p[@"commonGroups"] count],p[@"roomsChecked"],p[@"unknownRooms"],[p[@"truncated"] boolValue]?@"；已截断":@""]];
+        [lines addObject:[NSString stringWithFormat:@"已确认本地共同群下界 %lu；检查 %@ 个本地群候选，%@ 个成员表不完整/未知%@。未发现不等于没有共同群。",(unsigned long)[p[@"commonGroups"] count],p[@"roomsChecked"],p[@"unknownRooms"],[p[@"truncated"] boolValue]?@"；已截断":@""]];
         [lines addObjectsFromArray:p[@"commonGroups"]];
     }
     return lines;

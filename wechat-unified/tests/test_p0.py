@@ -27,8 +27,13 @@ config+='\nstatic NSString *currentAccount=@"A";\nNSString *WUCurrentAccount(voi
 config+=between(groups,'NSDictionary *WUAccountOptions','static NSDictionary *EmojiState')
 config+=(ROOT/'tests/p0_config.m').read_text()
 (BUILD/'p0_config_generated.m').write_text(config)
-compile_test('p0-config-tests',['build/p0_config_generated.m','Sources/GroupLogic.m','Sources/HomeLogic.m','Sources/PluginHubLogic.m','Sources/ThemeCatalog.m'])
+compile_test('p0-config-tests',['build/p0_config_generated.m','Sources/GroupLogic.m','Sources/HomeLogic.m','Sources/ThemeCatalog.m'])
 config_result=execute('p0-config-tests')
+if '--config-only' in sys.argv:
+    assert config_result.returncode==0, 'Production configuration regression failed'
+    for name in ('p0-config-tests','p0_config_generated.m'):
+        (BUILD/name).unlink()
+    sys.exit(0)
 messages=(ROOT/'Sources/Messages.m').read_text()
 gate='#include <string.h>\n#include <stdlib.h>\n'
 gate+=between(core,'static const char *Unqualified','BOOL WUHook(')

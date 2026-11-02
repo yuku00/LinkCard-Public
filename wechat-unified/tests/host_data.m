@@ -157,6 +157,26 @@ static void Profiles(void) {
     mgr.roster=@{@"unexpected":@YES}; value=nil;
     WUStatsReadHostProfile(mgr,@"self",@"peer",privateSessions,^BOOL{ return YES; },^(NSDictionary *v){ value=v; });
     Spin(^BOOL{ return value!=nil; }); CHECK(![value[@"loadedFriends"][@"rosterAvailable"] boolValue]);
+    // Roster-only rooms and more than the former 50 loaded-room limit remain local lower bounds.
+    NSMutableArray *roomNames=[NSMutableArray array]; NSMutableDictionary *roomContacts=[NSMutableDictionary dictionary];
+    for(NSUInteger i=0;i<65;i++) {
+        NSString *name=[NSString stringWithFormat:@"room%03lu@chatroom",(unsigned long)i];
+        CContact *c=Person(name); c.m_nsChatRoomMemList=@"self;peer";
+        [roomNames addObject:name]; roomContacts[name]=c;
+    }
+    mgr.contacts=roomContacts; mgr.roster=[roomNames arrayByAddingObject:roomNames[0]]; value=nil;
+    WUStatsReadHostProfile(mgr,@"self",@"peer",@[@{@"username":roomNames[0],@"kind":@"chatroom"}],^BOOL{ return YES; },^(NSDictionary *v){ value=v; });
+    Spin(^BOOL{ return value!=nil; });
+    CHECK([value[@"roomsChecked"] isEqual:@65] && [value[@"commonGroups"] count]==65 && ![value[@"truncated"] boolValue]);
+    CHECK([[WUStatsProfileLines(WUStatsProfileSummary(value),NSTimeZone.localTimeZone) componentsJoinedByString:@"\n"] containsString:@"名册范围未经证实"]);
+    // Cancellation during incremental roster enumeration must stop before room reads or delivery.
+    NSMutableArray *huge=[NSMutableArray array]; for(NSUInteger i=0;i<1000;i++) [huge addObject:[NSString stringWithFormat:@"u%lu",(unsigned long)i]];
+    mgr.roster=huge;
+    __block BOOL rosterCurrent=YES,rosterDelivered=NO;
+    WUStatsReadHostProfile(mgr,@"self",@"peer",@[],^BOOL{ return rosterCurrent; },^(NSDictionary *v){ rosterDelivered=YES; });
+    rosterCurrent=NO; NSUInteger afterStart=mgr.calls; __block BOOL rosterTick=NO;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,100*NSEC_PER_MSEC),dispatch_get_main_queue(),^{ rosterTick=YES; });
+    Spin(^BOOL{ return rosterTick; }); CHECK(!rosterDelivered && mgr.calls==afterStart);
     mgr.roster=nil;
     __block BOOL current=YES,delivered=NO;
     WUStatsReadHostProfile(mgr,@"self",@"r@chatroom",sessions,^BOOL{ return current; },^(NSDictionary *v){ delivered=YES; });

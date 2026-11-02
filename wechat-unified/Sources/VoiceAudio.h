@@ -3,5 +3,5 @@
 NSDictionary *WUVoiceDecode(NSData *encoded);
 NSDictionary *WUVoiceDecodeCancellable(NSData *encoded, NSProgress *cancellation);
 NSData *WUVoiceReadLocal(NSString *path);
-// Converts recognized AudioToolbox containers locally; never establishes host sendability.
+// Converts supported local audio to validated Tencent SILK; portable metadata is not trusted.
 NSData *WUVoiceTranscodeSilk(NSData *data, BOOL (^current)(void));

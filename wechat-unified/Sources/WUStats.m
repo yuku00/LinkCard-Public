@@ -560,7 +560,7 @@ static char WUStatsOwnerKey;
     for(NSDictionary *row in visitRanking) { NSString *key=row[@"id"]; [visitRows addObject:[NSString stringWithFormat:@"%@ · %@：%@ 次",names[key]?:[key substringToIndex:12],row[@"kind"],row[@"count"]]]; }
     if(!visitRanking.count) [visitRows addObject:@"此范围暂无已记录访问（不推断历史）"];
     [sections addObject:@{@"title":@"会话访问次数榜",@"rows":visitRows}];
-    [sections addObject:@{@"title":@"状态与范围",@"rows":@[self.status?:@"",@"只读所选范围本地消息；消息统计不落盘、不联网、不包含 AI。需手动扫描；访问日志另按启用后真实事件记录。",@"总上限20,000条/100页；排行另限用户名顺序前50个已加载可分类会话，所有子扫描共享页数预算。未知时间不进入日期范围；同秒消息不推断互动。",@"规则统计不是社交意图：6小时新段、24小时破冰、5分钟同人连发。首尾不补猜开场。"]}];
+    [sections addObject:@{@"title":@"状态与范围",@"rows":@[self.status?:@"",@"只读所选范围本地消息；消息统计不落盘、不联网、不包含 AI。需手动扫描；访问日志另按启用后真实事件记录。",@"总上限20,000条/100页；排行限用户名顺序前50个可分类候选，包含已加载会话与宿主会话列表，所有子扫描共享页数预算；列表覆盖范围未知。未知时间不进入日期范围；同秒消息不推断互动。",@"规则统计不是社交意图：6小时新段、24小时破冰、5分钟同人连发。首尾不补猜开场。"]}];
     if([r[@"overview"] boolValue]) {
         NSMutableArray *rows=[NSMutableArray arrayWithObjects:[NSString stringWithFormat:@"已处理 %@ / %@ 个可靠会话 · %@ 页 · %@ 条扫描记录",r[@"processed"],r[@"sessions"],r[@"pages"],r[@"scanned"]],[r[@"complete"] boolValue]?@"完成已加载可分类会话；不是服务器全部历史":@"部分排行/截断：未扫会话可能更活跃，不称全账号最常聊",nil];
         [sections addObject:@{@"title":@"最常聊 · 本地消息数（所选日期）",@"rows":rows}];
@@ -611,7 +611,7 @@ static char WUStatsOwnerKey;
         if(![r[@"myGroups"] count]) [rows addObject:@"无群聊样本"];
         [sections addObject:@{@"title":@"我的发言最多的群",@"rows":rows}];
     }
-    [sections addObject:@{@"title":@"尚未实现 / 不伪造",@"rows":@[@"未加载/未知分类/非私聊群聊会话不进入消息数榜；访问榜不冒充最常聊。日期扫描复用ID游标，缺时间单调性证据，当前不会仅凭某页时间越界提前停止。",@"完整好友名册画像尚未验证；现已尝试本地用户名名册与已加载私聊候选，按好友标志分批读取并标记不完整。当前联系人/群成员资料、共同群下界和本地关系日期已单独显示。缺失资料仍未知，不刷新或猜测。",@"支付交易ID未获可靠协议，仍不做交易级合并；localID仅是来源内消息游标，不是交易ID。已接App补页并与普通消息共享100页/20,000条预算，跨源只按已确认serverID去重。红包/转账只读nativePayInfo结构化证据，appUnknown单列未知，不猜正文/XML；加好友/入群宿主事件历程仍未接入。",@"热词使用系统本地词边界，过滤短词、数字、少量停用词；跳过 URL/XML 正文。不保留正文样本，不作 AI 分析。"]}];
+    [sections addObject:@{@"title":@"尚未实现 / 不伪造",@"rows":@[@"未知分类/非私聊群聊会话不进入消息数榜；宿主会话列表覆盖范围未知，不等于全部历史。访问榜不冒充最常聊。日期扫描复用ID游标，缺时间单调性证据，当前不会仅凭某页时间越界提前停止。",@"完整好友名册画像尚未验证；现已尝试本地用户名名册与已加载私聊候选，按好友标志分批读取并标记不完整。当前联系人/群成员资料、共同群下界和本地关系日期已单独显示。缺失资料仍未知，不刷新或猜测。",@"支付交易ID未获可靠协议，仍不做交易级合并；localID仅是来源内消息游标，不是交易ID。已接App补页并与普通消息共享100页/20,000条预算，跨源只按已确认serverID去重。红包/转账只读nativePayInfo结构化证据，appUnknown单列未知，不猜正文/XML；加好友/入群宿主事件历程仍未接入。",@"热词使用系统本地词边界，过滤短词、数字、少量停用词；跳过 URL/XML 正文。不保留正文样本，不作 AI 分析。"]}];
     NSDictionary *sectionKeys=@{@"宿主已加载会话总览（非好友画像）":@"sessions",@"会话访问次数榜":@"visits",@"概览":@"overview",@"我与对方汇总":@"selfPeer",@"关系历程（已见消息）":@"journey",@"消息主类型":@"types",@"日历分布":@"days",@"小时分布":@"hours",@"发言榜":@"speakers",@"回复对数":@"replies",@"开场者":@"openers",@"收尾者":@"closers",@"破冰":@"icebreakers",@"连发":@"bursts",@"本地热词（前100）":@"words",@"最常聊 · 本地消息数（所选日期）":@"rank",@"私聊消息数榜（非好友关系证明）":@"private",@"群会话消息数榜":@"chatroom",@"我的发言最多的群":@"myGroups"};
     NSMutableArray *ordered=[NSMutableArray array];
     for(NSDictionary *s in sections) if(!sectionKeys[s[@"title"]]) [ordered addObject:s];
