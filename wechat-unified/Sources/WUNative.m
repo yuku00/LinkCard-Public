@@ -169,15 +169,22 @@ static BOOL Hook(NSString *c,NSString *s,BOOL meta,const char *ret,IMP replaceme
 }
 void WUInstallNative(void) {
     if(!WUNativeGuardAllowsHooks()) return;
+#if defined(WU_NATIVE_BOUNDARY_TEST)
     static dispatch_once_t boundaryOnce; dispatch_once(&boundaryOnce, ^{
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ startupBoundaryOpen=NO; }];
     });
     UIApplication *application=NSThread.isMainThread?UIApplication.sharedApplication:nil;
     if(application && application.applicationState==UIApplicationStateActive) startupBoundaryOpen=NO;
+#endif
     WUInstallNativeEntries();
-    BOOL a=Hook(@"MicroMessengerAppDelegate",@"loadUpdateAndExcute",NO,"v",(IMP)HotNew,&hotOriginal);
-    BOOL b=Hook(@"WCUpdateMgr",@"loadMainUpdateBundle",NO,@encode(BOOL),(IMP)HotOld,&oldHotOriginal);
+    BOOL a=NO, b=NO;
+#if defined(WU_NATIVE_BOUNDARY_TEST)
+    a=Hook(@"MicroMessengerAppDelegate",@"loadUpdateAndExcute",NO,"v",(IMP)HotNew,&hotOriginal);
+    b=Hook(@"WCUpdateMgr",@"loadMainUpdateBundle",NO,@encode(BOOL),(IMP)HotOld,&oldHotOriginal);
     hotReady=a||b;
+#else
+    (void)HotNew; (void)HotOld;
+#endif
     a=Hook(@"JailBreakHelper",@"JailBroken",YES,@encode(BOOL),(IMP)Jail,&jailOriginal);
     b=Hook(@"JailBreakHelper",@"IsJailBreak",NO,@encode(BOOL),(IMP)JailInstance,&jailInstanceOriginal);
     jailReady=a||b;

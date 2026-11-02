@@ -2,8 +2,6 @@
 @interface WUNativeSettings : UITableViewController @end
 @implementation WUNativeSettings
 - (NSArray *)rows { return @[
- @[@"hotDisable",@"禁用微信热更新",@"拦截已匹配补丁加载入口；不删补丁文件。已加载补丁需重启。"],
- @[@"hotCompat",@"强兼热更新 · 未开放",@"已限定评估加载前让位、加载后原槽重接；真实加载器仍缺同步独占与新IMP来源证明，无法排除第三方／JIT绕回，因此不启用。禁用热更新独立可用。"],
  @[@"jailbreak",@"禁用越狱检测",@"仅已匹配的JailBreakHelper返回；不修改系统版本或支付鉴权。"],
  @[@"clientReport",@"禁用加好友检测报告",@"阻止已匹配本地客户端检查/报告入口；不替代好友验证，不保证服务器接受。"],
  @[@"liveEnvironment",@"禁用录屏 / 通话 / VPN检测",@"仅SecDataReportUtil的三个检测；不全局伪造录屏、通话或网络状态。"],

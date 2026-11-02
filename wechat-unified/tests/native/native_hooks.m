@@ -51,11 +51,12 @@ int main(void) { @autoreleasepool {
     assert(WUNativeSave(@"jailbreak",YES)); assert(![JailBreakHelper JailBroken] && ![[JailBreakHelper new] IsJailBreak]);
     assert(WUNativeSave(@"clientReport",YES)); MMClientCacheManager *mgr=[MMClientCacheManager new]; [mgr checkConfig]; [mgr doDReport]; assert(!checks && !reports);
     testMaster=NO; [mgr checkConfig]; [mgr doDReport]; assert(checks==1 && reports==1 && [JailBreakHelper JailBroken]); testMaster=YES;
-    assert(!WUNativeSave(@"hotCompat",YES)); // generic snapshot restoration is intentionally unavailable
-    assert(WUNativeSave(@"hotDisable",YES)); MicroMessengerAppDelegate *app=[MicroMessengerAppDelegate new]; WCUpdateMgr *update=[WCUpdateMgr new];
-    [app loadUpdateAndExcute]; assert(!loads && ![update loadMainUpdateBundle]);
-    testWriteOK=NO; assert(!WUNativeSave(@"hotDisable",NO) && [testOptions[@"hotDisable"] boolValue]); testWriteOK=YES;
-    assert(WUNativeSave(@"hotDisable",NO));
+    assert(!WUNativeSave(@"hotCompat",YES) && !WUNativeSave(@"hotDisable",YES));
+    TestConfig(@{@"hotDisable":@YES});
+    MicroMessengerAppDelegate *app=[MicroMessengerAppDelegate new]; WCUpdateMgr *update=[WCUpdateMgr new];
+    [app loadUpdateAndExcute]; assert(loads==1 && [update loadMainUpdateBundle] && loads==2);
+    assert(!WUNativeAvailable(@"hotDisable") && !WUNativeAvailable(@"hotCompat"));
+    TestConfig(@{});
     assert(WUHook(@"Fixture",@"value",NO,"i",@[],(IMP)Ours,&fixtureOriginal));
     assert([[Fixture new] value]==11 && hostCalls==1 && pluginCalls==1);
     // Explicit verified-host primitive: actual original slot updates and new host executes.
