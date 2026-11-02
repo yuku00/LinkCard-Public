@@ -32,7 +32,7 @@ static NSDictionary *R(NSString *sid,NSString *sender,int64_t time,NSString *typ
     NSDictionary *empty=@{@"sid":@"42",@"source":@"normal",@"sender":@"",@"time":@0,@"type":@"text",@"text":@""};
     NSDictionary *full=@{@"sid":@"42",@"source":@"app",@"sender":@"alice",@"time":@100,@"type":@"text",@"text":@"hello world"};
     NSDictionary *conflict=@{@"sid":@"42",@"source":@"app",@"sender":@"bob",@"time":@200,@"type":@"text",@"text":@"other words"};
-    XCTAssertTrue([a addRecords:@[empty,full,conflict]]);
+    XCTAssertTrue(([a addRecords:@[empty,full,conflict]]));
     NSDictionary *r=a.result;
     XCTAssertEqualObjects(r[@"total"],@1); XCTAssertEqualObjects(r[@"duplicates"],@2);
     XCTAssertEqualObjects(r[@"unknownTime"],@0); XCTAssertEqualObjects(r[@"unknownSender"],@0);
@@ -196,6 +196,27 @@ static NSDictionary *R(NSString *sid,NSString *sender,int64_t time,NSString *typ
     WUStatsOverviewJob *job=[[WUStatsOverviewJob alloc] initWithBinding:base]; XCTestExpectation *done=[self expectationWithDescription:@"overview"];
     [job start:^(NSDictionary *r,NSString *s){if(r){ XCTAssertEqualObjects(r[@"processed"],@2); XCTAssertEqualObjects(r[@"rank"][0][@"id"],@"a"); XCTAssertEqualObjects(r[@"rank"][0][@"count"],@2); XCTAssertEqualObjects(r[@"rank"][1][@"count"],@1); XCTAssertEqualObjects(r[@"complete"],@YES); [done fulfill]; }}];
     [self waitForExpectations:@[done] timeout:5];
+}
+- (void)testOverviewEnumeratesAdditionalCandidatesAndMarksCoverageUnknown {
+    WUStatsBinding *base=[WUStatsBinding new]; base.stillCurrent=^BOOL{return YES;};
+    base.sessions=@[@{@"username":@"a",@"kind":@"private"}];
+    base.readSessions=^(BOOL (^current)(void), void (^done)(NSArray *,BOOL)) {
+        NSArray *extra=@[@{@"username":@"b",@"kind":@"chatroom"},@{@"username":@"a",@"kind":@"private"}];
+        // Callback does not mutate the original binding. The overview consumes rows itself.
+        dispatch_async(dispatch_get_main_queue(),^{ if(current()) done(extra,NO); });
+    };
+    base.bindingForSession=^WUStatsBinding *(NSString *session){ CMessageMgr *mgr=[CMessageMgr new]; mgr.pages=@[@[]]; WUStatsBinding *b=[self binding:mgr]; b.session=session; return b; };
+    WUStatsOverviewJob *job=[[WUStatsOverviewJob alloc] initWithBinding:base]; XCTestExpectation *done=[self expectationWithDescription:@"extended candidates"];
+    [job start:^(NSDictionary *r,NSString *s){ if(r) { XCTAssertEqualObjects(r[@"processed"],@2); XCTAssertEqualObjects(r[@"sessions"],@2); XCTAssertEqualObjects(r[@"complete"],@NO); [done fulfill]; } }];
+    [self waitForExpectations:@[done] timeout:5];
+}
+- (void)testOverviewCancellationDuringEnumerationRejectsLateResult {
+    WUStatsBinding *base=[WUStatsBinding new]; base.stillCurrent=^BOOL{return YES;};
+    __block void (^finish)(NSArray *,BOOL); __block BOOL (^gate)(void); __block NSUInteger calls=0;
+    base.readSessions=^(BOOL (^current)(void),void (^done)(NSArray *,BOOL)){gate=[current copy];finish=[done copy];};
+    base.bindingForSession=^WUStatsBinding *(NSString *s){calls++;return nil;};
+    WUStatsOverviewJob *job=[[WUStatsOverviewJob alloc] initWithBinding:base]; [job start:^(NSDictionary *r,NSString *s){ XCTFail(@"late callback"); }];
+    [job cancel]; XCTAssertFalse(gate()); finish(@[@{@"username":@"a",@"kind":@"private"}],NO); XCTAssertEqual(calls,0u);
 }
 - (void)testOverviewSessionCapIsExplicitlyPartial {
     WUStatsBinding *base=[WUStatsBinding new]; base.stillCurrent=^BOOL{return YES;};

@@ -1,0 +1,12 @@
+name: WU stats regression only
+on: push
+permissions:
+  contents: read
+jobs:
+  stats:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Statistics XCTest
+        working-directory: wechat-unified
+        run: bash tools/test_stats.sh
