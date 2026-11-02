@@ -24,6 +24,7 @@ BOOL WUCardSurfaceAvailable(NSString *key);
 BOOL WUChatButtonSurfaceAvailable(NSString *key);
 BOOL WUTextPreviewSurfaceAvailable(void);
 BOOL WUQuickReplySurfaceAvailable(void);
+BOOL WUHostPopupSurfaceAvailable(void);
 void WURestoreMessageSurface(UIView *cell);
 void WURefreshMessageSurface(UIView *cell, NSString *role);
 void WUInstallMessages(void);

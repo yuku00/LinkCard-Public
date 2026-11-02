@@ -1,11 +1,12 @@
 #import <Foundation/Foundation.h>
-// Private local records only; no imported declaration is a trusted host pairing.
+// Private account-local records; imported declarations never establish encoder provenance.
 BOOL WUVoicePackMatches(NSDictionary *record, NSString *version);
 @interface WUVoicePackStore : NSObject
 - (instancetype)initWithRoot:(NSURL *)root account:(NSString *)account;
 - (NSArray *)load:(NSError **)error;
-// Import is always unpaired. Portable metadata never authorizes a host format.
+// Legacy import remains unpaired; versioned import re-encodes and validates locally.
 - (BOOL)importFile:(NSURL *)url name:(NSString *)name current:(BOOL (^)(void))current error:(NSError **)error;
+- (BOOL)importFile:(NSURL *)url name:(NSString *)name version:(NSString *)version current:(BOOL (^)(void))current error:(NSError **)error;
 - (NSData *)exportResource:(NSString *)identifier error:(NSError **)error;
 - (BOOL)pair:(NSString *)identifier selectedData:(NSData *)data format:(NSNumber *)format version:(NSString *)version current:(BOOL (^)(void))current error:(NSError **)error;
 - (BOOL)saveData:(NSData *)data format:(NSNumber *)format version:(NSString *)version name:(NSString *)name current:(BOOL (^)(void))current error:(NSError **)error;

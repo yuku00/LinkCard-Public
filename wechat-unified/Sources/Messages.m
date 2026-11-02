@@ -258,6 +258,7 @@ static NSHashTable *chatActions;
 }
 @end
 extern NSArray<NSDictionary *> *WUStatsHostSessions(void);
+extern void WUStatsReadSessionCandidates(BOOL (^current)(void), void (^done)(NSArray *, BOOL));
 static dispatch_queue_t StatsVisitQueue(void) {
     static dispatch_queue_t q; static dispatch_once_t once; dispatch_once(&once,^{ q=dispatch_queue_create("org.wechatunified.stats-visits",DISPATCH_QUEUE_SERIAL); }); return q;
 }
@@ -507,6 +508,16 @@ static void OpenStats(UIViewController *owner) {
         NSUInteger g=generation; __weak UIViewController *weak=owner;
         binding.stillCurrent=^BOOL{ return weak && UIApplication.sharedApplication.applicationState==UIApplicationStateActive && [WUValue(@"enabled") boolValue] && [account isEqual:Account()] && g==generation && [session isEqual:Session(weak)] && [WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:@"stats"]; };
         binding.sessions=WUStatsHostSessions()?:@[];
+        NSArray *loadedSessions=[binding.sessions copy];
+        __weak WUStatsBinding *sessionBinding=binding;
+        binding.readSessions=^(BOOL (^current)(void), void (^done)(NSArray *, BOOL)) {
+            WUStatsReadSessionCandidates(current,^(NSArray *rows, BOOL partial) {
+                WUStatsBinding *base=sessionBinding;
+                if(!base || !current()) return;
+                base.sessions=rows?[loadedSessions arrayByAddingObjectsFromArray:rows]:loadedSessions;
+                done(rows,partial);
+            });
+        };
         NSArray *profileSessions=[binding.sessions copy];
         binding.readProfile=^(BOOL (^current)(void), void (^done)(NSDictionary *)) {
             if(!current()) return;

@@ -13,14 +13,17 @@
 @property(nonatomic) NSUInteger index, pages, scanned;
 @end
 @implementation WUStatsOverviewJob
+- (void)setCandidates:(NSArray *)rows {
+    NSMutableDictionary *known=[NSMutableDictionary dictionary];
+    for(id row in rows) if([row isKindOfClass:NSDictionary.class] && [row[@"username"] isKindOfClass:NSString.class] && [row[@"username"] length] && [@[@"private",@"chatroom"] containsObject:row[@"kind"]]) known[row[@"username"]]=[row copy];
+    NSMutableArray *sessions=[NSMutableArray array];
+    for(NSString *key in [known.allKeys sortedArrayUsingSelector:@selector(compare:)]) [sessions addObject:known[key]];
+    self.sessions=[sessions copy];
+}
 - (instancetype)initWithBinding:(WUStatsBinding *)binding {
     if((self=[super init])) {
         _binding=binding; _range=[binding.dateRange copy]; _zone=[binding.timeZone copy]; _rows=[NSMutableArray array];
-        NSMutableDictionary *known=[NSMutableDictionary dictionary];
-        for(NSDictionary *row in binding.sessions) if([row[@"username"] length] && [@[@"private",@"chatroom"] containsObject:row[@"kind"]]) known[row[@"username"]]=[row copy];
-        NSMutableArray *sessions=[NSMutableArray array];
-        for(NSString *key in [known.allKeys sortedArrayUsingSelector:@selector(compare:)]) [sessions addObject:known[key]];
-        _sessions=[sessions copy];
+        [self setCandidates:binding.sessions];
     } return self;
 }
 - (BOOL)current {
@@ -32,7 +35,19 @@
 }
 - (void)start:(void (^)(NSDictionary *,NSString *))update {
     NSAssert(NSThread.isMainThread,@"main thread required"); if(self.started || self.cancelled) return;
-    self.started=YES; self.update=[update copy]; [self step];
+    self.started=YES; self.update=[update copy];
+    if(![self current]) { [self step]; return; }
+    if(!self.binding.readSessions) { [self step]; return; }
+    __weak typeof(self) weak=self;
+    @try {
+        self.binding.readSessions(^BOOL{ WUStatsOverviewJob *job=weak; return job && [job current]; },^(NSArray *rows, BOOL partial) {
+            WUStatsOverviewJob *job=weak; if(!job || ![job current]) return;
+            // List semantics and coverage are not proven by the public declaration.
+            job.partial=YES;
+            if(rows) [job setCandidates:job.binding.sessions];
+            [job step];
+        });
+    } @catch(__unused NSException *e) { self.partial=YES; [self step]; }
 }
 - (void)finish {
     NSArray *rank=[self.rows sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a,NSDictionary *b){ NSComparisonResult c=[b[@"count"] compare:a[@"count"]]; return c==NSOrderedSame?[a[@"id"] compare:b[@"id"] options:NSLiteralSearch]:c; }];
