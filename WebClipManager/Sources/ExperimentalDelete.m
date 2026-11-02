@@ -20,10 +20,13 @@ static BOOL signature(Class cls, SEL sel, BOOL meta, const char *ret, unsigned c
     if (count == 3) { method_getArgumentType(m, 2, a, sizeof a); if (strcmp(a, arg)) return NO; }
     return YES;
 }
-static BOOL validID(NSString *s) {
-    if (![s isKindOfClass:NSString.class] || s.length < 9 || s.length > 200 || ![s hasSuffix:@".webclip"] || [s hasPrefix:@"."]) return NO;
-    NSCharacterSet *bad = [[NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ ."] invertedSet];
-    return [s rangeOfCharacterFromSet:bad].location == NSNotFound && [s rangeOfString:@" "].location == NSNotFound;
+static NSString *systemIDForDirectoryName(NSString *name) {
+    if (![name isKindOfClass:NSString.class] || name.length != 40 || ![name hasSuffix:@".webclip"]) return nil;
+    for (NSUInteger i = 0; i < 32; i++) {
+        unichar c = [name characterAtIndex:i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return nil;
+    }
+    return [name substringToIndex:32];
 }
 // Diagnostics contain only fixed stages and errno, never path components.
 static NSDictionary *pathRefusal(const char *stage, int error) {
@@ -56,7 +59,8 @@ static NSString *checkPlist(int dir) {
     return nil;
 }
 static NSDictionary *performDelete(NSString *identifier, NSString *root, Class cls) {
-    if (!validID(identifier)) return pathRefusal("inputIdentifier", 0);
+    NSString *systemIdentifier = systemIDForDirectoryName(identifier);
+    if (!systemIdentifier) return pathRefusal("inputIdentifier", 0);
     const char *r = safeUTF8(root), *leaf = safeUTF8(identifier);
     if (!r || !leaf || !wcm_path_valid(r)) return pathRefusal("inputRootOrEncoding", 0);
     // Only this exact system alias is mapped; never resolve arbitrary symlinks.
@@ -74,18 +78,18 @@ static NSDictionary *performDelete(NSString *identifier, NSString *root, Class c
     id (*classArg)(id, SEL, id) = (void *)objc_msgSend;
     id (*objectGet)(id, SEL) = (void *)objc_msgSend;
     BOOL (*boolGet)(id, SEL) = (void *)objc_msgSend;
-    id path = classArg(cls,pathSel,identifier);
+    id path = classArg(cls,pathSel,systemIdentifier);
     BOOL isString = [path isKindOfClass:NSString.class];
     BOOL isURL = [path isKindOfClass:NSURL.class];
     if (!isString) { close(dir); return refuse([NSString stringWithFormat:@"未调用删除；路径检查失败（阶段 runtimePathType，string %d，url %d）", isString, isURL]); }
     const char *runtimePath = safeUTF8(path);
-    if (!runtimePath || !wcm_path_equal_alias(runtimePath, safeUTF8(expected))) {
+    if (!runtimePath || !wcm_path_valid(runtimePath) || !wcm_path_equal_alias(runtimePath, safeUTF8(expected))) {
         NSString *p = path;
         NSString *prefix = [p hasPrefix:@"/private/var/mobile/Library/WebClips/"] ? @"privateWebClips" : ([p hasPrefix:@"/var/mobile/Library/WebClips/"] ? @"varWebClips" : @"other");
         close(dir);
         return refuse([NSString stringWithFormat:@"未调用删除；路径检查失败（阶段 runtimePathCompare，utf8 %d，length %lu，absolute %d，trailingSlash %d，prefix %@）", runtimePath != NULL, (unsigned long)p.length, [p hasPrefix:@"/"], [p hasSuffix:@"/"], prefix]);
     }
-    id object = classArg(cls,factory,identifier);
+    id object = classArg(cls,factory,systemIdentifier);
     if (!object || ![object isKindOfClass:cls]) { close(dir); return refuse(@"无法取得匹配的 UIWebClip 实例"); }
     // A subclass may override methods: check the actual dispatch class as well.
     Class actual = object_getClass(object);
@@ -93,7 +97,7 @@ static NSDictionary *performDelete(NSString *identifier, NSString *root, Class c
     BOOL hasConfig = class_getInstanceMethod(actual, configSel) != NULL;
     if (hasConfig && !signature(actual,configSel,NO,@encode(BOOL),2,NULL)) { close(dir); dir = -1; return refuse(@"运行时受管状态 ABI 不匹配"); }
     id actualID = objectGet(object,idSel);
-    if (![actualID isKindOfClass:NSString.class] || ![actualID isEqualToString:identifier]) { close(dir); return refuse(@"实例 identifier 不匹配"); }
+    if (![actualID isKindOfClass:NSString.class] || ![actualID isEqualToString:systemIdentifier]) { close(dir); return refuse(@"实例 identifier 不匹配"); }
     if (boolGet(object,managedSel) || (hasConfig && boolGet(object,configSel))) { close(dir); dir = -1; return refuse(@"运行时禁止移除或标记受管"); }
     // Reopen to reject swapped directory; re-read policy immediately before the one call.
     int again = wcm_open_directory(safeUTF8(root), leaf, &stage, &error); struct stat a,b;

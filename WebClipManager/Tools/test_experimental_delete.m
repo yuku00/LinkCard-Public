@@ -1,13 +1,14 @@
 #import <Foundation/Foundation.h>
 #import "../Sources/ExperimentalDelete.h"
-static NSString *root, *ident = @"A.webclip";
+static NSString *root, *ident = @"0123456789ABCDEF0123456789ABCDEF.webclip";
+static NSString *actualOverride;
 static BOOL blocked, managed, throwCheck; static int calls, checks, flip;
 static id pathOverride;
 @interface Mock : NSObject @end
 @implementation Mock
 + (id)webClipWithIdentifier:(id)x { return [self new]; }
-+ (id)pathForWebClipWithIdentifier:(id)x { return pathOverride ?: [root stringByAppendingPathComponent:x]; }
-- (id)identifier { return ident; }
++ (id)pathForWebClipWithIdentifier:(id)x { return pathOverride ?: [root stringByAppendingPathComponent:[x stringByAppendingString:@".webclip"]]; }
+- (id)identifier { return actualOverride ?: [ident substringToIndex:32]; }
 - (BOOL)removalDisallowed { if (throwCheck) @throw [NSException exceptionWithName:@"test" reason:nil userInfo:nil]; checks++; return blocked || (flip && checks > 1); }
 - (BOOL)configurationIsManaged { return managed; }
 - (BOOL)removeFromDisk { calls++; return YES; }
@@ -15,8 +16,8 @@ static id pathOverride;
 @interface NoConfig : NSObject @end
 @implementation NoConfig
 + (id)webClipWithIdentifier:(id)x { return [self new]; }
-+ (id)pathForWebClipWithIdentifier:(id)x { return pathOverride ?: [root stringByAppendingPathComponent:x]; }
-- (id)identifier { return ident; }
++ (id)pathForWebClipWithIdentifier:(id)x { return pathOverride ?: [root stringByAppendingPathComponent:[x stringByAppendingString:@".webclip"]]; }
+- (id)identifier { return actualOverride ?: [ident substringToIndex:32]; }
 - (BOOL)removalDisallowed { return blocked; }
 - (BOOL)removeFromDisk { calls++; return YES; }
 @end
@@ -36,7 +37,7 @@ int main(void) { @autoreleasepool {
     NSDictionary *base=@{@"Title":@"WCM-DELETE-TEST", @"ConfigurationIsManaged":@NO};
     run(base,Mock.class,YES); run(base,NoConfig.class,YES);
     NSString *exact = [root stringByAppendingPathComponent:ident];
-    pathOverride = [exact stringByAppendingString:@"/"]; run(base,Mock.class,YES);
+    pathOverride = [exact stringByAppendingString:@"/"]; run(base,Mock.class,NO);
     pathOverride = [exact stringByAppendingString:@"//"]; run(base,Mock.class,NO);
     pathOverride = [root stringByAppendingPathComponent:@"A"]; run(base,Mock.class,NO);
     pathOverride = [exact stringByAppendingString:@".webclip"]; run(base,Mock.class,NO);
@@ -49,6 +50,12 @@ int main(void) { @autoreleasepool {
     NSDictionary *badType = WCMExperimentalDeleteForTesting(ident, root, Mock.class);
     NSCAssert([badType[@"reason"] containsString:@"runtimePathType"], @"type stage");
     pathOverride = nil;
+    actualOverride = @"0123456789ABCDEF0123456789ABCDE0"; run(base,Mock.class,NO);
+    actualOverride = ident; run(base,Mock.class,NO); actualOverride = nil;
+    for (NSString *bad in @[@"0123456789ABCDEF0123456789ABCDEF.webclip.webclip", @"../0123456789ABCDEF0123456789ABCDEF.webclip", @"0123456789ABCDEF0123456789ABCDEG.webclip"]) {
+        calls = 0; NSDictionary *r = WCMExperimentalDeleteForTesting(bad, root, Mock.class);
+        NSCAssert(![r[@"called"] boolValue] && calls == 0, @"invalid name accepted");
+    }
     blocked=YES; run(base,Mock.class,NO); blocked=NO;
     managed=YES; run(base,Mock.class,NO); managed=NO;
     throwCheck=YES; run(base,Mock.class,NO); throwCheck=NO;

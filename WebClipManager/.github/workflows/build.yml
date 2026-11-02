@@ -1,4 +1,4 @@
-name: WebClipManager build23 device-only experimental delete (manual)
+name: WebClipManager build24 device-only experimental delete (manual)
 on:
   workflow_dispatch:
     inputs:
