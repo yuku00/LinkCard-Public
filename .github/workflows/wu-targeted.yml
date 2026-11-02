@@ -1,12 +1,15 @@
-name: WU stats regression only
+name: WU local roster host tests
 on: push
 permissions:
   contents: read
 jobs:
-  stats:
+  host-data:
     runs-on: macos-15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Statistics XCTest
+        with:
+          persist-credentials: false
+      - name: Contact adapter host tests
         working-directory: wechat-unified
-        run: bash tools/test_stats.sh
+        run: bash tools/test_host_data.sh
