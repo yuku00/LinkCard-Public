@@ -431,6 +431,9 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
                 UIAction(title: title, attributes: disabled, state: screenFilter == filter ? .on : .off) { [weak self] _ in self?.screenFilter = filter; self?.update() }
             }
             actions.append(UIMenu(title: "显示模式", options: .displayInline, children: screenActions))
+            actions.append(UIAction(title: "测试书签：仅备份（不删除）", attributes: busy || selected.count != 1 ? .disabled : []) { [weak self] _ in
+                self?.confirmTestBackup()
+            })
             actions.append(UIAction(title: "精确重复 URL", attributes: disabled, state: duplicatesOnly ? .on : .off) { [weak self] _ in
                 guard let self = self else { return }; self.duplicatesOnly.toggle(); self.update()
             })
@@ -446,6 +449,29 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         tableView.reloadData()
     }
     func updateSearchResults(for searchController: UISearchController) { update() }
+    private func confirmTestBackup() {
+        guard selected.count == 1, let id = selected.first, let clip = clips.first(where: { $0.id == id }), clip.title == "WCM-DELETE-TEST" else {
+            let alert = UIAlertController(title: "仅限测试书签", message: "请先新建一个标题精确为 WCM-DELETE-TEST 的可丢弃主屏幕书签，重新读取并仅选择该项。", preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "好", style: .cancel)); present(alert, animated: true); return
+        }
+        let alert = UIAlertController(title: "备份可丢弃测试书签？", message: "只复制到本机应用专属回收目录，不删除系统书签或修改 Safari。当前版本没有系统删除、回收站列表或恢复功能。", preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "取消", style: .cancel))
+        alert.addAction(UIAlertAction(title: "仅备份", style: .default) { [weak self] _ in
+            guard let self = self, !self.busy else { return }
+            self.busy = true; self.status = "正在备份测试书签…"; self.update()
+            Task { [weak self] in
+                let result = await Task.detached { Result { try RecycleStore.backupTest(clip) } }.value
+                guard let self = self else { return }
+                self.busy = false
+                switch result {
+                case .success: self.status = "测试书签备份完成（backupOnly）；未删除源，也未验证桌面登记。"
+                case .failure(let error): self.status = "备份失败：\(error.localizedDescription)"
+                }
+                self.update()
+            }
+        })
+        present(alert, animated: true)
+    }
     private func confirmClearMemory() {
         let alert = UIAlertController(title: "清除读取结果？", message: "仅清除当前内存中的读取结果和选择，不修改系统书签或备忘录。", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
