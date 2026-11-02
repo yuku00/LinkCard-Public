@@ -25,8 +25,17 @@ static int writeall(int fd, const void *buf, size_t n) {
     while(n) { ssize_t w=write(fd,p,n); if(w<0&&errno==EINTR) continue; if(w<=0) return -1; p+=w; n-=(size_t)w; }
     return 0;
 }
+static int unchanged(const struct stat *a, const struct stat *b) {
+#ifdef __APPLE__
+    return a->st_size==b->st_size && a->st_mtimespec.tv_sec==b->st_mtimespec.tv_sec && a->st_mtimespec.tv_nsec==b->st_mtimespec.tv_nsec && a->st_ctimespec.tv_sec==b->st_ctimespec.tv_sec && a->st_ctimespec.tv_nsec==b->st_ctimespec.tv_nsec;
+#else
+    return a->st_size==b->st_size && a->st_mtim.tv_sec==b->st_mtim.tv_sec && a->st_mtim.tv_nsec==b->st_mtim.tv_nsec && a->st_ctim.tv_sec==b->st_ctim.tv_sec && a->st_ctim.tv_nsec==b->st_ctim.tv_nsec;
+#endif
+}
 static int copytree(int src, int dst, int depth, WCMCancel cancel, void *ctx) {
     if (depth>64) { errno=ELOOP; return -1; }
+    struct stat dirBefore, dirAfter;
+    if (fstat(src, &dirBefore)<0) return -1;
     int duplicate=dup(src); if (duplicate<0) return -1;
     DIR *dir=fdopendir(duplicate); if(!dir) { close(duplicate); return -1; }
     struct dirent *entry; int result=0; errno=0;
@@ -56,12 +65,13 @@ static int copytree(int src, int dst, int depth, WCMCancel cancel, void *ctx) {
                 if(n<0) { result=-1; break; } if(!n) break;
                 if(writeall(out,buffer,(size_t)n)<0) { result=-1; break; } total+=n;
             }
-            if(!result && (fstat(in,&after)<0 || after.st_size!=opened.st_size || total!=opened.st_size || after.st_mtime!=opened.st_mtime || after.st_ctime!=opened.st_ctime || fsync(out)<0)) { errno=EIO; result=-1; }
+            if(!result && (fstat(in,&after)<0 || !unchanged(&opened,&after) || total!=opened.st_size || fsync(out)<0)) { errno=EIO; result=-1; }
             if(close(out)<0 && !result) result=-1; close(in); if(result) break;
         } else { errno=EINVAL; result=-1; break; }
         errno=0;
     }
     if(!result && errno) result=-1;
+    if(!result && (fstat(src,&dirAfter)<0 || !unchanged(&dirBefore,&dirAfter))) { errno=EIO; result=-1; }
     int saved=errno; closedir(dir); errno=saved; return result;
 }
 int WCMRecycleCopy(int sourceRootFD,int recycleRootFD,const char *identifier,const char *transaction,WCMCancel cancelled,void *context) {
@@ -69,6 +79,8 @@ int WCMRecycleCopy(int sourceRootFD,int recycleRootFD,const char *identifier,con
     if(cancelled && cancelled(context)) { errno=ECANCELED; return -1; }
     int src=openat(sourceRootFD,identifier,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
     if(src<0) return -1;
+    struct stat info;
+    if(fstatat(src,"Info.plist",&info,AT_SYMLINK_NOFOLLOW)<0 || !S_ISREG(info.st_mode) || info.st_nlink!=1) { close(src); errno=EINVAL; return -1; }
     char tmp[224]; if(snprintf(tmp,sizeof tmp,".incomplete-%s",transaction)>=(int)sizeof tmp) { close(src); errno=EINVAL; return -1; }
     if(mkdirat(recycleRootFD,tmp,0700)<0) { close(src); return -1; }
     int dir=openat(recycleRootFD,tmp,O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);

@@ -25,6 +25,12 @@ with tempfile.TemporaryDirectory() as td:
     assert (store/'.incomplete-ok/manifest').read_text().endswith('status=backupOnly\n')
     assert run('../fixture.webclip','bad')<0
     assert run('fixture.webclip','cancel',cancelled)<0 and not (store/'.incomplete-cancel').exists()
+    calls=[0]
+    def cancel_during(_):
+        calls[0]+=1
+        return calls[0] >= 8
+    assert run('fixture.webclip','midcancel',callback(cancel_during))<0
+    assert not (store/'.incomplete-midcancel/manifest').exists() and (clip/'big').exists()
     assert run('fixture.webclip','ok')<0 and (clip/'big').exists()
     os.symlink('/etc/passwd',clip/'link')
     assert run('fixture.webclip','symlink')<0 and not (store/'.incomplete-symlink/manifest').exists()
