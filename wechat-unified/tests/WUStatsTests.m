@@ -32,7 +32,7 @@ static NSDictionary *R(NSString *sid,NSString *sender,int64_t time,NSString *typ
     NSDictionary *empty=@{@"sid":@"42",@"source":@"normal",@"sender":@"",@"time":@0,@"type":@"text",@"text":@""};
     NSDictionary *full=@{@"sid":@"42",@"source":@"app",@"sender":@"alice",@"time":@100,@"type":@"text",@"text":@"hello world"};
     NSDictionary *conflict=@{@"sid":@"42",@"source":@"app",@"sender":@"bob",@"time":@200,@"type":@"text",@"text":@"other words"};
-    XCTAssertTrue([a addRecords:@[empty,full,conflict]]);
+    XCTAssertTrue(([a addRecords:@[empty,full,conflict]]));
     NSDictionary *r=a.result;
     XCTAssertEqualObjects(r[@"total"],@1); XCTAssertEqualObjects(r[@"duplicates"],@2);
     XCTAssertEqualObjects(r[@"unknownTime"],@0); XCTAssertEqualObjects(r[@"unknownSender"],@0);
