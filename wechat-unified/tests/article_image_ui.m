@@ -134,7 +134,9 @@ static void OriginalLayout(id web,SEL selector) {}
     self.op.opening=NO; self.op.editing=YES;
     XCTAssertTrue([self.nav.topViewController isKindOfClass:EmoticonPickViewController.class]); XCTAssertEqual(chatReads,0u);
     UIViewController *editor=self.nav.topViewController; UIViewController *unrelated=[UIViewController new];
-    [self.nav pushViewController:unrelated animated:NO]; [self.op reset];
+    // UIKit ignores a second push while the editor's animated transition is active.
+    Pump(.7);
+    [self.nav pushViewController:unrelated animated:NO]; XCTAssertEqual(self.nav.topViewController,unrelated); [self.op reset];
     XCTAssertEqual(self.nav.topViewController,unrelated); XCTAssertFalse([self.nav.viewControllers containsObject:editor]); XCTAssertTrue([self.nav.viewControllers containsObject:self.owner]);
 }
 - (void)testUnrelatedPresentationIsNotDismissed {
