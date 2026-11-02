@@ -1,0 +1,18 @@
+name: Style editor Apple compile
+on: push
+permissions:
+  contents: read
+jobs:
+  compile:
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compile actual style editor for iOS
+        working-directory: wechat-unified
+        run: |
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=16.6 -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -Wno-nullability-completeness -c Sources/SurfaceSettings.m -o /tmp/WUSurfaceEditor.o
+          file /tmp/WUSurfaceEditor.o
