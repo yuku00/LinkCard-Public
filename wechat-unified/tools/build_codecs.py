@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build only pinned decoder units; no downloads, encoders or extra iOS arches."""
+"""Build pinned offline decoder and SILK encoder units; no downloads."""
 import concurrent.futures, hashlib, json, pathlib, subprocess, sys
 root=pathlib.Path(__file__).resolve().parents[1]; vendor=root/'Vendor'
 manifest=json.loads((vendor/'manifest.json').read_text())
@@ -13,7 +13,7 @@ flags=['-Os','-fPIC','-fvisibility=hidden','-fwrapv','-fno-strict-aliasing']+['-
 if platform!='linux':
     sdk=subprocess.check_output(['xcrun','--sdk',platform,'--show-sdk-path'],text=True).strip(); flags+=['-isysroot',sdk]
     if platform=='iphoneos': flags+=['-arch','arm64','-miphoneos-version-min=16.6']
-files=[vendor/p for key in ('silk','amr') for p in manifest[key]]+[root/'Sources/OfflineVoice.c']
+files=[vendor/p for key in ('silk','silk_encoder','amr') for p in manifest[key]]+[root/'Sources/OfflineVoice.c',root/'Sources/WUSilkEncode.c']
 def compile_one(pair):
     i,f=pair; obj=out/(str(i)+'.o'); cpp=f.suffix=='.cpp'
     compiler=(['g++' if cpp else 'gcc'] if platform=='linux' else ['xcrun','--sdk',platform,'clang++' if cpp else 'clang'])
@@ -23,4 +23,4 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool: objects=list(
 lib=out/'libWUOffline.a'
 subprocess.run((['ar'] if platform=='linux' else ['xcrun','ar'])+['rcs',str(lib)]+objects,check=True)
 for obj in objects: pathlib.Path(obj).unlink()
-print(platform, len(files), 'decoder-only units;',lib.stat().st_size,'archive bytes')
+print(platform, len(files), 'offline codec units;',lib.stat().st_size,'archive bytes')

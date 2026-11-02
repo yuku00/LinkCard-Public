@@ -41,10 +41,12 @@ static NSUInteger checks, forbidden;
 @end
 @interface CContactMgr : NSObject
 @property(nonatomic,copy) NSDictionary *contacts;
+@property(nonatomic,strong) id roster;
 @property(nonatomic) NSUInteger calls;
 @end
 @implementation CContactMgr
 - (id)getContactByName:(NSString *)name { CHECK(NSThread.isMainThread); self.calls++; return self.contacts[name]; }
+- (id)getAllContactUserName { CHECK(NSThread.isMainThread); return self.roster; }
 - (void)requestContact:(id)value { forbidden++; }
 - (void)modifyContact:(id)value { forbidden++; }
 @end
@@ -144,6 +146,18 @@ static void Profiles(void) {
     value=nil; WUStatsReadHostProfile(mgr,@"self",@"peer",large,^BOOL{ return YES; },^(NSDictionary *v){ value=v; });
     Spin(^BOOL{ return value!=nil; }); f=value[@"loadedFriends"];
     CHECK([f[@"scanned"] isEqual:@500] && [f[@"unknownFriend"] isEqual:@500] && [f[@"truncated"] boolValue]);
+    CContact *offline=Person(@"offline"); offline.isMyContact=YES;
+    mgr.contacts=@{@"peer":peer,@"offline":offline,@"self":self,@"other":notFriend};
+    mgr.roster=@[@"offline",@"offline",@"peer",@"self",@"r@chatroom",@42]; value=nil;
+    WUStatsReadHostProfile(mgr,@"self",@"peer",privateSessions,^BOOL{ return YES; },^(NSDictionary *v){ value=v; });
+    Spin(^BOOL{ return value!=nil; }); f=value[@"loadedFriends"];
+    CHECK([f[@"rosterAvailable"] boolValue] && [f[@"rosterMalformed"] boolValue] && [f[@"truncated"] boolValue]);
+    CHECK([f[@"scanned"] isEqual:@4] && [f[@"memberCount"] isEqual:@2] && [f[@"unknownFriend"] isEqual:@1]);
+    CHECK([[WUStatsProfileLines(WUStatsProfileSummary(value),NSTimeZone.localTimeZone) componentsJoinedByString:@"\n"] containsString:@"范围未经证实"]);
+    mgr.roster=@{@"unexpected":@YES}; value=nil;
+    WUStatsReadHostProfile(mgr,@"self",@"peer",privateSessions,^BOOL{ return YES; },^(NSDictionary *v){ value=v; });
+    Spin(^BOOL{ return value!=nil; }); CHECK(![value[@"loadedFriends"][@"rosterAvailable"] boolValue]);
+    mgr.roster=nil;
     __block BOOL current=YES,delivered=NO;
     WUStatsReadHostProfile(mgr,@"self",@"r@chatroom",sessions,^BOOL{ return current; },^(NSDictionary *v){ delivered=YES; });
     current=NO; NSUInteger calls=mgr.calls; __block BOOL tick=NO;

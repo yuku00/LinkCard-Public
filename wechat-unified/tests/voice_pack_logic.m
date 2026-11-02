@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import "VoicePackLogic.h"
 #import "VoiceSendLogic.h"
+#import "VoiceAudio.h"
 #include <sys/stat.h>
 #include <unistd.h>
 static NSUInteger checks;
@@ -72,6 +73,29 @@ int main(void) { @autoreleasepool {
     CHECK(![store remove:identifier current:yes error:NULL]); [store releaseResource:identifier];
     CHECK(![other acquire:identifier error:NULL]); CHECK([store remove:identifier current:yes error:NULL]); CHECK([[store load:NULL] count]==0);
     CHECK([source.m_dtVoice isEqual:amr]);
+    // Locally generated 1 second, 16 kHz, mono PCM WAV; no real user media.
+    NSMutableData *wav=[NSMutableData dataWithLength:44+32000]; uint8_t *w=wav.mutableBytes;
+    memcpy(w,"RIFF",4); uint32_t n=32036; memcpy(w+4,&n,4); memcpy(w+8,"WAVEfmt ",8); n=16; memcpy(w+16,&n,4);
+    uint16_t v=1; memcpy(w+20,&v,2); memcpy(w+22,&v,2); n=16000; memcpy(w+24,&n,4); n=32000; memcpy(w+28,&n,4); v=2; memcpy(w+32,&v,2); v=16; memcpy(w+34,&v,2); memcpy(w+36,"data",4); memcpy(w+40,&n,4);
+    int16_t *samples=(int16_t *)(w+44); for(int i=0;i<16000;i++) samples[i]=(int16_t)(((i%80)-40)*400);
+    NSData *silk=WUVoiceTranscodeSilk(wav,yes); CHECK(silk && WUVoiceMeasuredMS(silk)==1000); CHECK(!WUVoiceTranscodeSilk(wav,^BOOL{ return NO; }));
+    NSURL *wavURL=[root URLByAppendingPathComponent:@"synthetic.wav"]; CHECK([wav writeToURL:wavURL atomically:YES]);
+    // afconvert runs only in this macOS test, converting our generated waveform.
+    NSURL *m4aURL=[root URLByAppendingPathComponent:@"synthetic.m4a"];
+    NSTask *convert=[NSTask new]; convert.executableURL=[NSURL fileURLWithPath:@"/usr/bin/afconvert"];
+    convert.arguments=@[@"-f",@"m4af",@"-d",@"aac",wavURL.path,m4aURL.path];
+    NSError *convertError=nil; CHECK([convert launchAndReturnError:&convertError]); [convert waitUntilExit]; CHECK(convert.terminationStatus==0);
+    NSData *m4a=[NSData dataWithContentsOfURL:m4aURL]; CHECK(m4a.length>0);
+    NSData *m4aSilk=WUVoiceTranscodeSilk(m4a,yes); CHECK(m4aSilk && WUVoiceMeasuredMS(m4aSilk)>0);
+    CHECK([store importFile:m4aURL name:@"synthetic m4a" current:yes error:NULL]);
+    NSDictionary *importedM4A=[[store load:NULL] firstObject];
+    CHECK([importedM4A[@"pairing"] isEqual:@0] && [importedM4A[@"format"] isEqual:@(-1)] && !WUVoicePackMatches(importedM4A,@"8.0.70/1"));
+    CHECK([store remove:importedM4A[@"id"] current:yes error:NULL]);
+    CHECK([store importFile:wavURL name:@"synthetic" current:yes error:NULL]); NSDictionary *imported=[[store load:NULL] firstObject];
+    CHECK([imported[@"pairing"] isEqual:@0] && [imported[@"format"] isEqual:@(-1)] && !WUVoicePackMatches(imported,@"8.0.70/1"));
+    CHECK([store acquire:imported[@"id"] error:NULL]!=nil); [store releaseResource:imported[@"id"]];
+    CHECK(![store pair:imported[@"id"] selectedData:amr format:@4 version:@"8.0.70/1" current:yes error:NULL]);
+    CHECK([store remove:imported[@"id"] current:yes error:NULL]);
     CHECK([@"bad index" writeToURL:index atomically:YES encoding:NSUTF8StringEncoding error:NULL]);
     CHECK(![store load:NULL]); CHECK(![store saveData:amr format:@4 version:@"8.0.70/1" name:@"a" current:yes error:NULL]); CHECK(![store remove:identifier current:yes error:NULL]);
     CHECK([NSFileManager.defaultManager removeItemAtURL:root error:NULL]);

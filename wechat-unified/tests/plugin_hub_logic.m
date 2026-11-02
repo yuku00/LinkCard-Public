@@ -21,6 +21,12 @@ int main(void) { @autoreleasepool {
     assert([WUHubMove(moved,registry,@"BSettings",1)[@"order"] isEqual:(@[@"ASettings",@"BSettings"])]);
     assert(!WUHubMove(o,registry,@"ASettings",-1)); assert(!WUHubMove(o,registry,@"BSettings",1));
     assert(!WUHubMove(o,registry,@"missing",1)); assert(!WUHubMove(o,registry,@"ASettings",0));
+    NSMutableDictionary *withMissing=[o mutableCopy]; withMissing[@"order"]=@[@"ASettings",@"OfflineSettings",@"BSettings"];
+    NSDictionary *preserved=WUHubMove(withMissing,registry,@"BSettings",-1);
+    assert([preserved[@"order"] isEqual:(@[@"BSettings",@"OfflineSettings",@"ASettings"])]);
+    assert([withMissing[@"order"] isEqual:(@[@"ASettings",@"OfflineSettings",@"BSettings"])]);
+    NSMutableArray *full=[NSMutableArray array]; for(unsigned i=0;i<100;i++) [full addObject:[NSString stringWithFormat:@"Offline%u",i]];
+    withMissing[@"order"]=full; assert(!WUHubMove(withMissing,registry,@"BSettings",-1)); assert([withMissing[@"order"] count]==100);
     assert(!WUHubSetEntry(o,@"bad/name",@"title",@"group",NO)); assert(!WUHubSetEntry(o,@"ASettings",@"  ",@"group",NO));
     assert(!WUHubSetEntry(o,@"ASettings",@"title",@"\n",NO));
     NSMutableDictionary *bad=[o mutableCopy]; bad[@"enabled"]=@2; assert(!WUHubValidOptions(bad));

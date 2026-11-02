@@ -148,12 +148,15 @@ static void RequestRevoke(id mgr, NSString *s, NSString *session, id wrap, UIVie
     if(v.methodSignature.numberOfArguments==7) { [v setArgument:&ticket atIndex:5]; [v setArgument:&vc atIndex:6]; }
     [v invoke];
 }
+#import "ChatGrid.inc"
 @interface WUChatActions : NSObject
 @property(nonatomic,weak) UIViewController *owner;
 @property(nonatomic,strong) UIBarButtonItem *search;
 @property(nonatomic,strong) UIBarButtonItem *recall;
 @property(nonatomic,strong) UIBarButtonItem *stats;
 @property(nonatomic,strong) UIBarButtonItem *tools;
+@property(nonatomic,copy) NSArray *gridEntries;
+@property(nonatomic) NSUInteger gridColumns;
 @property(nonatomic,strong) NSMutableSet *requested;
 @property(nonatomic,copy) NSString *account;
 @property(nonatomic,copy) NSString *session;
@@ -172,17 +175,18 @@ static NSHashTable *chatActions;
     if(WUEnabled(@"multiRevoke") && Has(v,@"getSelectedMsgs","@",@[]) && RevokeSelector(Service(@"CMessageMgr"))) { if(!self.recall) self.recall=[[UIBarButtonItem alloc] initWithTitle:@"撤回所选" style:UIBarButtonItemStylePlain target:self action:@selector(recallSelected)]; [items addObject:self.recall]; }
     NSString *account=Account(), *session=Session(v); NSUInteger gen=generation;
     NSArray *selected=WUToolbarActions(WUAccountOptions(account)[@"toolbar"]);
-    NSMutableArray *menu=[NSMutableArray array]; __weak WUChatActions *weak=self;
+    NSMutableArray *menu=[NSMutableArray array], *grid=[NSMutableArray array]; __weak WUChatActions *weak=self;
+    self.gridEntries=@[];
     if([WUValue(@"enabled") boolValue] && account.length && session.length) for(NSString *key in selected) {
         if([key isEqual:@"messageLinks"] && (!WUEnabled(@"enhancedLinks") || !Has(v,@"getSelectedMsgs","@",@[]))) continue;
         if([key isEqual:@"search"] && !Has(v,@"onSearchItem","v",@[])) continue;
         if([key isEqual:@"stats"] && !StatsReady(Service(@"CMessageMgr"))) continue;
         if([key isEqual:@"moments"] && (!WUEnabled(@"convenientMoments") || !WUMomentsAvailable())) continue;
         NSString *title=@{@"messageLinks":@"所选消息链接",@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"repository":@"消息仓库",@"voiceForward":@"所选语音转发",@"voicePacks":@"本地语音包",@"emojiSave":@"所选表情保存图库",@"imageEmoji":@"所选图片 → 微信表情编辑",@"emoticonLibrary":@"本地表情分组 / 资源库",@"moments":@"半屏朋友圈"}[key];
-        [menu addObject:[UIAction actionWithTitle:title image:nil identifier:nil handler:^(UIAction *action){
+        void (^run)(void)=^{
             WUChatActions *target=weak; UIViewController *owner=target.owner;
             @try {
-                if(!owner.viewIfLoaded.window || owner.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(owner)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:key]) return;
+                if(!owner.viewIfLoaded.window || owner.presentedViewController || (owner.navigationController && owner.navigationController.topViewController!=owner) || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(owner)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:key]) return;
                 if([key isEqual:@"settings"]) WUShowSettings(owner);
                 else if([key isEqual:@"messageLinks"]) OpenSelectedLinks(owner);
                 else if([key isEqual:@"voicePacks"]) OpenVoicePacks(owner);
@@ -195,16 +199,28 @@ static NSHashTable *chatActions;
                 else if([key isEqual:@"moments"]) { if(!WUOpenMoments(owner)) Notice(owner,@"半屏朋友圈当前不可用，未打开全屏替代页面。"); }
                 else if([key isEqual:@"search"] && Has(owner,@"onSearchItem","v",@[])) ((void(*)(id,SEL))objc_msgSend)(owner,NSSelectorFromString(@"onSearchItem"));
             } @catch(NSException *e) { Notice(owner,@"该工具当前不可用，未自动重试。"); }
-        }]];
+        };
+        [grid addObject:@{@"title":title,@"run":[run copy]}];
+        [menu addObject:[UIAction actionWithTitle:title image:nil identifier:nil handler:^(UIAction *action){ run(); }]];
     }
     if(menu.count) {
         if(!self.tools) self.tools=[[UIBarButtonItem alloc] initWithTitle:@"工具" style:UIBarButtonItemStylePlain target:nil action:NULL];
-        self.tools.menu=[UIMenu menuWithTitle:@"手动工具" children:menu]; [items addObject:self.tools];
+        NSString *layout=WUAccountOptions(account)[@"toolbarLayout"]?:@"menu";
+        BOOL useGrid=[layout hasPrefix:@"grid"]; self.gridEntries=[grid copy]; self.gridColumns=useGrid?(NSUInteger)[[layout substringFromIndex:4] integerValue]:2;
+        self.tools.menu=useGrid?nil:[UIMenu menuWithTitle:@"手动工具" children:menu];
+        self.tools.target=useGrid?self:nil; self.tools.action=useGrid?@selector(openGrid):NULL; [items addObject:self.tools];
         if([selected containsObject:@"stats"] && self.stats) [items removeObject:self.stats];
         if([selected containsObject:@"search"] && self.search) [items removeObject:self.search];
     } else self.tools.menu=nil;
     v.navigationItem.rightBarButtonItems=items;
     WURefreshMomentsInput(v);
+}
+- (void)openGrid {
+    [self refresh];
+    UIViewController *v=self.owner; if(!v.viewIfLoaded.window || v.presentedViewController || !self.gridEntries.count || ![WUValue(@"enabled") boolValue] || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+    WUChatGridController *panel=[WUChatGridController new]; panel.entries=self.gridEntries; panel.columns=self.gridColumns;
+    UINavigationController *nav=[[UINavigationController alloc] initWithRootViewController:panel]; nav.modalPresentationStyle=UIModalPresentationPageSheet;
+    [v presentViewController:nav animated:YES completion:nil];
 }
 - (void)openStats { if([WUValue(@"enabled") boolValue]) OpenStats(self.owner); }
 - (void)openSearch {
@@ -276,7 +292,8 @@ static void ChatAppeared(UIViewController *v,SEL s,BOOL animated) {
 static void ChatDisappeared(UIViewController *v,SEL s,BOOL animated) {
     UIViewController *presented=v.presentedViewController;
     BOOL ownStats=[presented isKindOfClass:UINavigationController.class] && [[(UINavigationController *)presented topViewController] isKindOfClass:NSClassFromString(@"WUStatsController")];
-    if(!WUImageEntryOwnsNavigation(v) && !ownStats && !WUMessageEntriesOwnsController(presented) && !WUNativeOwnsController(presented) && !WUIsMomentsSheet(presented) && !WUIsRepositoryController(presented) && !WUIsVoicePacksController(presented) && !WUIsEmoticonLibraryController(presented)) CancelPending();
+    BOOL ownGrid=[presented isKindOfClass:UINavigationController.class] && [[(UINavigationController *)presented topViewController] isKindOfClass:WUChatGridController.class];
+    if(!ownGrid && !WUImageEntryOwnsNavigation(v) && !ownStats && !WUMessageEntriesOwnsController(presented) && !WUNativeOwnsController(presented) && !WUIsMomentsSheet(presented) && !WUIsRepositoryController(presented) && !WUIsVoicePacksController(presented) && !WUIsEmoticonLibraryController(presented)) CancelPending();
     ((void(*)(id,SEL,BOOL))chatDisappearOriginal)(v,s,animated);
 }
 

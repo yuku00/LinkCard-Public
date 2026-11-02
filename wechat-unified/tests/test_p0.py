@@ -8,7 +8,7 @@ def between(text,start,end):
     return text[text.index(start):text.index(end)]
 
 def compile_test(name, sources):
-    subprocess.run(['xcrun','--sdk','macosx','clang','-fobjc-arc','-fobjc-arc-exceptions','-fblocks','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-I','Sources','-I','build',*sources,'-framework','Foundation','-o',str(BUILD/name)],cwd=ROOT,check=True)
+    subprocess.run(['xcrun','--sdk','macosx','clang','-fobjc-arc','-fobjc-arc-exceptions','-fblocks','-Wall','-Wextra','-Werror','-Wno-unused-parameter','-I','Sources','-I','build',*sources,'-framework','Foundation','-framework','AudioToolbox','-o',str(BUILD/name)],cwd=ROOT,check=True)
 
 def execute(name, args=()):
     p=subprocess.run([str(BUILD/name),*args],cwd=ROOT,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
@@ -40,7 +40,7 @@ gate+=between(messages,'static BOOL RepeatReady','@interface WUCellActions')
 (BUILD/'p0_repeat_gate.inc').write_text(gate)
 if not (BUILD/'codec-macosx/libWUOffline.a').exists():
     subprocess.run([sys.executable,'tools/build_codecs.py','macosx'],cwd=ROOT,check=True)
-sources=['tests/p0_message.m','Sources/VoiceSendLogic.m','Sources/VoicePackLogic.m','Sources/RepositoryLogic.m','Sources/DraftMediaLogic.m','build/codec-macosx/libWUOffline.a']
+sources=['tests/p0_message.m','Sources/VoiceSendLogic.m','Sources/VoicePackLogic.m','Sources/VoiceAudio.m','Sources/VoiceLogic.m','Sources/RepositoryLogic.m','Sources/DraftMediaLogic.m','build/codec-macosx/libWUOffline.a']
 if (ROOT/'Sources/MessageConstruction.m').exists(): sources.append('Sources/MessageConstruction.m')
 compile_test('p0-message-tests',sources)
 results=[execute('p0-message-tests',[encoding]) for encoding in ('I','q','i','Q')]

@@ -50,6 +50,9 @@ NSDictionary *WUStatsParseMembers(id raw) {
 @property(nonatomic) NSUInteger nonFriendCount;
 @property(nonatomic) NSUInteger unknownFriendCount;
 @property(nonatomic) BOOL privateTruncated;
+@property(nonatomic) BOOL rosterAvailable;
+@property(nonatomic) BOOL rosterMalformed;
+@property(nonatomic) NSTimeInterval profileDeadline;
 @property(nonatomic,strong) NSMutableArray *profiles;
 @property(nonatomic,strong) NSMutableArray *common;
 @property(nonatomic,copy) NSDictionary *peer;
@@ -69,7 +72,7 @@ NSDictionary *WUStatsParseMembers(id raw) {
     if(![self valid]) { [self drop]; return; }
     NSDictionary *friends=WUStatsProfileSummary(@{@"members":self.friendProfiles});
     NSMutableDictionary *friendSummary=[friends mutableCopy];
-    [friendSummary addEntriesFromDictionary:@{@"scanned":@(self.privateIndex),@"nonFriend":@(self.nonFriendCount),@"unknownFriend":@(self.unknownFriendCount),@"truncated":@(self.privateTruncated)}];
+    [friendSummary addEntriesFromDictionary:@{ @"scanned":@(self.privateIndex),@"nonFriend":@(self.nonFriendCount),@"unknownFriend":@(self.unknownFriendCount),@"truncated":@(self.privateTruncated),@"rosterAvailable":@(self.rosterAvailable),@"rosterMalformed":@(self.rosterMalformed)}];
     NSDictionary *value=@{@"loadedFriends":[friendSummary copy],@"peer":self.peer,@"members":[self.profiles copy],@"commonGroups":[self.common copy],@"group":@([self.session hasSuffix:@"@chatroom"]),@"membersComplete":@(self.membersComplete),@"roomsChecked":@(self.roomIndex),@"unknownRooms":@(self.unknownRooms),@"truncated":@(self.truncated),@"scope":@"当前联系人/群的本地资料；共同群仅已加载会话中最多50个群。不是完整好友名册或服务器关系证明。"};
     void (^done)(NSDictionary *)=self.done; [self drop]; if(done) done(value);
 }
@@ -90,6 +93,10 @@ NSDictionary *WUStatsParseMembers(id raw) {
                 [self step];
             });
         }); return;
+    }
+    if(self.privateIndex<self.privateIDs.count && NSDate.timeIntervalSinceReferenceDate>=self.profileDeadline) {
+        self.privateTruncated=YES;
+        self.privateIDs=[self.privateIDs subarrayWithRange:NSMakeRange(0,self.privateIndex)];
     }
     NSUInteger privateEnd=MIN(self.privateIndex+8,self.privateIDs.count);
     while(self.privateIndex<privateEnd) {
@@ -117,6 +124,23 @@ void WUStatsReadHostProfile(id manager, NSString *account, NSString *session, NS
     WUHostProfileRead *job=[WUHostProfileRead new]; job.manager=manager; job.account=[account copy]; job.session=[session copy]; job.current=current; job.done=done;
     job.peer=WUStatsContactProfile(manager,session,NSDate.date.timeIntervalSince1970); job.profiles=[NSMutableArray array]; job.common=[NSMutableArray array]; job.members=@[]; job.friendProfiles=[NSMutableArray array];
     NSArray *known=[sessions copy];
+    // Third-party WeChat 8.0.55 CContactMgr header declares getAllContactUserName.
+    // The returned collection's completeness/semantics are not documented; accept
+    // only an array of IDs and keep every result explicitly local and provisional.
+    NSMutableArray *roster=[NSMutableArray array]; BOOL available=NO, malformed=NO;
+    @try {
+        id raw=WUHostIs(manager,@"CContactMgr")?Get(manager,@"getAllContactUserName"):nil;
+        if([raw isKindOfClass:NSArray.class]) {
+            available=YES; NSUInteger count=[raw count];
+            if(count>20000) { count=20000; malformed=YES; }
+            for(NSUInteger i=0;i<count;i++) {
+                id name=raw[i];
+                if(ID(name)) [roster addObject:[name copy]]; else malformed=YES;
+            }
+        }
+    } @catch(__unused NSException *e) { available=NO; malformed=YES; [roster removeAllObjects]; }
+    NSArray *rosterSnapshot=[roster copy]; job.rosterAvailable=available; job.rosterMalformed=malformed;
+    job.profileDeadline=NSDate.timeIntervalSinceReferenceDate+3.0;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
         NSMutableOrderedSet *rooms=[NSMutableOrderedSet orderedSet]; BOOL truncated=NO;
         if([session hasSuffix:@"@chatroom"]) [rooms addObject:session];
@@ -133,9 +157,11 @@ void WUStatsReadHostProfile(id manager, NSString *account, NSString *session, NS
             NSString *name=row[@"username"];
             if(ID(name) && ![name isEqual:account] && ![name hasSuffix:@"@chatroom"]) [unique addObject:[name copy]];
         }
+        for(NSString *name in rosterSnapshot) if(![name isEqual:account] && ![name hasSuffix:@"@chatroom"]) [unique addObject:name];
         NSArray *all=[[unique allObjects] sortedArrayUsingSelector:@selector(compare:)];
-        BOOL privateTruncated=all.count>500;
-        NSArray *privateIDs=privateTruncated?[all subarrayWithRange:NSMakeRange(0,500)]:all;
+        NSUInteger limit=available?2000:500;
+        BOOL privateTruncated=all.count>limit || malformed;
+        NSArray *privateIDs=all.count>limit?[all subarrayWithRange:NSMakeRange(0,limit)]:all;
         NSArray *snapshot=[rooms.array copy];
         dispatch_async(dispatch_get_main_queue(),^{ job.rooms=snapshot; job.truncated=truncated; job.privateIDs=privateIDs; job.privateTruncated=privateTruncated; [job step]; });
     });
@@ -171,10 +197,11 @@ NSArray<NSString *> *WUStatsProfileLines(NSDictionary *p, NSTimeZone *zone) {
     NSMutableArray *lines=[NSMutableArray arrayWithObjects:p[@"scope"],@"资料为本次扫描时的本地快照，不受消息日期范围筛选；空值/异常/未知枚举均保留未知。未刷新资料、未联网、未持久化画像。",nil];
     NSDictionary *loaded=p[@"loadedFriends"];
     if([loaded isKindOfClass:NSDictionary.class]) {
-        [lines addObject:[NSString stringWithFormat:@"已加载私聊会话对应资料：检查 %@，好友标志为是 %@、否 %@、未知 %@%@。仅会话子集，不是全好友名册或好友总数。",loaded[@"scanned"],loaded[@"memberCount"],loaded[@"nonFriend"],loaded[@"unknownFriend"],[loaded[@"truncated"] boolValue]?@"；按用户名排序仅检查前500个":@""]];
+        NSString *source=[loaded[@"rosterAvailable"] boolValue]?@"本地用户名名册及已加载私聊会话的去重候选（名册范围未经证实）":@"已加载私聊会话候选（名册接口不可用）";
+        [lines addObject:[NSString stringWithFormat:@"%@：检查 %@，好友标志为是 %@、否 %@、未知 %@%@%@。仅本地快照，不是全好友名册或好友总数。",source,loaded[@"scanned"],loaded[@"memberCount"],loaded[@"nonFriend"],loaded[@"unknownFriend"],[loaded[@"truncated"] boolValue]?@"；受数量/时间/数据异常限制，结果已截断或不完整":@"",[loaded[@"rosterMalformed"] boolValue]?@"；名册有异常条目或超出输入上限":@""]];
         [lines addObject:[NSString stringWithFormat:@"上述标志为是的资料性别：男 %@ · 女 %@ · 未知 %@；地区未知 %@ · 年龄未知 %@。",loaded[@"sex"][@"male"],loaded[@"sex"][@"female"],loaded[@"sex"][@"unknown"],loaded[@"unknownRegion"],loaded[@"unknownAge"]]];
-        for(NSDictionary *row in loaded[@"regions"]) [lines addObject:[NSString stringWithFormat:@"已加载好友资料地区 %@ / %@：%@",[row[@"country"] length]?row[@"country"]:@"未知",[row[@"province"] length]?row[@"province"]:@"未知",row[@"count"]]];
-        for(NSString *age in [[loaded[@"ages"] allKeys] sortedArrayUsingSelector:@selector(localizedStandardCompare:)]) [lines addObject:[NSString stringWithFormat:@"已加载好友资料年龄 %@ 岁：%@",age,loaded[@"ages"][age]]];
+        for(NSDictionary *row in loaded[@"regions"]) [lines addObject:[NSString stringWithFormat:@"好友标志资料地区 %@ / %@：%@",[row[@"country"] length]?row[@"country"]:@"未知",[row[@"province"] length]?row[@"province"]:@"未知",row[@"count"]]];
+        for(NSString *age in [[loaded[@"ages"] allKeys] sortedArrayUsingSelector:@selector(localizedStandardCompare:)]) [lines addObject:[NSString stringWithFormat:@"好友标志资料年龄 %@ 岁：%@",age,loaded[@"ages"][age]]];
     }
     NSDateFormatter *f=[NSDateFormatter new]; f.locale=[NSLocale localeWithLocaleIdentifier:@"zh_CN"]; f.timeZone=zone; f.dateFormat=@"yyyy-MM-dd HH:mm:ss zzz";
     NSString *(^date)(id)=^NSString *(id n) { return [n isKindOfClass:NSNumber.class]?[f stringFromDate:[NSDate dateWithTimeIntervalSince1970:[n doubleValue]]]:@"未知"; };

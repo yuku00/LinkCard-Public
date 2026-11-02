@@ -53,10 +53,12 @@ rm build/message-construction-tests
 xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/voice_send_logic.m Sources/VoiceSendLogic.m Sources/MessageConstruction.m Sources/RepositoryLogic.m build/codec-macosx/libWUOffline.a -framework Foundation -o build/voice-send-tests
 build/voice-send-tests | tee build/voice-send-tests.txt
 rm build/voice-send-tests
-xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/voice_pack_logic.m Sources/VoicePackLogic.m Sources/VoiceSendLogic.m Sources/MessageConstruction.m Sources/RepositoryLogic.m Sources/DraftMediaLogic.m build/codec-macosx/libWUOffline.a -framework Foundation -o build/voice-pack-tests
+xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/voice_pack_logic.m Sources/VoicePackLogic.m Sources/VoiceAudio.m Sources/VoiceLogic.m Sources/VoiceSendLogic.m Sources/MessageConstruction.m Sources/RepositoryLogic.m Sources/DraftMediaLogic.m build/codec-macosx/libWUOffline.a -framework Foundation -framework AudioToolbox -o build/voice-pack-tests
 build/voice-pack-tests | tee build/voice-pack-tests.txt
 rm build/voice-pack-tests
 xcrun --sdk macosx clang -Wall -Wextra -Werror -I Sources tests/offline_voice.c build/codec-macosx/libWUOffline.a -o build/offline-voice-tests
+xcrun --sdk macosx clang -Wall -Wextra -Werror -I Sources -I Vendor/silk/interface tests/silk_encode.c build/codec-macosx/libWUOffline.a -o build/silk-encode-tests
+build/silk-encode-tests
 build/offline-voice-tests 2>&1 | tee build/offline-voice-tests.txt
 rm build/offline-voice-tests
 python3 tools/build_codecs.py iphoneos

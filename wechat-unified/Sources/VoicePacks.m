@@ -62,7 +62,7 @@ static NSData *Wave(NSData *data) {
     });
 }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return self.rows.count; }
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return @"仅手动所选34类真实配对可发送；AMR/SILK/.wuvoice文件可导入离线试听。导入元数据不授权发送，须与本账号所选原载荷逐字节核对；跨版本仅试听。"; }
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return @"仅手动所选34类真实配对可发送；AMR/SILK/.wuvoice及WAV/M4A等受支持文件可导入离线试听。导入元数据不授权发送，须与本账号所选原载荷逐字节核对；跨版本仅试听。"; }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; NSDictionary *r=self.rows[path.row];
     c.textLabel.text=r[@"name"]; c.detailTextLabel.numberOfLines=0;

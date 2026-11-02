@@ -115,6 +115,30 @@ int main(void) { @autoreleasepool {
     CHECK(store && other); BOOL (^valid)(void)=^BOOL{ return YES; }; NSError *error=nil;
     CHECK([store load:&error] && !error); BOOL created=[store createGroup:@"第一组" current:valid error:&error]; if(!created) fprintf(stderr,"createGroup error: %s\n",error.description.UTF8String ?: "none"); CHECK(created); CHECK([store createGroup:@"第二组" current:valid error:&error]);
     NSDictionary *state=[store load:&error]; NSString *group=state[@"groups"][0][@"id"], *second=state[@"groups"][1][@"id"];
+    NSDictionary *emptySelectionState=[store load:NULL];
+    // Cancellation/selection loss at read, import, serialization and both atomic gates.
+    for(int stop=1;stop<=5;stop++) {
+        __block int gate=0;
+        CHECK(![store importSelectedPath:file.path md5:WUEmoticonDigest(gif) GIFOnly:YES name:@"cancelled" group:group current:^BOOL{ return ++gate<stop; } error:&error]);
+        CHECK(gate==stop && [[store load:NULL] isEqual:emptySelectionState]);
+    }
+    CHECK(![store importSelectedPath:file.path md5:@"00000000000000000000000000000000" GIFOnly:YES name:@"wrong digest" group:group current:valid error:&error]);
+    CHECK([png writeToURL:file options:0 error:NULL]);
+    CHECK(![store importSelectedPath:file.path md5:WUEmoticonDigest(png) GIFOnly:YES name:@"not GIF" group:group current:valid error:&error]);
+    NSData *broken=[gif subdataWithRange:NSMakeRange(0,gif.length-1)]; CHECK([broken writeToURL:file options:0 error:NULL]);
+    CHECK(![store importSelectedPath:file.path md5:WUEmoticonDigest(broken) GIFOnly:YES name:@"broken GIF" group:group current:valid error:&error]);
+    CHECK([[store load:NULL] isEqual:emptySelectionState]);
+    CHECK([gif writeToURL:file options:0 error:NULL]);
+    CHECK([store importSelectedPath:file.path md5:WUEmoticonDigest(gif) GIFOnly:YES name:@"动画原件" group:group current:valid error:&error]);
+    CHECK([WUEmoticonRead(file.path) isEqual:gif] && sends==0 && factoryCalls==0);
+    CHECK(![store importSelectedPath:file.path md5:WUEmoticonDigest(gif) GIFOnly:YES name:@"重复确认" group:group current:valid error:&error]);
+    CHECK(![store importFile:file name:@"重复文件" group:group current:valid error:&error]);
+    NSDictionary *selectedRow=[store load:NULL][@"rows"][0];
+    CHECK([selectedRow[@"data"] isEqual:gif] && [selectedRow[@"uti"] isEqual:@"com.compuserve.gif"]);
+    WUEmoticonLibraryStore *selectedReopen=[[WUEmoticonLibraryStore alloc] initWithRoot:root account:@"a"];
+    CHECK([[selectedReopen resource:selectedRow[@"id"] error:NULL][@"data"] isEqual:gif]);
+    CHECK([[other load:NULL][@"rows"] count]==0);
+    CHECK([store remove:selectedRow[@"id"] group:NO current:valid error:&error]);
     CHECK([store importFile:file name:@"动画原件" group:group current:valid error:&error]); CHECK([WUEmoticonRead(file.path) isEqual:gif]);
     state=[store load:&error]; NSDictionary *row=state[@"rows"][0]; NSString *identifier=row[@"id"];
     CHECK([row[@"data"] isEqual:gif]); CGImageSourceRef image=CGImageSourceCreateWithData((__bridge CFDataRef)row[@"data"],NULL); CHECK(CGImageSourceGetCount(image)==2); CFRelease(image);

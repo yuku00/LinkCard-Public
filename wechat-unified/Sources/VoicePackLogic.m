@@ -1,6 +1,7 @@
 #import "VoicePackLogic.h"
 #import "VoiceSendLogic.h"
 #import "DraftMediaLogic.h"
+#import "VoiceAudio.h"
 #include <sys/stat.h>
 #include <errno.h>
 #include <unistd.h>
@@ -90,7 +91,12 @@ static NSMutableDictionary *Leases(void) { static NSMutableDictionary *v; static
             // origin only documents the export; it cannot become trusted pairing.
         }
         if(!Text(name,80)) return Fail(error,@"名称须为1至80字符");
-        uint32_t ms=WUVoiceMeasuredMS(audio); if(!ms) return Fail(error,@"仅支持完整可解码且不超过60秒的AMR/SILK；未猜测宿主format");
+        uint32_t ms=WUVoiceMeasuredMS(audio);
+        if(!ms && ![url.pathExtension.lowercaseString isEqual:@"wuvoice"]) {
+            audio=WUVoiceTranscodeSilk(file,current);
+            ms=WUVoiceMeasuredMS(audio);
+        }
+        if(!ms) return Fail(error,@"音频损坏、格式不受支持、转码失败或超过60秒；未猜测宿主format");
         NSArray *old=[self load:error]; if(!old) return NO;
         NSMutableArray *rows=[old mutableCopy];
         [rows insertObject:@{@"id":NSUUID.UUID.UUIDString,@"name":name,@"source":@"imported-audio",@"format":@(-1),@"version":@"",@"pairing":@0,@"ms":@(ms),@"data":[audio copy]} atIndex:0];
