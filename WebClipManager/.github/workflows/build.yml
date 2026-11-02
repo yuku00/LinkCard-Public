@@ -1,4 +1,4 @@
-name: WebClipManager build15 grid regression (manual)
+name: WebClipManager build16 initial read and background (manual)
 on:
   workflow_dispatch:
     inputs:

@@ -18,19 +18,49 @@ final class BusinessSceneDelegate: UIResponder, UIWindowSceneDelegate {
 }
 
 final class BusinessTabs: UITabBarController {
+    private let backdrop = UIImageView()
+    private let veil = UIView()
     init(repository: Repository = Repository(), notesLoader: @escaping @Sendable () throws -> AppleNotesBatch = { try AppleNotesStore.load() }) {
         super.init(nibName: nil, bundle: nil)
         viewControllers = [BusinessList(mode: .clips, repository: repository, notesLoader: notesLoader),
                            BusinessList(mode: .notes, repository: repository, notesLoader: notesLoader)].map {
-            UINavigationController(rootViewController: $0)
+            let navigation = UINavigationController(rootViewController: $0)
+            navigation.view.backgroundColor = .clear
+            return navigation
         }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemGroupedBackground
+        backdrop.frame = view.bounds
+        backdrop.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        backdrop.contentMode = .scaleAspectFill
+        backdrop.clipsToBounds = true
+        view.insertSubview(backdrop, at: 0)
+        veil.frame = view.bounds
+        veil.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        veil.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.34)
+        view.insertSubview(veil, aboveSubview: backdrop)
+        let appearance = UITabBarAppearance()
+        appearance.configureWithTransparentBackground()
+        appearance.backgroundEffect = UIBlurEffect(style: .systemMaterial)
+        tabBar.standardAppearance = appearance
+        tabBar.scrollEdgeAppearance = appearance
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshBackground), name: BackgroundSession.changed, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshBackground), name: UIApplication.didBecomeActiveNotification, object: nil)
+        refreshBackground()
+    }
+    @objc private func refreshBackground() {
+        BackgroundSession.loadOnce()
+        backdrop.image = BackgroundSession.image
+        veil.isHidden = backdrop.image == nil
+    }
 }
 
 // Images are downsampled before persistence; failed operations never replace the displayed image.
 @MainActor
-private enum BackgroundSession {
+enum BackgroundSession {
     static var image: UIImage?
     static let store = BackgroundStore()
     static var loaded = false
@@ -247,7 +277,8 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     private(set) var clips: [Clip] = []
     private(set) var notes: [ImportedNote] = []
     private(set) var busy = false
-    private(set) var status = "尚未读取。点击读取按钮开始；不自动访问个人内容。"
+    private(set) var status = "尚未读取。"
+    private var hasAttemptedInitialRead = false
     private(set) var readState = "notRead"
     var selected: Set<String> = []
     let search = UISearchController(searchResultsController: nil)
@@ -278,6 +309,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     var visibleNotes: [ImportedNote] { notes.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.text.localizedCaseInsensitiveContains(query) } }
     init(mode: Mode, repository: Repository, notesLoader: @escaping @Sendable () throws -> AppleNotesBatch) {
         self.mode = mode; self.repository = repository; self.notesLoader = notesLoader
+        self.status = mode == .clips ? "即将只读读取书签…" : "尚未读取。点击读取按钮开始。"
         super.init(style: .insetGrouped)
         title = mode == .clips ? "书签管理" : "备忘录导出"
         tabBarItem.image = UIImage(systemName: mode == .clips ? "bookmark" : "note.text")
@@ -288,8 +320,8 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         tableView.accessibilityIdentifier = mode == .clips ? "webclipsList" : "notesList"
         navigationController?.navigationBar.prefersLargeTitles = true
         let navAppearance = UINavigationBarAppearance()
-        navAppearance.configureWithOpaqueBackground()
-        navAppearance.backgroundColor = .systemBackground
+        navAppearance.configureWithTransparentBackground()
+        navAppearance.backgroundEffect = UIBlurEffect(style: .systemMaterial)
         navigationController?.navigationBar.standardAppearance = navAppearance
         navigationController?.navigationBar.scrollEdgeAppearance = navAppearance
         navigationController?.navigationBar.compactAppearance = navAppearance
@@ -328,24 +360,18 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     }
     @objc private func refreshBackground() {
         BackgroundSession.loadOnce()
-        let background = UIView(frame: tableView.bounds)
-        background.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        background.backgroundColor = .systemGroupedBackground
-        if let image = BackgroundSession.image {
-            let imageView = UIImageView(image: image)
-            imageView.frame = background.bounds
-            imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            imageView.contentMode = .scaleAspectFill
-            imageView.clipsToBounds = true
-            background.addSubview(imageView)
-            // One translucent veil behind the glass cards avoids stacked live blurs.
-            let veil = UIView(frame: background.bounds)
-            veil.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.34)
-            veil.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-            background.addSubview(veil)
-        }
-        tableView.backgroundView = background
+        tableView.backgroundView = nil
+        tableView.backgroundColor = .clear
         tableView.reloadData()
+    }
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard mode == .clips, !hasAttemptedInitialRead else { return }
+        hasAttemptedInitialRead = true
+        Task { [weak self] in
+            guard let self = self, self.readState == "notRead", !self.busy else { return }
+            await self.loadItems()
+        }
     }
     private func choosePhoto() {
         var configuration = PHPickerConfiguration()
@@ -459,6 +485,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     }
     func loadItems() async {
         guard !busy else { return }
+        if mode == .clips { hasAttemptedInitialRead = true }
         busy = true; readState = "reading"; status = "正在只读读取…"; update()
         defer { busy = false; update() }
         do {
