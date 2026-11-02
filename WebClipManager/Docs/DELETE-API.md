@@ -22,3 +22,17 @@
 不导入/链接私有框架、不动态调用 selector。诊断页面仅通过 `NSClassFromString`、`class_getInstanceMethod`、`class_getClassMethod` 检查元数据；不实例化 UIWebClip、不执行 selector、不获取实现指针。Repository.delete 对每个标识返回拒绝原因。代码不存在删除目标目录、发 Darwin 通知、重启 SpringBoard 或清 Safari 数据的后备路径。界面明确显示“不可用”，不存在成功删除计数。
 
 未来仅拿到头文件或 selector 可响应还不够：需要 16.6 的实际删除路径、调用进程/权限与错误语义证据，并在可丢弃真机验证图标、注册、单独数据及失败场景。应尊重 RemovalDisallowed 与配置描述文件管理权限。系统共享 Safari 数据不能作为所谓“清理残留”批量清除。
+
+## 2026-11-02 补充核验（build12，独立副本）
+
+- 已知真机诊断仅确认 iPhone 14 / iOS 16.6 的 `+webClipWithIdentifier:`、`-removeFromDisk`、`-requestIconUpdateInSpringBoard` selector 存在；未调用，不是行为验证。上文“没有 iOS 16.6 runtime 导出”不否定这项用户提供的元数据证据。
+- Apple 开源设备管理 payload 规范：https://github.com/apple/device-management/blob/release/mdm/profiles/com.apple.webClip.managed.yaml ：`IsRemovable` 为描述文件中的受管策略，默认 true，false 禁止用户移除。它不是已经证明等价于本项目读到的 Info.plist `RemovalDisallowed` 字段；不能以字段缺失或 false 推断非受管，未知一律不得自行删除。
+- 公开开源 TrollTools WebclipsThemeManager：https://github.com/sourcelocation/TrollTools/blob/main/TrollTools/Private%20APIs/Themes/WebclipsThemeManager.swift#L59-L64 对自己创建且名称包含特定前缀的主题快捷方式直接 `FileManager.removeItem`；不是 UIKit 原生删除，也没有证明 SpringBoard 注册、隔离数据等完成清理，不可用作任意 WebClip 干净删除的依据。未复制其代码。main 为移动引用，检索只代表所见版本。
+- 相同项目 UI 的 Full reset 见 https://github.com/sourcelocation/TrollTools/blob/main/TrollTools/Views/Themes/ThemesView.swift#L110-L111 ；该提示不证明通用删除语义。
+- 社区代码搜索 grep.app 返回 429；Sourcegraph 受到防火墙阻挡；Google 检索未找到可核验的通用原生删除调用。搜索引擎 AI 概览没有具体源码佐证，不作为证据。没找到并不等于不存在。
+
+## 当前结论和后续验证
+
+继续默认禁用：没有可证实的 identifier 映射、调用主体/权限、受管判断、返回值与 UI 同步/清理完整性语义；没有引入猜测的调用实现或实验开关。build12 的 UIKit 页面只提示删除未启用；旧 SwiftUI 页面确认后仅逐项拒绝，取消不调用 delete；不可将拒绝显示为成功。备份只是原目录二进制 plist 导出，部分项可失败；目前没有恢复能力、也不含系统注册、布局和共享 Safari 数据，不能承诺可回滚删除。
+
+必须先找到针对 iOS 16.6 的系统调用链及授权/托管策略来源，再在完全独立的可丢弃设备上创建合成普通、全屏及受管样本，分别对照系统长按删除：标识解析、确认取消、消失及重启后不复现、SpringBoard 注册、独立数据与失败/权限、受管拒绝、重复/不存在对象；期间不触碰真实书签，不清共享 Safari 数据。只有逐项验证成功后才能设计后端/测试和默认启用。mock 只能验证自身控制流，不能证明私有 ABI 或系统清理。

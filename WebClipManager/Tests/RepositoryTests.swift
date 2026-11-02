@@ -37,6 +37,24 @@ final class RepositoryTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("first.webclip/Info.plist")), before)
     }
 
+    func testDisabledDeletionRejectsEverySyntheticTargetWithoutModifyingFiles() async throws {
+        let root = try temporaryRoot()
+        try create("normal.webclip", root: root)
+        try create("managed.webclip", root: root)
+        let managedInfo = root.appendingPathComponent("managed.webclip/Info.plist")
+        let managed: [String: Any] = ["Title": "Managed fixture", "URL": "https://example.invalid", "RemovalDisallowed": true]
+        try PropertyListSerialization.data(fromPropertyList: managed, format: .binary, options: 0).write(to: managedInfo)
+        let normalInfo = root.appendingPathComponent("normal.webclip/Info.plist")
+        let beforeNormal = try Data(contentsOf: normalInfo)
+        let beforeManaged = try Data(contentsOf: managedInfo)
+        let ids = ["normal.webclip", "managed.webclip", "missing.webclip", "../escape.webclip"]
+        let results = await Repository(root: root).delete(ids: ids)
+        XCTAssertEqual(results.map(\.id), ids.sorted())
+        XCTAssertTrue(results.allSatisfy { $0.message.hasPrefix("未删除") })
+        XCTAssertEqual(try Data(contentsOf: normalInfo), beforeNormal)
+        XCTAssertEqual(try Data(contentsOf: managedInfo), beforeManaged)
+    }
+
     func testMalformedAndSymlinkAreReported() async throws {
         let root = try temporaryRoot()
         try create("broken.webclip", root: root)

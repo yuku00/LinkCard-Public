@@ -1,5 +1,7 @@
 import UIKit
 import UniformTypeIdentifiers
+import PhotosUI
+import ImageIO
 
 // Explicit scene/window ownership, as in Santander's MIT UIKit lifecycle.
 // No hosting controller, preferences rebind, root persona or spawn on this path.
@@ -26,8 +28,80 @@ final class BusinessTabs: UITabBarController {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 }
 
+// Images are downsampled before persistence; failed operations never replace the displayed image.
 @MainActor
-final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocumentPickerDelegate {
+private enum BackgroundSession {
+    static var image: UIImage?
+    static let store = BackgroundStore()
+    static var loaded = false
+    static let changed = Notification.Name("BusinessBackgroundChanged")
+    static func loadOnce() {
+        guard !loaded else { return }
+        do {
+            if let data = try store.load() {
+                guard let decoded = UIImage(data: data) else { return }
+                image = decoded
+            }
+            loaded = true
+        } catch { /* Protected data may be unavailable until first unlock; retry on activation. */ }
+    }
+    static func set(_ image: UIImage) throws {
+        guard let data = image.jpegData(compressionQuality: 0.85) else { throw BackgroundError.invalidImage }
+        try store.save(data)
+        self.image = image; loaded = true
+        NotificationCenter.default.post(name: changed, object: nil)
+    }
+    static func reset() throws {
+        try store.reset()
+        image = nil; loaded = true
+        NotificationCenter.default.post(name: changed, object: nil)
+    }
+    nonisolated static func decode(_ url: URL) throws -> UIImage {
+        let values = try url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+        guard values.isRegularFile == true, let size = values.fileSize, size > 0, size <= 12 * 1024 * 1024,
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 2048,
+                kCGImageSourceShouldCacheImmediately: true
+              ] as CFDictionary) else { throw BackgroundError.invalidImage }
+        return UIImage(cgImage: image)
+    }
+    enum BackgroundError: LocalizedError {
+        case invalidImage
+        var errorDescription: String? { "请选择不超过 12 MB 的有效图片。" }
+    }
+}
+
+final class GlassCell: UITableViewCell {
+    private let card = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: .subtitle, reuseIdentifier: reuseIdentifier)
+        let holder = UIView()
+        holder.backgroundColor = .clear
+        card.clipsToBounds = true
+        card.layer.cornerRadius = 14
+        card.layer.cornerCurve = .continuous
+        holder.addSubview(card)
+        backgroundView = holder
+        backgroundColor = .clear
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if let holder = backgroundView { card.frame = holder.bounds.insetBy(dx: 0, dy: 2) }
+    }
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        textLabel?.text = nil; detailTextLabel?.text = nil; imageView?.image = nil
+        accessoryType = .none; accessibilityIdentifier = nil; selectionStyle = .default
+        textLabel?.font = .preferredFont(forTextStyle: .body)
+    }
+}
+
+@MainActor
+final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocumentPickerDelegate, PHPickerViewControllerDelegate {
     enum Mode { case clips, notes }
     let mode: Mode
     let repository: Repository
@@ -40,6 +114,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     var selected: Set<String> = []
     private let search = UISearchController(searchResultsController: nil)
     private var staging: ExportStaging?
+    private var backgroundPicker: UIDocumentPickerViewController?
     private var exportButton: UIBarButtonItem!
     private var readButton: UIBarButtonItem!
     private var selectButton: UIBarButtonItem!
@@ -58,6 +133,23 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         super.viewDidLoad()
         tableView.accessibilityIdentifier = mode == .clips ? "webclipsList" : "notesList"
         navigationController?.navigationBar.prefersLargeTitles = true
+        tableView.backgroundColor = .clear
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 72
+        tableView.separatorStyle = .none
+        tableView.register(GlassCell.self, forCellReuseIdentifier: "glass")
+        navigationItem.leftBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "paintpalette"), menu: UIMenu(title: "自定义背景", children: [
+            UIAction(title: "从照片选择", image: UIImage(systemName: "photo")) { [weak self] _ in self?.choosePhoto() },
+            UIAction(title: "从文件选择", image: UIImage(systemName: "folder")) { [weak self] _ in self?.chooseFile() },
+            UIAction(title: "恢复默认背景", image: UIImage(systemName: "arrow.counterclockwise")) { [weak self] _ in
+                do { try BackgroundSession.reset() } catch { self?.showBackgroundError(error) }
+            }
+        ]))
+        navigationItem.leftBarButtonItem?.accessibilityLabel = "设置持久背景"
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshBackground), name: BackgroundSession.changed, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(refreshBackground), name: UIApplication.didBecomeActiveNotification, object: nil)
+        BackgroundSession.loadOnce()
+        refreshBackground()
         search.searchResultsUpdater = self
         search.obscuresBackgroundDuringPresentation = false
         search.searchBar.placeholder = "搜索标题或内容"
@@ -73,6 +165,69 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         toolbarItems = [selectButton, UIBarButtonItem(systemItem: .flexibleSpace), clearButton]
         navigationController?.setToolbarHidden(false, animated: false)
         update()
+    }
+    @objc private func refreshBackground() {
+        BackgroundSession.loadOnce()
+        let background = UIView(frame: tableView.bounds)
+        background.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        background.backgroundColor = .systemGroupedBackground
+        if let image = BackgroundSession.image {
+            let imageView = UIImageView(image: image)
+            imageView.frame = background.bounds
+            imageView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            imageView.contentMode = .scaleAspectFill
+            imageView.clipsToBounds = true
+            background.addSubview(imageView)
+            // One translucent veil behind the glass cards avoids stacked live blurs.
+            let veil = UIView(frame: background.bounds)
+            veil.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.34)
+            veil.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            background.addSubview(veil)
+        }
+        tableView.backgroundView = background
+        tableView.reloadData()
+    }
+    private func choosePhoto() {
+        var configuration = PHPickerConfiguration()
+        configuration.filter = .images
+        configuration.selectionLimit = 1
+        let picker = PHPickerViewController(configuration: configuration)
+        picker.delegate = self
+        present(picker, animated: true)
+    }
+    private func chooseFile() {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.image], asCopy: true)
+        picker.delegate = self
+        backgroundPicker = picker
+        present(picker, animated: true)
+    }
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+        guard let provider = results.first?.itemProvider else { return }
+        guard provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) else {
+            showBackgroundError(BackgroundSession.BackgroundError.invalidImage); return
+        }
+        provider.loadFileRepresentation(forTypeIdentifier: UTType.image.identifier) { [weak self] url, error in
+            // The provider owns this temporary URL; decode before the callback returns.
+            let result: Result<UIImage, Error> = Result {
+                if let error = error { throw error }
+                guard let url = url else { throw BackgroundSession.BackgroundError.invalidImage }
+                return try BackgroundSession.decode(url)
+            }
+            DispatchQueue.main.async { self?.acceptBackground(result) }
+        }
+    }
+    private func acceptBackground(_ result: Result<UIImage, Error>) {
+        switch result {
+        case .success(let image):
+            do { try BackgroundSession.set(image) } catch { showBackgroundError(error) }
+        case .failure(let error): showBackgroundError(error)
+        }
+    }
+    private func showBackgroundError(_ error: Error) {
+        let alert = UIAlertController(title: "无法保存背景", message: "原背景保持不变。\n" + error.localizedDescription, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "好", style: .default))
+        present(alert, animated: true)
     }
     private func update() {
         guard isViewLoaded else { return }
@@ -136,7 +291,14 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         section == 0 ? "只读 · \(readState)" : "结果 · 已选择 \(selected.count) 项"
     }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+        let cell = tableView.dequeueReusableCell(withIdentifier: "glass", for: indexPath)
+        cell.textLabel?.font = .preferredFont(forTextStyle: .body)
+        cell.detailTextLabel?.text = nil
+        cell.imageView?.image = nil
+        cell.accessoryType = .none
+        cell.selectionStyle = .default
+        cell.textLabel?.adjustsFontForContentSizeCategory = true
+        cell.detailTextLabel?.adjustsFontForContentSizeCategory = true
         cell.textLabel?.numberOfLines = 0
         cell.detailTextLabel?.numberOfLines = 2
         if indexPath.section == 0 {
@@ -210,8 +372,18 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
             status = "导出失败，源数据未修改。" + AccessError.capture(error).summary
         }
     }
-    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) { staging = nil }
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        if controller === backgroundPicker { backgroundPicker = nil } else { staging = nil }
+    }
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        if controller === backgroundPicker {
+            backgroundPicker = nil
+            guard let url = urls.first else { return }
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            acceptBackground(Result { try BackgroundSession.decode(url) })
+            return
+        }
         staging = nil
         status = "系统保存操作完成；请在所选位置核对文件。源数据未修改。"
         update()
