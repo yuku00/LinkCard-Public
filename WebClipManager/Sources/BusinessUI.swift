@@ -291,6 +291,12 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     var duplicatesOnly = false
     private var menuButton: UIBarButtonItem!
     private var lastGridWidth: CGFloat = 0
+    private let deleteLogKey = "experimentalDeleteLastResult"
+    private func recordDelete(_ text: String) {
+        status = text
+        UserDefaults.standard.set(text, forKey: deleteLogKey)
+        update()
+    }
     var gridColumns: Int { traitCollection.preferredContentSizeCategory.isAccessibilityCategory || tableView.bounds.width < 320 ? 1 : 2 }
     private var gridItemHeight: CGFloat {
         let head = UIFont.preferredFont(forTextStyle: .headline).lineHeight
@@ -437,6 +443,10 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
             actions.append(UIAction(title: "实验性：删除单个测试书签…", attributes: busy || selected.count != 1 ? .disabled : []) { [weak self] _ in
                 self?.confirmExperimentalDelete()
             })
+            actions.append(UIAction(title: "查看上次实验删除结果", attributes: disabled) { [weak self] _ in
+                guard let self = self else { return }
+                self.recycleMessage("上次实验删除结果", UserDefaults.standard.string(forKey: self.deleteLogKey) ?? "尚无记录。")
+            })
             actions.append(UIAction(title: "回收站", attributes: disabled) { [weak self] _ in self?.showRecycle() })
             actions.append(UIAction(title: "精确重复 URL", attributes: disabled, state: duplicatesOnly ? .on : .off) { [weak self] _ in
                 guard let self = self else { return }; self.duplicatesOnly.toggle(); self.update()
@@ -495,8 +505,9 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "好", style: .default)); present(alert, animated: true)
     }
-    private func confirmTestBackup() {
-        guard selected.count == 1, let id = selected.first, let clip = clips.first(where: { $0.id == id }), clip.title == "WCM-DELETE-TEST" else {
+    private func confirmTestBackup(_ target: Clip? = nil) {
+        let candidate = target ?? (selected.count == 1 ? clips.first(where: { $0.id == selected.first }) : nil)
+        guard let clip = candidate, clip.title == "WCM-DELETE-TEST" else {
             let alert = UIAlertController(title: "仅限测试书签", message: "请先新建一个标题精确为 WCM-DELETE-TEST 的可丢弃主屏幕书签，重新读取并仅选择该项。", preferredStyle: .alert)
             alert.addAction(UIAlertAction(title: "好", style: .cancel)); present(alert, animated: true); return
         }
@@ -518,32 +529,36 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         })
         present(alert, animated: true)
     }
-    private func confirmExperimentalDelete() {
-        guard !busy, selected.count == 1, let id = selected.first,
-              let clip = clips.first(where: { $0.id == id }), clip.title == "WCM-DELETE-TEST" else {
-            recycleMessage("仅限测试书签", "请新建标题精确为 WCM-DELETE-TEST 的可丢弃书签，重新读取并只选择该项。"); return
+    private func confirmExperimentalDelete(_ target: Clip? = nil) {
+        let candidate = target ?? (selected.count == 1 ? clips.first(where: { $0.id == selected.first }) : nil)
+        guard !busy, let clip = candidate else { recycleMessage("无法操作", "正在处理或选择已失效，请重新读取。"); return }
+        guard clip.title == "WCM-DELETE-TEST" else {
+            recycleMessage("普通书签暂不可删除", "为保护数据，实验只允许标题精确为 WCM-DELETE-TEST 的可丢弃主屏幕书签。请在 Safari 新建该名称的主屏幕书签，返回本应用重新读取后长按它。受管或策略未知仍会拒绝。"); return
         }
+        let id = clip.id
         let warning = "实验性功能，仅供可丢弃测试对象。将尝试系统删除，回收站副本保护有限，不能作为唯一备份；恢复不保证图标或元数据。不会清理 Safari。"
         let first = UIAlertController(title: "实验删除测试书签？", message: warning, preferredStyle: .alert)
         first.addAction(UIAlertAction(title: "取消", style: .cancel))
         first.addAction(UIAlertAction(title: "继续", style: .destructive) { [weak self] _ in
-            guard let self = self, !self.busy, self.selected == Set([id]) else { return }
+            guard let self = self, !self.busy else { return }
             let second = UIAlertController(title: "再次确认单项实验删除？", message: "仅对 \(id) 先备份、再核验并最多调用一次系统删除。\n" + warning, preferredStyle: .alert)
             second.addAction(UIAlertAction(title: "取消", style: .cancel))
             second.addAction(UIAlertAction(title: "备份并尝试删除", style: .destructive) { [weak self] _ in
-                guard let self = self, !self.busy, self.selected == Set([id]) else { return }
-                self.busy = true; self.status = "正在备份和核验测试书签…"; self.update()
+                guard let self = self, !self.busy else { return }
+                self.busy = true; self.recordDelete("\(id)：正在备份测试书签…")
                 Task { [weak self] in
-                    let result = await Task.detached { Result { try ExperimentalDelete.run(clip, firstConfirmed: true, secondConfirmed: true) } }.value
+                    let result = await Task.detached { Result { try ExperimentalDelete.run(clip, firstConfirmed: true, secondConfirmed: true, progress: { message in
+                        DispatchQueue.main.async { [weak self] in self?.recordDelete("\(id)：" + message) }
+                    }) } }.value
                     guard let self = self else { return }; self.busy = false
                     switch result {
-                    case .success(let message): self.status = message
-                    case .failure(let error): self.status = "未调用删除：\(error.localizedDescription)"
+                    case .success(let message): self.recordDelete("\(id)：" + message)
+                    case .failure(let error): self.recordDelete("\(id)：备份失败或预检未完成，未调用删除：\(error.localizedDescription)")
                     }
-                    self.update()
+                    self.recycleMessage("实验删除结果", self.status)
                 }
             })
-            self.present(second, animated: true)
+            first.dismiss(animated: true) { self.present(second, animated: true) }
         })
         present(first, animated: true)
     }
@@ -654,6 +669,26 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         let clip = visibleClips[collectionView.tag * gridColumns + indexPath.item]
         cell.configure(clip, selected: selected.contains(clip.id))
         return cell
+    }
+    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        let index = collectionView.tag * gridColumns + indexPath.item
+        guard !busy, visibleClips.indices.contains(index) else { return nil }
+        let clip = visibleClips[index]
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            UIMenu(children: [
+                UIAction(title: "删除（实验）…", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self?.confirmExperimentalDelete(clip) }
+                },
+                UIAction(title: "备份测试书签…", image: UIImage(systemName: "archivebox")) { [weak self] _ in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self?.confirmTestBackup(clip) }
+                },
+                UIAction(title: "详情", image: UIImage(systemName: "info.circle")) { [weak self] _ in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        self?.recycleMessage("书签详情", "标题：\(clip.title)\n网址：\(clip.url)\n标识：\(clip.id)\n禁止移除：\(clip.removalDisallowed ? "是" : "否或未知，仍需预检")")
+                    }
+                }
+            ])
+        }
     }
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         guard !busy else { return }; toggleSelection(visibleClips[collectionView.tag * gridColumns + indexPath.item].id)
