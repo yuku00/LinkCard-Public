@@ -8,6 +8,8 @@ import UIKit
         let image = renderer.image { context in
             UIColor.systemBlue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 2048, height: 2048))
         }
+        let thumbnail = try XCTUnwrap(GlassCell.thumbnail(try XCTUnwrap(image.pngData())))
+        XCTAssertLessThanOrEqual(try XCTUnwrap(thumbnail.cgImage).width, 96)
         let cell = GlassCell(style: .default, reuseIdentifier: nil)
         cell.configure(title: "Synthetic bookmark", subtitle: "https://example.invalid", icon: image, selected: true)
         let width: CGFloat = 358

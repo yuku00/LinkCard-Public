@@ -12,12 +12,15 @@ final class BackgroundStore {
 
     // /var is an OS alias for /private/var on iOS. Rewrite only this
     // exact, trusted prefix; all other links are rejected by openat O_NOFOLLOW.
-    static func normalizeSystemVar(_ url: URL) -> URL {
+    static func mapSystemAlias(_ url: URL, alias: String, target: String) -> URL {
         let path = url.standardizedFileURL.path
-        if path == "/var" || path.hasPrefix("/var/") {
-            return URL(fileURLWithPath: "/private" + path, isDirectory: true)
+        if path == alias || path.hasPrefix(alias + "/") {
+            return URL(fileURLWithPath: target + String(path.dropFirst(alias.count)), isDirectory: true)
         }
         return url.standardizedFileURL
+    }
+    static func normalizeSystemVar(_ url: URL) -> URL {
+        mapSystemAlias(url, alias: "/var", target: "/private/var")
     }
     init(parent: URL? = nil) {
         if let parent = parent {

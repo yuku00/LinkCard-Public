@@ -34,6 +34,20 @@ final class BackgroundStoreTests: XCTestCase {
             XCTAssertNil(try BackgroundStore(parent: parent).load())
         }
     }
+    func testSimulatedSystemAliasRequiresExplicitMapping() throws {
+        try withParent { base, _ in
+            let target = base.appendingPathComponent("private-var")
+            try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            let alias = base.appendingPathComponent("var")
+            try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: target)
+            let throughLink = alias.appendingPathComponent("Application Support")
+            XCTAssertThrowsError(try BackgroundStore(parent: throughLink).save(Data("old behavior".utf8)))
+            let mapped = BackgroundStore.mapSystemAlias(throughLink, alias: alias.path, target: target.path)
+            let bytes = Data("synthetic background".utf8)
+            try BackgroundStore(parent: mapped).save(bytes)
+            XCTAssertEqual(try BackgroundStore(parent: mapped).load(), bytes)
+        }
+    }
     func testKnownSystemVarAliasAndHostileAncestor() throws {
         XCTAssertEqual(BackgroundStore.normalizeSystemVar(URL(fileURLWithPath: "/var/mobile/Library/Application Support")).path, "/private/var/mobile/Library/Application Support")
         XCTAssertEqual(BackgroundStore.normalizeSystemVar(URL(fileURLWithPath: "/various/Library")).path, "/various/Library")

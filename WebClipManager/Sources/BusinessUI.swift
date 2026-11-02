@@ -138,6 +138,16 @@ final class GlassCell: UITableViewCell {
         isAccessibilityElement = true
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+    static func thumbnail(_ data: Data) -> UIImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 96,
+                kCGImageSourceShouldCacheImmediately: true
+              ] as CFDictionary) else { return nil }
+        return UIImage(cgImage: image)
+    }
     func configure(title: String, subtitle: String?, icon: UIImage?, selected: Bool, status: Bool = false) {
         titleLabel.text = title; subtitleLabel.text = subtitle
         subtitleLabel.isHidden = subtitle == nil
@@ -356,7 +366,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
             cell.accessibilityIdentifier = "readStatus"
         } else if mode == .clips {
             let clip = visibleClips[indexPath.row]
-            let icon = clip.icon.flatMap { UIImage(data: $0) } ?? UIImage(systemName: "bookmark")
+            let icon = clip.icon.flatMap { GlassCell.thumbnail($0) } ?? UIImage(systemName: "bookmark")
             cell.configure(title: clip.title, subtitle: clip.url, icon: icon, selected: selected.contains(clip.id))
             cell.accessibilityIdentifier = "contentRow"
         } else {
