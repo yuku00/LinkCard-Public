@@ -27,6 +27,8 @@ FOUNDATION_EXPORT NSDictionary * _Nullable WUStatsDecodeHostPage(NSArray *page, 
 // Exceptions/missing callbacks cannot block message scanning; late results are ignored.
 @property(nonatomic, copy, nullable) void (^readProfile)(BOOL (^)(void), void (^)(NSDictionary * _Nullable));
 @property(nonatomic, copy) NSArray<NSDictionary *> *sessions;
+// Host session-list candidates, gathered in cancellable main-thread batches.
+@property(nonatomic, copy, nullable) void (^readSessions)(BOOL (^)(void), void (^)(NSArray<NSDictionary *> * _Nullable, BOOL));
 @property(nonatomic, copy, nullable) void (^visitSnapshot)(void (^)(NSDictionary *));
 @property(nonatomic, copy, nullable) void (^clearVisits)(void (^)(BOOL));
 @property(nonatomic, copy) NSString *account;
