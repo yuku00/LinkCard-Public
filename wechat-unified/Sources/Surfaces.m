@@ -2,12 +2,17 @@
 #import "InteractionLogic.h"
 #import <QuartzCore/QuartzCore.h>
 static NSHashTable<UIView *> *styled;
-static char childrenKey,cardKey;
+static char childrenKey,cardKey,referTargetKey,bubbleImageKey;
 static NSMutableSet<NSString *> *cardRoles;
 static void Restore(UIView *v);
 void WURestoreMessageSurface(UIView *cell) {
     UIView *target=objc_getAssociatedObject(cell,&cardKey);
-    if(target) Restore(target);
+    if(target) {
+        NSDictionary *imageState=objc_getAssociatedObject(target,&bubbleImageKey);
+        if(imageState && [(UIImageView *)target image]==imageState[@"applied"]) [(UIImageView *)target setImage:imageState[@"old"]];
+        objc_setAssociatedObject(target,&bubbleImageKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        Restore(target);
+    }
     objc_setAssociatedObject(cell,&cardKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 static IMP searchLayout,referLayout,plusLayout,toastLayout,timeLayout,swipeLayout;
@@ -16,7 +21,13 @@ static void RestoreHostPopup(UIView *view);
 static void RefreshHostPopup(UIView *view);
 static void Restore(UIView *v) { WURestoreConfiguredSurface(v); }
 // Restore before UIKit's original callback, then request a fresh layout if reattached.
-static void ReferWindow(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))referWindow)(v,s); if(v.window) [v setNeedsLayout]; }
+static void RestoreRefer(UIView *v) {
+    UIView *target=objc_getAssociatedObject(v,&referTargetKey);
+    if(target && target!=v) Restore(target);
+    objc_setAssociatedObject(v,&referTargetKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    Restore(v);
+}
+static void ReferWindow(UIView *v,SEL s) { RestoreRefer(v); ((void(*)(id,SEL))referWindow)(v,s); if(v.window) [v setNeedsLayout]; }
 static void ToastWindow(UIView *v,SEL s) { RestoreHostPopup(v); Restore(v); ((void(*)(id,SEL))toastWindow)(v,s); if(v.window) [v setNeedsLayout]; }
 static void WUStyleSurface(UIView *v,NSString *key,CGFloat radius) {
     WUApplyConfiguredSurface(v,key,radius,YES); if(WUEnabled(key)) [styled addObject:v];
@@ -24,13 +35,25 @@ static void WUStyleSurface(UIView *v,NSString *key,CGFloat radius) {
 BOOL WUCardSurfaceAvailable(NSString *key) { return [cardRoles containsObject:key]; }
 void WURefreshMessageSurface(UIView *cell,NSString *role) {
     WURestoreMessageSurface(cell);
-    if(![@[@"fileSurface",@"emoticonSurface"] containsObject:role] || !cell.window) return;
+    if(![@[@"fileSurface",@"emoticonSurface",@"textBubbleSurface"] containsObject:role] || !cell.window) return;
+    if([role isEqual:@"textBubbleSurface"]) {
+        Class textClass=NSClassFromString(@"TextMessageCellView");
+        if(!textClass || ![textClass isSubclassOfClass:UIView.class] || ![cell isKindOfClass:textClass]) return;
+    }
     // m_bgImageView is the existing evidence-backed CommonMessageCellView background role.
     id target=nil; @try { target=[cell valueForKey:@"m_bgImageView"]; } @catch(NSException *e) { return; }
     if(![target isKindOfClass:UIImageView.class] || target==cell || ![target isDescendantOfView:cell]) return;
     [cardRoles addObject:role];
     WUStyleSurface(target,role,14);
-    if(WUEnabled(role)) objc_setAssociatedObject(cell,&cardKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if(WUEnabled(role)) {
+        objc_setAssociatedObject(cell,&cardKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        UIImageView *imageView=target;
+        if([role isEqual:@"textBubbleSurface"] && imageView.image && !CGRectIsEmpty(imageView.bounds)) {
+            UIImage *old=imageView.image, *applied=[UIImage new];
+            objc_setAssociatedObject(target,&bubbleImageKey,@{@"old":old,@"applied":applied},OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            imageView.image=applied;
+        }
+    }
 }
 static void Search(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))searchLayout)(v,s); WUStyleSurface(v,@"searchSurface",14); }
 static id CheckedObjectGetter(id object,NSString *name);
@@ -43,10 +66,14 @@ static BOOL IsTextMessageReply(UIView *v) {
     return NO;
 }
 static void Refer(UIView *v,SEL s) {
-    Restore(v); ((void(*)(id,SEL))referLayout)(v,s);
-    // Preserve the old shared setting unless the message-specific override is enabled.
+    RestoreRefer(v); ((void(*)(id,SEL))referLayout)(v,s);
+    // The public MMInputMsgReferView header exposes its visible container.
+    // Fall back to the legacy root if the getter or ownership is not verifiable.
     NSString *role=IsTextMessageReply(v) && WUEnabled(@"referMessageSurface") ? @"referMessageSurface" : @"referSurface";
-    WUStyleSurface(v,role,12);
+    id container=CheckedObjectGetter(v,@"containerView");
+    UIView *target=[container isKindOfClass:UIView.class] && container!=v && [container isDescendantOfView:v] ? container : v;
+    WUStyleSurface(target,role,12);
+    if(WUEnabled(role)) { objc_setAssociatedObject(v,&referTargetKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [styled addObject:v]; }
 }
 static void Plus(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))plusLayout)(v,s); WUStyleSurface(v,@"plusSurface",18); }
 static void Toast(UIView *v,SEL s) { RestoreHostPopup(v); Restore(v); ((void(*)(id,SEL))toastLayout)(v,s); WUStyleSurface(v,@"toastSurface",16); RefreshHostPopup(v); }
