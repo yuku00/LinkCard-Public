@@ -1,4 +1,4 @@
-name: WebClipManager build26 (manual)
+name: WebClipManager build27 (manual)
 on:
   workflow_dispatch:
     inputs:
@@ -25,6 +25,9 @@ jobs:
           /tmp/webclip-checks/bin/python Tools/test_notes_format.py
           /tmp/webclip-checks/bin/python Tools/test_webclips_access.py
           /tmp/webclip-checks/bin/python Tools/test_build12_policy.py
+          /tmp/webclip-checks/bin/python Tools/test_build27_policy.py
+          swiftc Sources/BackgroundStore.swift Sources/ExportStaging.swift Tools/test_export_staging.swift -o /tmp/wcm-export-test
+          /tmp/wcm-export-test
           python3 Tools/test_helper_spawn_failure.py
           python3 Tools/test_helper_transport.py
           python3 Tools/test_recycle_copy.py

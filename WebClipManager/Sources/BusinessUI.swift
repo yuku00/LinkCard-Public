@@ -284,6 +284,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     let search = UISearchController(searchResultsController: nil)
     private var staging: ExportStaging?
     private var backgroundPicker: UIDocumentPickerViewController?
+    private var exportPicker: UIDocumentPickerViewController?
     private var exportButton: UIBarButtonItem!
     private var readButton: UIBarButtonItem!
     enum ScreenFilter { case all, full, nonFull }
@@ -423,7 +424,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     private func update() {
         guard isViewLoaded, readButton != nil, exportButton != nil, menuButton != nil else { return }
         readButton.isEnabled = !busy
-        exportButton.isEnabled = !busy && !selected.isEmpty
+        exportButton.isEnabled = !busy && staging == nil && !selected.isEmpty
         let disabled: UIMenuElement.Attributes = busy ? .disabled : []
         var actions: [UIMenuElement] = []
         if mode == .clips {
@@ -600,7 +601,6 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         guard !busy else { return }
         clips = []; notes = []; selected = []; readState = "notRead"
         status = "已清除内存，不修改源数据。"
-        staging = nil
         update()
     }
     @objc func confirmRead() {
@@ -709,7 +709,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         return CGSize(width: floor((collectionView.bounds.width - CGFloat(columns - 1) * 10) / CGFloat(columns)), height: gridItemHeight)
     }
     @objc func confirmExport() {
-        guard !busy, !selected.isEmpty else { return }
+        guard !busy, staging == nil, !selected.isEmpty else { return }
         let alert = UIAlertController(title: "导出所选 \(selected.count) 项？", message: "共 \(selected.count) 项，含隐藏已选 \(hiddenSelectionCount) 项。文件可能包含私人内容；选择云盘可能由系统同步。备忘录仅导出正文，不是完整富文本/附件备份。", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         for markdown in (mode == .notes ? [false, true] : [false]) {
@@ -739,13 +739,14 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         return stage
     }
     private func exportSelected(markdown: Bool) async {
-        guard !busy else { return }
+        guard !busy, staging == nil else { return }
         busy = true; update()
         defer { busy = false; update() }
         do {
             let stage = try await prepareExport(markdown: markdown)
             staging = stage
             let picker = UIDocumentPickerViewController(forExporting: stage.urls, asCopy: true)
+            exportPicker = picker
             picker.delegate = self
             present(picker, animated: true)
         } catch {
@@ -753,7 +754,8 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         }
     }
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-        if controller === backgroundPicker { backgroundPicker = nil } else { staging = nil }
+        if controller === backgroundPicker { backgroundPicker = nil }
+        else if controller === exportPicker { exportPicker = nil; staging = nil; update() }
     }
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         if controller === backgroundPicker {
@@ -764,6 +766,8 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
             acceptBackground(Result { try BackgroundSession.decode(url) })
             return
         }
+        guard controller === exportPicker else { return }
+        exportPicker = nil
         staging = nil
         status = "系统保存操作完成；请在所选位置核对文件。源数据未修改。"
         update()

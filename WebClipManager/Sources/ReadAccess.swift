@@ -27,7 +27,7 @@ struct AccessError: Codable, Sendable {
             guard let next = current.userInfo[NSUnderlyingErrorKey] as? NSError else { break }
             current = next
         }
-        let operations = ["lstat", "openDirectory", "fdopendir", "readdir", "openFile", "fstat", "fileType", "helperTransport", "helperRead"]
+        let operations = ["lstat", "openDirectory", "fdopendir", "readdir", "openFile", "fstat", "fileType", "helperTransport", "helperRead", "statDirectory", "createParent", "createStore", "openStore", "createSession", "openSession", "createFile", "statFile", "protectFile", "writeFile", "syncFile", "publishFile"]
         let rawOperation = top.userInfo["operation"] as? String ?? ""
         let category: String
         switch posix {

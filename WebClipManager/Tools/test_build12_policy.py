@@ -27,6 +27,6 @@ assert 'Helper/main.m -o' not in workflow and 'ldid -SConfig/Helper.entitlements
 for forbidden in ['setenv(', 'setuid(', 'setgid(', 'persona_np', 'system(', 'posix_spawn']:
     assert forbidden not in ui
 stage = (r/'Sources/ExportStaging.swift').read_text()
-assert 'mkdtemp(' in stage and 'O_EXCL | O_NOFOLLOW' in stage and '0o600' in stage
-assert 'unlink(url.path)' in stage and 'for url in urls' in stage
+assert 'openat(dirFD' in stage and 'O_EXCL | O_NOFOLLOW' in stage and '0o600' in stage
+assert 'unlinkat(dirFD' in stage and 'for name in Array(owned.keys)' in stage
 print('PASS build12: direct read, UIKit scene root, exact build9 permissions, owned export files, deletion disabled')
