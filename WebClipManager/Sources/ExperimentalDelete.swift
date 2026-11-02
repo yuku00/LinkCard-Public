@@ -2,6 +2,9 @@ import Foundation
 
 // Confirmation is collected by UIKit. This coordinator never retries a deletion.
 enum ExperimentalDelete {
+    static func succeeded(_ result: [AnyHashable: Any]) -> Bool {
+        result["called"] as? Bool == true && result["returned"] as? Bool == true && result["source"] as? String == "不存在"
+    }
     static func run(_ clip: Clip, firstConfirmed: Bool, secondConfirmed: Bool,
                     progress: (String) -> Void = { _ in },
                     backup: (Clip) throws -> Void = RecycleStore.backupTest,

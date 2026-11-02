@@ -32,7 +32,7 @@ jobs:
           python3 Tools/test_delete_path.py
           clang -fobjc-arc -framework Foundation Tools/test_experimental_delete.m Sources/ExperimentalDelete.m Sources/DeletePath.c -o /tmp/wcm-delete-test
           /tmp/wcm-delete-test
-          swiftc Sources/ExperimentalDelete.swift Tools/test_experimental_coordinator.swift -o /tmp/wcm-coordinator-test
+          swiftc Sources/BackgroundStore.swift Sources/DeleteSettings.swift Sources/ExperimentalDelete.swift Tools/test_experimental_coordinator.swift -o /tmp/wcm-coordinator-test
           /tmp/wcm-coordinator-test
           clang -fobjc-arc -framework Foundation Tools/foundation_path_probe.m -o /tmp/wcm-foundation-path-probe
           /tmp/wcm-foundation-path-probe

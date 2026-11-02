@@ -538,7 +538,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
                         response = value
                         return value
                     })
-                    return (response["called"] as? Bool == true && response["returned"] as? Bool == true && response["source"] as? String == "不存在", text)
+                    return (ExperimentalDelete.succeeded(response), text)
                 } catch { return (false, error.localizedDescription) }
             }.value
             if outcome.0 {
