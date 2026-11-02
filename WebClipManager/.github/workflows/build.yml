@@ -1,4 +1,4 @@
-name: WebClipManager build21 device-only experimental delete (manual)
+name: WebClipManager build22 device-only experimental delete (manual)
 on:
   workflow_dispatch:
     inputs:
@@ -30,6 +30,10 @@ jobs:
           python3 Tools/test_recycle_copy.py
           python3 Tools/test_recycle_operations.py
           python3 Tools/test_delete_path.py
+          clang -fobjc-arc -framework Foundation Tools/test_experimental_delete.m Sources/ExperimentalDelete.m Sources/DeletePath.c -o /tmp/wcm-delete-test
+          /tmp/wcm-delete-test
+          swiftc Sources/ExperimentalDelete.swift Tools/test_experimental_coordinator.swift -o /tmp/wcm-coordinator-test
+          /tmp/wcm-coordinator-test
           clang -fobjc-arc -framework Foundation Tools/foundation_path_probe.m -o /tmp/wcm-foundation-path-probe
           /tmp/wcm-foundation-path-probe
       - name: Generate project

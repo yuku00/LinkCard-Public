@@ -46,7 +46,12 @@ static NSString *checkPlist(int dir) {
     if (![p[@"Title"] isKindOfClass:NSString.class] || ![p[@"Title"] isEqual:@"WCM-DELETE-TEST"]) return @"标题不是 WCM-DELETE-TEST";
     for (NSString *key in @[@"ConfigurationIsManaged", @"RemovalDisallowed"]) {
         id value = p[key];
-        if (!value || CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID() || [value boolValue]) return [NSString stringWithFormat:@"%@ 缺失、非布尔值或为真", key];
+        if (!value) {
+            if ([key isEqualToString:@"ConfigurationIsManaged"]) return @"ConfigurationIsManaged 缺失";
+            continue; // Undeclared is not permission; runtime must explicitly permit removal.
+        }
+        if (CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID()) return [NSString stringWithFormat:@"%@ 不是布尔值", key];
+        if ([value boolValue]) return [NSString stringWithFormat:@"%@ 为真", key];
     }
     return nil;
 }
@@ -61,9 +66,10 @@ static NSDictionary *performDelete(NSString *identifier, NSString *root, Class c
     int dir = wcm_open_directory(safeUTF8(root), leaf, &stage, &error);
     if (dir < 0) return pathRefusal(stage, error);
     NSString *err = checkPlist(dir); if (err) { close(dir); return refuse(err); }
+    @try {
     SEL factory = NSSelectorFromString(@"webClipWithIdentifier:");
     SEL pathSel = NSSelectorFromString(@"pathForWebClipWithIdentifier:");
-    SEL idSel = NSSelectorFromString(@"identifier"), managedSel = NSSelectorFromString(@"removalDisallowed"), removeSel = NSSelectorFromString(@"removeFromDisk");
+    SEL idSel = NSSelectorFromString(@"identifier"), managedSel = NSSelectorFromString(@"removalDisallowed"), configSel = NSSelectorFromString(@"configurationIsManaged"), removeSel = NSSelectorFromString(@"removeFromDisk");
     if (!cls || !signature(cls,factory,YES,"@",3,"@") || !signature(cls,pathSel,YES,"@",3,"@") || !signature(cls,idSel,NO,"@",2,NULL) || !signature(cls,managedSel,NO,@encode(BOOL),2,NULL) || !signature(cls,removeSel,NO,@encode(BOOL),2,NULL)) { close(dir); return refuse(@"UIWebClip 方法缺失或 ABI 签名不匹配"); }
     id (*classArg)(id, SEL, id) = (void *)objc_msgSend;
     id (*objectGet)(id, SEL) = (void *)objc_msgSend;
@@ -77,20 +83,30 @@ static NSDictionary *performDelete(NSString *identifier, NSString *root, Class c
     // A subclass may override methods: check the actual dispatch class as well.
     Class actual = object_getClass(object);
     if (!signature(actual,idSel,NO,"@",2,NULL) || !signature(actual,managedSel,NO,@encode(BOOL),2,NULL) || !signature(actual,removeSel,NO,@encode(BOOL),2,NULL)) { close(dir); return refuse(@"实例方法 ABI 不匹配"); }
+    BOOL hasConfig = class_getInstanceMethod(actual, configSel) != NULL;
+    if (hasConfig && !signature(actual,configSel,NO,@encode(BOOL),2,NULL)) { close(dir); dir = -1; return refuse(@"运行时受管状态 ABI 不匹配"); }
     id actualID = objectGet(object,idSel);
     if (![actualID isKindOfClass:NSString.class] || ![actualID isEqualToString:identifier]) { close(dir); return refuse(@"实例 identifier 不匹配"); }
-    if (boolGet(object,managedSel)) { close(dir); return refuse(@"运行时禁止移除"); }
+    if (boolGet(object,managedSel) || (hasConfig && boolGet(object,configSel))) { close(dir); dir = -1; return refuse(@"运行时禁止移除或标记受管"); }
     // Reopen to reject swapped directory; re-read policy immediately before the one call.
     int again = wcm_open_directory(safeUTF8(root), leaf, &stage, &error); struct stat a,b;
     if (again < 0) { close(dir); return pathRefusal("recheck", error); }
     if (fstat(dir,&a) || fstat(again,&b)) { int e = errno; close(again); close(dir); return pathRefusal("fstat", e); }
     if (a.st_dev != b.st_dev || a.st_ino != b.st_ino) { close(again); close(dir); return pathRefusal("identityChanged", 0); }
-    err = checkPlist(again); close(again); close(dir); if (err) return refuse(err);
-    BOOL result = boolGet(object,removeSel); // exactly one invocation
+    err = checkPlist(again); close(again); if (err) { close(dir); dir = -1; return refuse(err); }
+    if (boolGet(object,managedSel) || (hasConfig && boolGet(object,configSel))) { close(dir); dir = -1; return refuse(@"删除前运行时禁止移除或标记受管"); }
+    close(dir); dir = -1;
+    BOOL result;
+    @try { result = boolGet(object,removeSel); } // exactly one invocation
+    @catch (NSException *exception) { return @{ @"called": @YES, @"source": @"未知", @"reason": @"删除调用发生异常，结果未知" }; }
     struct stat post; int parent = wcm_open_directory(safeUTF8(root), NULL, &stage, &error);
     NSString *state = [NSString stringWithFormat:@"未知（调用后检查失败；阶段 %s，errno %d）", stage, error];
     if (parent >= 0) { if (fstatat(parent, identifier.fileSystemRepresentation, &post, AT_SYMLINK_NOFOLLOW) == 0) state = @"仍存在"; else if (errno == ENOENT) state = @"不存在"; else { int e = errno; state = [NSString stringWithFormat:@"未知（调用后检查失败；阶段 fstat，errno %d）", e]; } close(parent); }
     return @{ @"called": @YES, @"returned": @(result), @"source": state, @"reason": @"系统返回值和目录状态不证明桌面图标已清理" };
+    } @catch (NSException *exception) {
+        if (dir >= 0) close(dir);
+        return refuse(@"运行时检查发生异常");
+    }
 }
 NSDictionary *WCMExperimentalDelete(NSString *identifier) { return performDelete(identifier, @"/private/var/mobile/Library/WebClips", NSClassFromString(@"UIWebClip")); }
 NSDictionary *WCMExperimentalDeleteForTesting(NSString *identifier, NSString *root, Class mockClass) { return performDelete(identifier, root, mockClass); }
