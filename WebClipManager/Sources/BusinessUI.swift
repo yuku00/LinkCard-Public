@@ -45,7 +45,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     private var selectButton: UIBarButtonItem!
     private var clearButton: UIBarButtonItem!
     private var query: String { search.searchBar.text ?? "" }
-    var visibleClips: [Clip] { clips.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.url.localizedCaseInsensitiveContains(query) } }
+    var visibleClips: [Clip] { clips.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.url.localizedCaseInsensitiveContains(query) || $0.id.localizedCaseInsensitiveContains(query) } }
     var visibleNotes: [ImportedNote] { notes.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.text.localizedCaseInsensitiveContains(query) } }
     init(mode: Mode, repository: Repository, notesLoader: @escaping @Sendable () throws -> AppleNotesBatch) {
         self.mode = mode; self.repository = repository; self.notesLoader = notesLoader
@@ -149,6 +149,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
             if mode == .clips {
                 let clip = visibleClips[indexPath.row]
                 id = clip.id; cell.textLabel?.text = clip.title; cell.detailTextLabel?.text = clip.url
+                cell.imageView?.image = clip.icon.flatMap { UIImage(data: $0) } ?? UIImage(systemName: "bookmark")
             } else {
                 let note = visibleNotes[indexPath.row]
                 id = note.id.uuidString; cell.textLabel?.text = note.title; cell.detailTextLabel?.text = note.text

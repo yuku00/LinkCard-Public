@@ -45,6 +45,7 @@ final class BusinessIntegrationTests: XCTestCase {
         XCTAssertEqual(list.clips.count, 1)
         let cell = list.tableView(list.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
         XCTAssertEqual(cell.textLabel?.text, "Synthetic Bookmark")
+        XCTAssertNotNil(cell.imageView?.image) // Missing icon uses a placeholder.
         list.tableView(list.tableView, didSelectRowAt: IndexPath(row: 0, section: 1))
         XCTAssertEqual(list.selected, ["fixture.webclip"])
         let stage = try await list.prepareExport(markdown: false)

@@ -36,10 +36,14 @@ final class HelperProtocolTests: XCTestCase {
         XCTAssertEqual(captured.code, 1)
         XCTAssertNil(captured.helperStatusValid)
     }
-    @MainActor func testNotesDeviceReadIsExplicitlyUnavailable() async {
+    @MainActor func testNotesClearOnlyResetsInMemoryBatch() {
         let model = NotesModel()
-        await model.loadAppleNotes()
+        let note = ImportedNote(title: "Synthetic", text: "Fixture")
+        model.notes = [note]
+        model.selected = [note.id]
+        model.clear()
         XCTAssertTrue(model.notes.isEmpty)
-        XCTAssertTrue(model.status.contains("尚未接通"))
+        XCTAssertTrue(model.selected.isEmpty)
+        XCTAssertTrue(model.status.contains("不修改 Apple Notes"))
     }
 }
