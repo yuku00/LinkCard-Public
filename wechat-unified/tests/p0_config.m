@@ -33,16 +33,16 @@ int main(void) { @autoreleasepool {
     CHECK(!WUSave(@"hideDictationIcon",@"YES") && !WUSave(@"dictationPreventMistouch",@[]));
     CHECK([[NSData dataWithContentsOfFile:[dir stringByAppendingPathComponent:@"config.json"]] isEqual:dictationBefore]);
     CHECK(WUSave(@"enabled",@NO)); CHECK(!WUEnabled(@"dictationPreventMistouch"));
-    NSMutableDictionary *hub=[WUHubDefaultOptions() mutableCopy]; hub[@"enabled"]=@YES;
-    hub[@"names"]=@{@"KnownSettingsVC":@"测试设置"}; hub[@"groups"]=@{@"KnownSettingsVC":@"美化"};
-    CHECK(WUSave(@"pluginHub",hub)); snapshot=ReadConfig(@"config.json");
-    CHECK([WUValue(@"pluginHub") isEqual:hub]);
-    NSData *hubBefore=[NSData dataWithContentsOfFile:[dir stringByAppendingPathComponent:@"config.json"]];
-    NSMutableDictionary *badHub=[hub mutableCopy]; badHub[@"custom"]=@{@"../invalid":@"错误"};
-    CHECK(!WUSave(@"pluginHub",badHub));
-    CHECK([[NSData dataWithContentsOfFile:[dir stringByAppendingPathComponent:@"config.json"]] isEqual:hubBefore]);
-    hub[@"enabled"]=@NO; CHECK(WUSave(@"pluginHub",hub)); snapshot=ReadConfig(@"config.json");
-    CHECK(![WUValue(@"pluginHub")[@"enabled"] boolValue]);
+    // Existing legacy data, including malformed/unknown shapes, must not reset config.
+    for(id legacy in @[@{@"enabled":@YES,@"names":@{@"OldVC":@"legacy"}}, @[@"unrecognised"], [NSNull null]]) {
+        NSMutableDictionary *existing=[snapshot mutableCopy]; existing[@"pluginHub"]=legacy;
+        NSData *data=[NSJSONSerialization dataWithJSONObject:existing options:0 error:NULL];
+        CHECK(WriteConfig(data,@"config.json")); snapshot=ReadConfig(@"config.json");
+        CHECK(snapshot != nil && [WUValue(@"pluginHub") isEqual:legacy]);
+        CHECK(!WUSave(@"pluginHub",@{}));
+        CHECK(WUSave(@"words",@"legacy-preserved")); snapshot=ReadConfig(@"config.json");
+        CHECK([WUValue(@"pluginHub") isEqual:legacy] && [WUValue(@"words") isEqual:@"legacy-preserved"]);
+    }
     NSDictionary *themeOptions=@{@"sort":@"modified",@"ascending":@NO,@"cards":@YES,@"pinned":@[]};
     NSDictionary *styles=@{@"searchSurface":@{@"radius":@18,@"text":@"#123456",@"backgroundDark":@"#0a0a0a",@"fontSize":@20}};
     CHECK(WUSave(@"themeOptions",themeOptions)); CHECK(WUSave(@"surfaceStyles",styles));

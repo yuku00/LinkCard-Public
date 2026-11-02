@@ -18,11 +18,16 @@ class ReplySurfaceTests(unittest.TestCase):
                      'v.superview', 'isKindOfClass:cls',
                      'CheckedObjectGetter(parent,@"msgReplyView")==v',
                      'CheckedObjectGetter(parent,@"getMsgReplyView")==v',
-                     'Restore(v); ((void(*)(id,SEL))referLayout)(v,s)',
+                     'RestoreRefer(v); ((void(*)(id,SEL))referLayout)(v,s)',
+                     'CheckedObjectGetter(v,@"containerView")',
+                     '[container isDescendantOfView:v]',
+                     'objc_setAssociatedObject(v,&referTargetKey,target',
                      'WUEnabled(@"referMessageSurface") ? @"referMessageSurface" : @"referSurface"'):
             self.assertIn(text, part)
         self.assertIn('WUMatches(method,@encode(id),@[])', source)
-        self.assertIn('Restore(v); ((void(*)(id,SEL))referWindow)(v,s)', source)
+        self.assertIn('RestoreRefer(v); ((void(*)(id,SEL))referWindow)(v,s)', source)
+        self.assertIn('if(target && target!=v) Restore(target)', source)
+        self.assertIn('[styled addObject:v]', part)
 
     def test_preview_scoped_and_reversible(self):
         for name in ('Core.m', 'Settings.m', 'ThemeCatalog.m', 'SurfaceSettings.m'):

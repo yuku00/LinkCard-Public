@@ -5,7 +5,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 from github_native import api, request_bytes, ROOT, REPO
 P='/repos/'+REPO
 STATE=ROOT/'artifacts/surface-ci-state.json'
-FILES=['Sources/Surfaces.m','Sources/Core.m','Sources/ThemeCatalog.m','Sources/SurfaceSettings.m','Sources/Settings.m','Sources/WU.h','Sources/SurfaceStyle.m','Sources/Groups.m','Sources/WUNative.m','Sources/GroupLogic.m','Sources/GroupLogic.h','Sources/HomeLogic.m','Sources/HomeLogic.h','Sources/PluginHubLogic.m','Sources/PluginHubLogic.h','Sources/ThemeCatalog.h','Sources/ThemePrimitives.h','Sources/ThemeArchive.m','Sources/ThemeArchive.h','Sources/ThemeColors.m','Sources/ThemeLibrary.m','Sources/ThemeLibrary.h','Sources/RepeatOptions.h','Sources/WUArticleImage.h','Sources/WUDictation.h','Sources/InteractionLogic.h','tests/p0_config.m','tests/test_p0.py','tests/theme_catalog.m','tests/test_reply_surface.py','tests/test_quick_reply_surface.py','tests/test_host_popup_surface.py','tests/test_chat_surface.py','evidence/host-popups/WeToast.h','evidence/host-popups/MMToastView.h','evidence/host-popups/MMTipsViewController.h','evidence/host-popups/PROVENANCE.md','tools/release.py','tools/targeted_surface_ci.py']
+FILES=['Sources/Surfaces.m','Sources/Core.m','Sources/ThemeCatalog.m','Sources/SurfaceSettings.m','Sources/Settings.m','Sources/WU.h','Sources/SurfaceStyle.m','Sources/Groups.m','Sources/WUNative.m','Sources/GroupLogic.m','Sources/GroupLogic.h','Sources/HomeLogic.m','Sources/HomeLogic.h','Sources/ThemeCatalog.h','Sources/ThemePrimitives.h','Sources/ThemeArchive.m','Sources/ThemeArchive.h','Sources/ThemeColors.m','Sources/ThemeLibrary.m','Sources/ThemeLibrary.h','Sources/RepeatOptions.h','Sources/WUArticleImage.h','Sources/WUDictation.h','Sources/InteractionLogic.h','tests/p0_config.m','tests/test_p0.py','tests/theme_catalog.m','tests/test_reply_surface.py','tests/test_quick_reply_surface.py','tests/test_host_popup_surface.py','tests/test_chat_surface.py','evidence/host-popups/WeToast.h','evidence/host-popups/MMToastView.h','evidence/host-popups/MMTipsViewController.h','evidence/host-popups/PROVENANCE.md','tools/release.py','tools/targeted_surface_ci.py']
 WORKFLOW='''name: WU surface compile and persistence
 on: push
 permissions:
@@ -49,6 +49,9 @@ def upload():
     c=api('GET',P+'/git/commits/'+base)
     entries=[{'path':'wechat-unified/'+n,'mode':'100644','type':'blob','content':(ROOT/n).read_text()} for n in FILES]
     remote=api('GET',P+'/git/trees/'+c['tree']['sha']+'?recursive=1'); assert not remote.get('truncated')
+    retired=['Sources/PluginHub.h', 'Sources/PluginHub.m', 'Sources/PluginHubLogic.h', 'Sources/PluginHubLogic.m', 'tests/plugin_hub_logic.m']
+    old={i["path"] for i in remote["tree"] if i["type"]=="blob"}
+    entries += [{"path":"wechat-unified/"+n,"mode":"100644","type":"blob","sha":None} for n in retired if "wechat-unified/"+n in old]
     disabled='name: Disabled inherited workflow\non: workflow_dispatch\njobs:\n  noop:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo disabled\n'
     for i in remote['tree']:
         if i['path'].startswith('.github/workflows/') and i['type']=='blob':

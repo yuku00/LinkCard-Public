@@ -29,8 +29,6 @@ void WURestoreMessageSurface(UIView *cell);
 void WURefreshMessageSurface(UIView *cell, NSString *role);
 void WUInstallMessages(void);
 BOOL WUMessageAvailable(NSString *key);
-void WUInstallPluginHub(void);
-void WUShowPluginHub(UIViewController *owner);
 void WUInstallSettings(void);
 void WUShowSettings(UIViewController *owner);
 void WUShowLinks(UIViewController *owner);
