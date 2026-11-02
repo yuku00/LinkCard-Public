@@ -76,27 +76,86 @@ private enum BackgroundSession {
 
 final class GlassCell: UITableViewCell {
     private let card = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+    let titleLabel = UILabel()
+    let subtitleLabel = UILabel()
+    let iconContainer = UIView()
+    let iconView = UIImageView()
+    private let check = UIImageView(image: UIImage(systemName: "checkmark.circle.fill"))
+    private let textStack = UIStackView()
+    private let row = UIStackView()
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
-        super.init(style: .subtitle, reuseIdentifier: reuseIdentifier)
-        let holder = UIView()
-        holder.backgroundColor = .clear
-        card.clipsToBounds = true
-        card.layer.cornerRadius = 14
-        card.layer.cornerCurve = .continuous
-        holder.addSubview(card)
-        backgroundView = holder
+        super.init(style: .default, reuseIdentifier: reuseIdentifier)
         backgroundColor = .clear
+        selectionStyle = .default
+        card.translatesAutoresizingMaskIntoConstraints = false
+        card.clipsToBounds = true
+        card.layer.cornerRadius = 20
+        card.layer.cornerCurve = .continuous
+        card.layer.borderWidth = 1 / UIScreen.main.scale
+        card.layer.borderColor = UIColor.separator.cgColor
+        contentView.addSubview(card)
+        row.axis = .horizontal; row.alignment = .center; row.spacing = 12
+        row.translatesAutoresizingMaskIntoConstraints = false
+        card.contentView.addSubview(row)
+        iconContainer.translatesAutoresizingMaskIntoConstraints = false
+        iconContainer.backgroundColor = .tertiarySystemFill
+        iconContainer.layer.cornerRadius = 10; iconContainer.clipsToBounds = true
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.contentMode = .scaleAspectFit
+        iconView.isAccessibilityElement = false
+        iconContainer.addSubview(iconView)
+        textStack.axis = .vertical; textStack.spacing = 6
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.adjustsFontForContentSizeCategory = true; titleLabel.numberOfLines = 0
+        subtitleLabel.font = .preferredFont(forTextStyle: .subheadline)
+        subtitleLabel.adjustsFontForContentSizeCategory = true; subtitleLabel.numberOfLines = 2
+        subtitleLabel.textColor = .secondaryLabel
+        textStack.addArrangedSubview(titleLabel); textStack.addArrangedSubview(subtitleLabel)
+        check.tintColor = .systemBlue; check.contentMode = .scaleAspectFit
+        check.isAccessibilityElement = false
+        row.addArrangedSubview(iconContainer); row.addArrangedSubview(textStack); row.addArrangedSubview(check)
+        let iconWidth = iconContainer.widthAnchor.constraint(equalToConstant: 44)
+        let checkWidth = check.widthAnchor.constraint(equalToConstant: 22)
+        iconWidth.priority = .defaultHigh; checkWidth.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            card.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            card.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            card.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 6),
+            card.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -6),
+            row.leadingAnchor.constraint(equalTo: card.contentView.leadingAnchor, constant: 16),
+            row.trailingAnchor.constraint(equalTo: card.contentView.trailingAnchor, constant: -16),
+            row.topAnchor.constraint(equalTo: card.contentView.topAnchor, constant: 16),
+            row.bottomAnchor.constraint(equalTo: card.contentView.bottomAnchor, constant: -16),
+            iconWidth,
+            iconContainer.heightAnchor.constraint(equalToConstant: 44),
+            iconView.centerXAnchor.constraint(equalTo: iconContainer.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: iconContainer.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 32),
+            iconView.heightAnchor.constraint(equalToConstant: 32),
+            checkWidth,
+            check.heightAnchor.constraint(equalToConstant: 22)
+        ])
+        isAccessibilityElement = true
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        if let holder = backgroundView { card.frame = holder.bounds.insetBy(dx: 0, dy: 2) }
+    func configure(title: String, subtitle: String?, icon: UIImage?, selected: Bool, status: Bool = false) {
+        titleLabel.text = title; subtitleLabel.text = subtitle
+        subtitleLabel.isHidden = subtitle == nil
+        iconContainer.isHidden = icon == nil; iconView.image = icon
+        check.isHidden = !selected
+        titleLabel.font = .preferredFont(forTextStyle: status ? .footnote : .headline)
+        accessibilityLabel = [title, subtitle].compactMap { $0 }.joined(separator: ", ")
+        accessibilityTraits = selected ? [.button, .selected] : (status ? .staticText : .button)
+        selectionStyle = status ? .none : .default
+    }
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        card.layer.borderColor = UIColor.separator.resolvedColor(with: traitCollection).cgColor
     }
     override func prepareForReuse() {
         super.prepareForReuse()
-        textLabel?.text = nil; detailTextLabel?.text = nil; imageView?.image = nil
-        accessoryType = .none; accessibilityIdentifier = nil; selectionStyle = .default
-        textLabel?.font = .preferredFont(forTextStyle: .body)
+        configure(title: "", subtitle: nil, icon: nil, selected: false)
+        accessibilityIdentifier = nil
     }
 }
 
@@ -291,32 +350,18 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         section == 0 ? "只读 · \(readState)" : "结果 · 已选择 \(selected.count) 项"
     }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "glass", for: indexPath)
-        cell.textLabel?.font = .preferredFont(forTextStyle: .body)
-        cell.detailTextLabel?.text = nil
-        cell.imageView?.image = nil
-        cell.accessoryType = .none
-        cell.selectionStyle = .default
-        cell.textLabel?.adjustsFontForContentSizeCategory = true
-        cell.detailTextLabel?.adjustsFontForContentSizeCategory = true
-        cell.textLabel?.numberOfLines = 0
-        cell.detailTextLabel?.numberOfLines = 2
+        let cell = tableView.dequeueReusableCell(withIdentifier: "glass", for: indexPath) as! GlassCell
         if indexPath.section == 0 {
-            cell.textLabel?.text = status
-            cell.textLabel?.font = .preferredFont(forTextStyle: .footnote)
-            cell.selectionStyle = .none
+            cell.configure(title: status, subtitle: nil, icon: nil, selected: false, status: true)
             cell.accessibilityIdentifier = "readStatus"
+        } else if mode == .clips {
+            let clip = visibleClips[indexPath.row]
+            let icon = clip.icon.flatMap { UIImage(data: $0) } ?? UIImage(systemName: "bookmark")
+            cell.configure(title: clip.title, subtitle: clip.url, icon: icon, selected: selected.contains(clip.id))
+            cell.accessibilityIdentifier = "contentRow"
         } else {
-            let id: String
-            if mode == .clips {
-                let clip = visibleClips[indexPath.row]
-                id = clip.id; cell.textLabel?.text = clip.title; cell.detailTextLabel?.text = clip.url
-                cell.imageView?.image = clip.icon.flatMap { UIImage(data: $0) } ?? UIImage(systemName: "bookmark")
-            } else {
-                let note = visibleNotes[indexPath.row]
-                id = note.id.uuidString; cell.textLabel?.text = note.title; cell.detailTextLabel?.text = note.text
-            }
-            cell.accessoryType = selected.contains(id) ? .checkmark : .none
+            let note = visibleNotes[indexPath.row]
+            cell.configure(title: note.title, subtitle: note.text, icon: nil, selected: selected.contains(note.id.uuidString))
             cell.accessibilityIdentifier = "contentRow"
         }
         return cell

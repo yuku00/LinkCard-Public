@@ -44,8 +44,8 @@ final class BusinessIntegrationTests: XCTestCase {
         XCTAssertEqual(list.readState, "loaded")
         XCTAssertEqual(list.clips.count, 1)
         let cell = list.tableView(list.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
-        XCTAssertEqual(cell.textLabel?.text, "Synthetic Bookmark")
-        XCTAssertNotNil(cell.imageView?.image) // Missing icon uses a placeholder.
+        XCTAssertEqual((cell as? GlassCell)?.titleLabel.text, "Synthetic Bookmark")
+        XCTAssertNotNil((cell as? GlassCell)?.iconView.image) // Missing icon uses a placeholder.
         list.tableView(list.tableView, didSelectRowAt: IndexPath(row: 0, section: 1))
         XCTAssertEqual(list.selected, ["fixture.webclip"])
         let stage = try await list.prepareExport(markdown: false)
@@ -85,7 +85,7 @@ final class BusinessIntegrationTests: XCTestCase {
         XCTAssertEqual(list.notes.count, 1)
         XCTAssertTrue(list.status.contains("锁定跳过 1"))
         let cell = list.tableView(list.tableView, cellForRowAt: IndexPath(row: 0, section: 1))
-        XCTAssertEqual(cell.textLabel?.text, "Synthetic Note")
+        XCTAssertEqual((cell as? GlassCell)?.titleLabel.text, "Synthetic Note")
         for markdown in [false, true] {
             let stage = try await list.prepareExport(markdown: markdown)
             XCTAssertEqual(stage.urls[0].pathExtension, markdown ? "md" : "txt")

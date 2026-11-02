@@ -34,6 +34,19 @@ final class BackgroundStoreTests: XCTestCase {
             XCTAssertNil(try BackgroundStore(parent: parent).load())
         }
     }
+    func testKnownSystemVarAliasAndHostileAncestor() throws {
+        XCTAssertEqual(BackgroundStore.normalizeSystemVar(URL(fileURLWithPath: "/var/mobile/Library/Application Support")).path, "/private/var/mobile/Library/Application Support")
+        XCTAssertEqual(BackgroundStore.normalizeSystemVar(URL(fileURLWithPath: "/various/Library")).path, "/various/Library")
+        try withParent { parent, _ in
+            let target = parent.appendingPathComponent("target")
+            try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            let link = parent.appendingPathComponent("untrusted")
+            try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+            let store = BackgroundStore(parent: link.appendingPathComponent("Application Support"))
+            XCTAssertThrowsError(try store.save(Data("image".utf8)))
+            XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: target.path).isEmpty)
+        }
+    }
     func testSymlinkDirectoryIsRejected() throws {
         try withParent { parent, store in
             let target = parent.appendingPathComponent("other")

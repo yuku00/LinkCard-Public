@@ -10,12 +10,21 @@ final class BackgroundStore {
     private let imageName = "background.jpg"
     private let limit = 12 * 1024 * 1024
 
+    // /var is an OS alias for /private/var on iOS. Rewrite only this
+    // exact, trusted prefix; all other links are rejected by openat O_NOFOLLOW.
+    static func normalizeSystemVar(_ url: URL) -> URL {
+        let path = url.standardizedFileURL.path
+        if path == "/var" || path.hasPrefix("/var/") {
+            return URL(fileURLWithPath: "/private" + path, isDirectory: true)
+        }
+        return url.standardizedFileURL
+    }
     init(parent: URL? = nil) {
         if let parent = parent {
-            self.parent = parent.standardizedFileURL
+            self.parent = Self.normalizeSystemVar(parent)
             self.verifyAncestors = false // XCTest supplies a private temporary parent.
         } else {
-            self.parent = AppPaths.root.appendingPathComponent("Library/Application Support", isDirectory: true)
+            self.parent = Self.normalizeSystemVar(URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("Library/Application Support", isDirectory: true))
             self.verifyAncestors = true
         }
     }
