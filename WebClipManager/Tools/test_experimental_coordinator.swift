@@ -1,6 +1,7 @@
 import Foundation
 struct Clip { let id: String; let title: String; let removalDisallowed: Bool }
 enum ClipError: Error { case invalid(String) }
+enum ReadAccess { static func failure(_ operation: String, _ code: Int32) -> Error { ClipError.invalid("\(operation): \(code)") } }
 enum RecycleStore { static func backupTest(_ clip: Clip) throws {} }
 func WCMExperimentalDelete(_ id: String) -> [AnyHashable: Any] { fatalError("test uses stub") }
 @main struct Test {
