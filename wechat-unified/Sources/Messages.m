@@ -176,6 +176,7 @@ static NSHashTable *chatActions;
     NSString *account=Account(), *session=Session(v); NSUInteger gen=generation;
     NSArray *selected=WUToolbarActions(WUAccountOptions(account)[@"toolbar"]);
     NSMutableArray *menu=[NSMutableArray array], *grid=[NSMutableArray array]; __weak WUChatActions *weak=self;
+    self.gridEntries=@[];
     if([WUValue(@"enabled") boolValue] && account.length && session.length) for(NSString *key in selected) {
         if([key isEqual:@"messageLinks"] && (!WUEnabled(@"enhancedLinks") || !Has(v,@"getSelectedMsgs","@",@[]))) continue;
         if([key isEqual:@"search"] && !Has(v,@"onSearchItem","v",@[])) continue;
@@ -185,7 +186,7 @@ static NSHashTable *chatActions;
         void (^run)(void)=^{
             WUChatActions *target=weak; UIViewController *owner=target.owner;
             @try {
-                if(!owner.viewIfLoaded.window || owner.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(owner)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:key]) return;
+                if(!owner.viewIfLoaded.window || owner.presentedViewController || (owner.navigationController && owner.navigationController.topViewController!=owner) || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(owner)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:key]) return;
                 if([key isEqual:@"settings"]) WUShowSettings(owner);
                 else if([key isEqual:@"messageLinks"]) OpenSelectedLinks(owner);
                 else if([key isEqual:@"voicePacks"]) OpenVoicePacks(owner);
@@ -215,7 +216,8 @@ static NSHashTable *chatActions;
     WURefreshMomentsInput(v);
 }
 - (void)openGrid {
-    UIViewController *v=self.owner; if(!v.viewIfLoaded.window || v.presentedViewController || !self.gridEntries.count) return;
+    [self refresh];
+    UIViewController *v=self.owner; if(!v.viewIfLoaded.window || v.presentedViewController || !self.gridEntries.count || ![WUValue(@"enabled") boolValue] || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
     WUChatGridController *panel=[WUChatGridController new]; panel.entries=self.gridEntries; panel.columns=self.gridColumns;
     UINavigationController *nav=[[UINavigationController alloc] initWithRootViewController:panel]; nav.modalPresentationStyle=UIModalPresentationPageSheet;
     [v presentViewController:nav animated:YES completion:nil];
@@ -256,6 +258,7 @@ static NSHashTable *chatActions;
 }
 @end
 extern NSArray<NSDictionary *> *WUStatsHostSessions(void);
+extern void WUStatsReadSessionCandidates(BOOL (^current)(void), void (^done)(NSArray *, BOOL));
 static dispatch_queue_t StatsVisitQueue(void) {
     static dispatch_queue_t q; static dispatch_once_t once; dispatch_once(&once,^{ q=dispatch_queue_create("org.wechatunified.stats-visits",DISPATCH_QUEUE_SERIAL); }); return q;
 }
@@ -381,7 +384,7 @@ static void CellWindow(UIView *cell, SEL s) { WURestoreMessageSurface(cell); ((v
 static void CellLayout(UIView *cell, SEL s) {
     WURestoreMessageSurface(cell);
     WUCellActions *a=objc_getAssociatedObject(cell,&cellKey); [a restore]; ((void(*)(id,SEL))cellLayoutOriginal)(cell,s);
-    @try { if(cellModelOriginal && cellWindowOriginal && cellReuseOriginal && Chat(cell)) { id wrap=Wrap(cell); WURefreshMessageSurface(cell,WUCardRole((NSUInteger)Num(wrap,@"m_uiMessageType"),Str(wrap,@"m_nsContent"))); } } @catch(NSException *e) { WURestoreMessageSurface(cell); }
+    @try { if(cellModelOriginal && cellWindowOriginal && cellReuseOriginal && Chat(cell)) { id wrap=Wrap(cell); NSUInteger type=(NSUInteger)Num(wrap,@"m_uiMessageType"); WURefreshMessageSurface(cell,type==1?@"textBubbleSurface":WUCardRole(type,Str(wrap,@"m_nsContent"))); } } @catch(NSException *e) { WURestoreMessageSurface(cell); }
     @try { if(!a) { a=[WUCellActions new]; a.cell=cell; objc_setAssociatedObject(cell,&cellKey,a,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [cellActions addObject:a]; } [a update]; } @catch(NSException *e) { [a restore]; [a.repeat removeFromSuperview]; a.repeat=nil; }
 }
 static void CellReuse(UIView *cell, SEL s) {
@@ -470,7 +473,7 @@ void WUInstallMessages(void) {
         chatActions=[NSHashTable weakObjectsHashTable]; cellActions=[NSHashTable weakObjectsHashTable]; pendingAlerts=[NSHashTable weakObjectsHashTable]; redSeen=[NSMutableOrderedSet orderedSet];
         [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){
             CancelPending(); for(WUChatActions *a in chatActions.allObjects) { @try { [a refresh]; } @catch(NSException *e) {} }
-            for(WUCellActions *a in cellActions.allObjects) { [a restore]; if(!WUEnabled(@"repeatEmoticon")) { [a.repeat removeFromSuperview]; a.repeat=nil; } [a.cell setNeedsLayout]; }
+            for(WUCellActions *a in cellActions.allObjects) { WURestoreMessageSurface(a.cell); [a restore]; if(!WUEnabled(@"repeatEmoticon")) { [a.repeat removeFromSuperview]; a.repeat=nil; } [a.cell setNeedsLayout]; }
         }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(WUChatActions *a in chatActions.allObjects) { @try { [a refresh]; } @catch(NSException *e) {} } }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIKeyboardDidShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(WUChatActions *a in chatActions.allObjects) WURefreshMomentsInput(a.owner); }];
@@ -505,6 +508,16 @@ static void OpenStats(UIViewController *owner) {
         NSUInteger g=generation; __weak UIViewController *weak=owner;
         binding.stillCurrent=^BOOL{ return weak && UIApplication.sharedApplication.applicationState==UIApplicationStateActive && [WUValue(@"enabled") boolValue] && [account isEqual:Account()] && g==generation && [session isEqual:Session(weak)] && [WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:@"stats"]; };
         binding.sessions=WUStatsHostSessions()?:@[];
+        NSArray *loadedSessions=[binding.sessions copy];
+        __weak WUStatsBinding *sessionBinding=binding;
+        binding.readSessions=^(BOOL (^current)(void), void (^done)(NSArray *, BOOL)) {
+            WUStatsReadSessionCandidates(current,^(NSArray *rows, BOOL partial) {
+                WUStatsBinding *base=sessionBinding;
+                if(!base || !current()) return;
+                base.sessions=rows?[loadedSessions arrayByAddingObjectsFromArray:rows]:loadedSessions;
+                done(rows,partial);
+            });
+        };
         NSArray *profileSessions=[binding.sessions copy];
         binding.readProfile=^(BOOL (^current)(void), void (^done)(NSDictionary *)) {
             if(!current()) return;

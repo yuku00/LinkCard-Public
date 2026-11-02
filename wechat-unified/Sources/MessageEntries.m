@@ -182,7 +182,7 @@ static NSString *StoreIcon(NSData *data) {
 void WUOpenSelectedLinks(UIViewController *owner,NSArray<NSDictionary *> *frozen,BOOL (^current)(void)) {
     WUMessageEntryFlow *flow=Begin(owner,current); if(flow) [flow links:WULinkCandidates(frozen)];
 }
-void WUExportEmoticon(UIViewController *owner,NSString *path,BOOL (^current)(void)) {
+static void ExportEmoticon(UIViewController *owner,NSString *path,NSData *bytes,BOOL (^current)(void)) {
     WUMessageEntryFlow *flow=Begin(owner,current); if(!flow) return;
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"下载原表情到文件？" message:@"仅复制当前表情的原GIF/PNG/JPEG字节，再由系统文件选择器选择目标。不用Photos替代，不自动拉取媒体。" preferredStyle:UIAlertControllerStyleAlert];
     __weak WUMessageEntryFlow *weak=flow; __weak UIAlertController *expected=a;
@@ -190,7 +190,7 @@ void WUExportEmoticon(UIViewController *owner,NSString *path,BOOL (^current)(voi
     [a addAction:[UIAlertAction actionWithTitle:@"选择文件保存位置" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [weak chooseController:expected action:^{
         WUMessageEntryFlow *pending=weak; if(![pending valid]) return;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
-            NSData *data=WUEmoticonRead(path); NSString *type=WUEmoticonType(data);
+            NSData *data=bytes?:WUEmoticonRead(path); NSString *type=WUEmoticonType(data);
             dispatch_async(dispatch_get_main_queue(),^{
                 if(![pending valid]) { [pending finish]; return; }
                 if(!type) { [pending notice:@"原表情文件不可得、损坏、超限或格式不支持，未导出。没有静默重编码，也没有用缩略图替代。"]; return; }
@@ -206,6 +206,8 @@ void WUExportEmoticon(UIViewController *owner,NSString *path,BOOL (^current)(voi
         });
     }]; }]]; [flow show:a];
 }
+void WUExportEmoticon(UIViewController *owner,NSString *path,BOOL (^current)(void)) { ExportEmoticon(owner,path,nil,current); }
+void WUExportEmoticonData(UIViewController *owner,NSData *data,BOOL (^current)(void)) { ExportEmoticon(owner,nil,[data copy],current); }
 void WUChooseRepeatIcon(UIViewController *owner) {
     NSString *account=WUCurrentAccount(); NSUInteger generation=WUContextGeneration(); __weak UIViewController *weak=owner;
     if(!account.length) return;

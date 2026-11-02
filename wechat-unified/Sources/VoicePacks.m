@@ -62,11 +62,11 @@ static NSData *Wave(NSData *data) {
     });
 }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return self.rows.count; }
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return @"仅手动所选34类真实配对可发送；AMR/SILK/.wuvoice文件可导入离线试听。导入元数据不授权发送，须与本账号所选原载荷逐字节核对；跨版本仅试听。"; }
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section { return @"外部文件本机转为腾讯SILK并完整校验，绑定当前宿主版本后可手动确认发送；旧导入项仍仅试听。发送结果不代表送达。"; }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; NSDictionary *r=self.rows[path.row];
     c.textLabel.text=r[@"name"]; c.detailTextLabel.numberOfLines=0;
-    c.detailTextLabel.text=[r[@"pairing"] boolValue]?[NSString stringWithFormat:@"所选微信语音 · %@毫秒 · 实测format %@\n来源版本 %@ · %@",r[@"ms"],r[@"format"],r[@"version"],WUVoicePackMatches(r,self.binding.version)?@"可确认单次发送":@"版本不同：仅试听"]:[NSString stringWithFormat:@"外部导入 · %@毫秒\n尚未与宿主载荷配对：仅离线试听/导出",r[@"ms"]];
+    c.detailTextLabel.text=[r[@"source"] isEqual:@"external-encoded-silk-v1"]?[NSString stringWithFormat:@"外部音频 · 本机编码腾讯SILK · %@毫秒\n绑定版本 %@ · %@",r[@"ms"],r[@"version"],WUVoicePackMatches(r,self.binding.version)?@"可确认单次发送":@"版本不同或校验失败：仅试听"]:[r[@"pairing"] boolValue]?[NSString stringWithFormat:@"所选微信语音 · %@毫秒 · 实测format %@\n来源版本 %@ · %@",r[@"ms"],r[@"format"],r[@"version"],WUVoicePackMatches(r,self.binding.version)?@"可确认单次发送":@"版本不同：仅试听"]:[NSString stringWithFormat:@"外部导入 · %@毫秒\n旧导入：仅离线试听/导出",r[@"ms"]];
     return c;
 }
 - (void)importFile {
@@ -91,7 +91,7 @@ static NSData *Wave(NSData *data) {
     NSString *name=url.lastPathComponent.stringByDeletingPathExtension; if(name.length>80) name=[name substringToIndex:80];
     dispatch_async(Queue(),^{
         NSError *error=nil; BOOL ok=NO;
-        @try { ok=[self.store importFile:url name:name current:^BOOL{ return !self.cancellation.cancelled && WUContextGenerationSnapshot()==gen; } error:&error]; }
+        @try { ok=[self.store importFile:url name:name version:self.binding.version current:^BOOL{ return !self.cancellation.cancelled && WUContextGenerationSnapshot()==gen; } error:&error]; }
         @finally { if(scoped) [url stopAccessingSecurityScopedResource]; }
         dispatch_async(dispatch_get_main_queue(),^{ self.busy=NO; if(![self current]) return;
             void (^finish)(void)=^{ if(![self current]) return; if(ok) [self reload]; else [self notice:error.localizedDescription?:@"导入失败，旧包保留"]; };
@@ -176,7 +176,7 @@ static NSData *Wave(NSData *data) {
                 if(![self.player play]) { [self stop]; [self notice:e.localizedDescription?:@"离线试听不可用，没有调用宿主发送"]; } return;
             }
             if(!WUVoicePackMatches(held,self.binding.version) || !operation.milliseconds) { [self stop]; [self notice:@"配对版本、格式或完整解码无效，拒绝发送"]; return; }
-            UIAlertController *a=[UIAlertController alertControllerWithTitle:@"确认单次发送" message:[NSString stringWithFormat:@"来源：所选微信语音 %@\n名称：%@\n真实时长：%u毫秒\n账号：%@\n当前会话收件人：%@\n只请求一次，不保证送达，无自动重试；无跨重启恰好一次保证。",held[@"version"],held[@"name"],operation.milliseconds,self.binding.account,self.binding.target] preferredStyle:UIAlertControllerStyleAlert];
+            UIAlertController *a=[UIAlertController alertControllerWithTitle:@"确认单次发送" message:[NSString stringWithFormat:@"来源：%@（版本 %@）\n名称：%@\n编码后时长：%u毫秒\n账号：%@\n当前会话收件人：%@\n只请求一次，不保证送达，无自动重试；无跨重启恰好一次保证。",[held[@"source"] isEqual:@"external-encoded-silk-v1"]?@"外部音频，本机编码腾讯SILK":@"所选微信语音",held[@"version"],held[@"name"],operation.milliseconds,self.binding.account,self.binding.target] preferredStyle:UIAlertControllerStyleAlert];
             [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action){ [self stop]; }]];
             __block BOOL consumed=NO;
             [a addAction:[UIAlertAction actionWithTitle:@"向此会话请求发送一次" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){

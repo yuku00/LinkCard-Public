@@ -86,6 +86,14 @@ static bool Current(void *p) { BOOL (^block)(void)=(__bridge id)p; return block 
         return [self commit:next current:current error:error];
     }
 }
+- (BOOL)importSelectedPath:(NSString *)path md5:(NSString *)md5 GIFOnly:(BOOL)GIFOnly name:(NSString *)name group:(NSString *)group current:(BOOL (^)(void))current error:(NSError **)error {
+    if(!current || !current()) return Fail(error,@"所选消息或上下文失效，未读取");
+    NSData *original=WUEmoticonRead(path);
+    if(!original || ![WUEmoticonDigest(original) isEqual:md5]) return Fail(error,@"原缓存与所选表情MD5不符或尚未解封装；未导入、未转换");
+    if(GIFOnly && ![WUEmoticonType(original) isEqual:@"com.compuserve.gif"]) return Fail(error,@"所选原数据不是完整GIF；不以静图、缩略图或转码替代");
+    // importData retains original bytes and checks current again through atomic commit.
+    return [self importData:original name:name group:group current:current error:error];
+}
 - (BOOL)importFile:(NSURL *)url name:(NSString *)name group:(NSString *)group current:(BOOL (^)(void))current error:(NSError **)error {
     if(!current || !current() || !url.isFileURL) return Fail(error,@"导入上下文或文件无效");
     // File extensions are not format evidence; WxAM/thumbnail substitutions are not accepted.
@@ -139,7 +147,9 @@ static bool Current(void *p) { BOOL (^block)(void)=(__bridge id)p; return block 
 }
 - (NSDictionary *)resource:(NSString *)identifier error:(NSError **)error {
     @synchronized(Lock()) {
-        for(NSDictionary *r in [self load:error][@"rows"]) if([r[@"id"] isEqual:identifier]) {
+        NSDictionary *state=[self load:error];
+        if(!state) return nil;
+        for(NSDictionary *r in state[@"rows"]) if([r[@"id"] isEqual:identifier]) {
             if([WUEmoticonType(r[@"data"]) isEqual:r[@"uti"]]) return r;
             Fail(error,@"资源完整解码失败；未用首帧或缩略图替代"); return nil;
         }

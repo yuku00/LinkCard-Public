@@ -3,7 +3,6 @@
 #import "WUDictation.h"
 #import "WUNative.h"
 #import "GroupLogic.h"
-#import "PluginHubLogic.h"
 #import "ThemeCatalog.h"
 #import "RepeatOptions.h"
 #import <fcntl.h>
@@ -25,14 +24,14 @@ static NSDictionary *ReadConfig(NSString *name) {
     if (n != d.length) return nil;
     id x = [NSJSONSerialization JSONObjectWithData:d options:0 error:NULL];
     if (![x isKindOfClass:NSDictionary.class] || ![x[@"schema"] isEqual:@1]) return nil;
-    for (NSString *k in @[@"articleImage",@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress", @"voiceRealDuration", @"voiceCarry", @"voiceCountdown", @"voiceWaveform", @"voiceAlways", @"voicePulse", @"voiceSeek", @"enabled", @"ads", @"momentsAds", @"miniSplashAds", @"miniBannerAds", @"miniInterstitialAds", @"keywords", @"inputBorder", @"inputPulse", @"hideHomeSearch", @"fileSurface", @"emoticonSurface", @"noticeBorder", @"separators", @"convenientMoments", @"chatSearch", @"callbackConfirm", @"antiRevoke", @"multiRevoke", @"enhancedLinks", @"repeatEmoticon", @"mergeGroup", @"mergePrivate", @"mergeBottom", @"redReminder", @"themes", @"sunMoon", @"searchSurface", @"referSurface", @"plusSurface", @"toastSurface",@"timeSurface",@"swipeSurface", @"chatSendSurface", @"chatAttachmentSurface"])
+    for (NSString *k in @[@"articleImage",@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress", @"voiceRealDuration", @"voiceCarry", @"voiceCountdown", @"voiceWaveform", @"voiceAlways", @"voicePulse", @"voiceSeek", @"enabled", @"ads", @"momentsAds", @"miniSplashAds", @"miniBannerAds", @"miniInterstitialAds", @"keywords", @"inputBorder", @"inputPulse", @"hideHomeSearch", @"textBubbleSurface", @"fileSurface", @"emoticonSurface", @"noticeBorder", @"separators", @"convenientMoments", @"chatSearch", @"callbackConfirm", @"antiRevoke", @"multiRevoke", @"enhancedLinks", @"repeatEmoticon", @"mergeGroup", @"mergePrivate", @"mergeBottom", @"redReminder", @"themes", @"sunMoon", @"searchSurface", @"referSurface", @"referMessageSurface", @"textPreviewSurface", @"hostPopupSurface", @"quickReplySurface", @"plusSurface", @"toastSurface",@"timeSurface",@"swipeSurface", @"chatSendSurface", @"chatAttachmentSurface"])
         if (x[k] && ![x[k] isKindOfClass:NSNumber.class]) return nil;
     if (x[@"words"] && (![x[@"words"] isKindOfClass:NSString.class] || [x[@"words"] length] > 2048)) return nil;
     for(NSString *k in @[@"themePack",@"bubblePack"]) if(x[k] && (![x[k] isKindOfClass:NSString.class] || ([x[k] length] && ![[NSUUID alloc] initWithUUIDString:x[k]]))) return nil;
     if(x[@"repeatOptions"] && !WUValidRepeatOptions(x[@"repeatOptions"])) return nil;
     if(x[@"accounts"] && !WUValidAccountOptions(x[@"accounts"])) return nil;
     if(x[@"native"] && !WUNativeValidOptions(x[@"native"])) return nil;
-    if(x[@"pluginHub"] && !WUHubValidOptions(x[@"pluginHub"])) return nil;
+    // Legacy pluginHub data is opaque and preserved; it never gates config loading.
     if(x[@"themeOptions"] && !WUValidThemeOptions(x[@"themeOptions"])) return nil;
     if(x[@"surfaceStyles"] && !WUValidSurfaceStyles(x[@"surfaceStyles"])) return nil;
     return x;
@@ -53,13 +52,12 @@ id WUValue(NSString *key) { @synchronized(NSProcessInfo.processInfo) { return sn
 BOOL WUEnabled(NSString *key) { return [WUValue(@"enabled") boolValue] && [WUValue(key) boolValue]; }
 BOOL WUSave(NSString *key, id value) {
     NSCAssert(NSThread.isMainThread, @"UI configuration is main-thread owned");
-    if(![@[@"articleImage",@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress",@"voiceRealDuration",@"voiceCarry",@"voiceCountdown",@"voiceWaveform",@"voiceAlways",@"voicePulse",@"voiceSeek",@"enabled",@"ads",@"momentsAds",@"miniSplashAds", @"miniBannerAds", @"miniInterstitialAds",@"keywords",@"words",@"inputBorder",@"inputPulse",@"hideHomeSearch",@"fileSurface",@"emoticonSurface",@"noticeBorder",@"separators",@"convenientMoments",@"chatSearch",@"callbackConfirm",@"antiRevoke",@"multiRevoke",@"enhancedLinks", @"repeatEmoticon",@"mergeGroup",@"mergePrivate",@"mergeBottom",@"redReminder",@"themes",@"sunMoon",@"themePack",@"bubblePack",@"searchSurface",@"referSurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"chatSendSurface",@"chatAttachmentSurface",@"accounts",@"pluginHub",@"themeOptions",@"surfaceStyles",@"native",@"repeatOptions"] containsObject:key]) return NO;
+    if(![@[@"articleImage",@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress",@"voiceRealDuration",@"voiceCarry",@"voiceCountdown",@"voiceWaveform",@"voiceAlways",@"voicePulse",@"voiceSeek",@"enabled",@"ads",@"momentsAds",@"miniSplashAds", @"miniBannerAds", @"miniInterstitialAds",@"keywords",@"words",@"inputBorder",@"inputPulse",@"hideHomeSearch",@"textBubbleSurface",@"fileSurface",@"emoticonSurface",@"noticeBorder",@"separators",@"convenientMoments",@"chatSearch",@"callbackConfirm",@"antiRevoke",@"multiRevoke",@"enhancedLinks", @"repeatEmoticon",@"mergeGroup",@"mergePrivate",@"mergeBottom",@"redReminder",@"themes",@"sunMoon",@"themePack",@"bubblePack",@"searchSurface",@"referSurface",@"referMessageSurface",@"textPreviewSurface", @"hostPopupSurface", @"quickReplySurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"chatSendSurface",@"chatAttachmentSurface",@"accounts",@"themeOptions",@"surfaceStyles",@"native",@"repeatOptions"] containsObject:key]) return NO;
     BOOL pack=[@[@"themePack",@"bubblePack"] containsObject:key];
     if(pack) { if(![value isKindOfClass:NSString.class] || ([value length] && ![[NSUUID alloc] initWithUUIDString:value])) return NO; }
     else if([key isEqual:@"repeatOptions"]) { if(!WUValidRepeatOptions(value)) return NO; }
     else if([key isEqual:@"accounts"]) { if(!WUValidAccountOptions(value)) return NO; }
     else if([key isEqual:@"native"]) { if(!WUNativeValidOptions(value)) return NO; }
-    else if([key isEqual:@"pluginHub"]) { if(!WUHubValidOptions(value)) return NO; }
     else if([key isEqual:@"themeOptions"]) { if(!WUValidThemeOptions(value)) return NO; }
     else if([key isEqual:@"surfaceStyles"]) { if(!WUValidSurfaceStyles(value)) return NO; }
     else if([key isEqual:@"words"] ? (![value isKindOfClass:NSString.class] || [value length]>2048) : ![value isKindOfClass:NSNumber.class]) return NO;
@@ -108,7 +106,7 @@ NSArray *WUHookStatus(void) {
     for(NSString *k in [[hooks allKeys] sortedArrayUsingSelector:@selector(compare:)]) [out addObject:[NSString stringWithFormat:@"%@ — %@",k,hooks[k]]];
     return out;
 }
-static void Install(void) { if(!WUNativeGuardAllowsHooks()) return; WUInstallNative(); WUInstallNativeInteractions(); WUInstallNativeGames(); WUInstallDictation(); WUInstallVoice(); WUInstallAds(); WUInstallTimeline(); WUInstallMomentsCache(); WUInstallAppearance(); WUInstallSurfaces(); WUInstallThemes(); WUInstallMessages(); WUInstallGroups(); WUInstallHomeGroups(); WUInstallPluginHub(); WUInstallSettings(); WUInstallArticleImage(); }
+static void Install(void) { if(!WUNativeGuardAllowsHooks()) return; WUInstallNative(); WUInstallNativeInteractions(); WUInstallNativeGames(); WUInstallDictation(); WUInstallVoice(); WUInstallAds(); WUInstallTimeline(); WUInstallMomentsCache(); WUInstallAppearance(); WUInstallSurfaces(); WUInstallThemes(); WUInstallMessages(); WUInstallGroups(); WUInstallHomeGroups(); WUInstallSettings(); WUInstallArticleImage(); }
 __attribute__((constructor)) static void Start(void) {
     @autoreleasepool {
         if(![NSBundle.mainBundle.bundleIdentifier isEqual:@"com.tencent.xin"]) return;

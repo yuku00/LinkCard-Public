@@ -90,3 +90,29 @@ NSString *WUSubmitEmoticonData(NSData *original, id manager, NSString *account, 
         return WUSubmitEmoticonCopy(source,manager,account,target,current);
     } @catch(NSException *e) { return @"表情工厂异常；未提交，未尝试备用发送器"; }
 }
+
+NSString *WUPrepareOfficialGIF(NSData *original, NSString *expectedMD5, BOOL (^current)(void)) {
+    @try {
+        if(!NSThread.isMainThread || !current || !current()) return @"上下文已失效，未提交";
+        NSData *bytes=[original copy];
+        NSString *digest=WUEmoticonDigest(bytes);
+        if(![WUEmoticonType(bytes) isEqual:@"com.compuserve.gif"] || ![expectedMD5 isKindOfClass:NSString.class] || ![digest isEqual:expectedMD5.lowercaseString]) return @"所选GIF原始字节或消息MD5不匹配，未提交";
+        Class wc=NSClassFromString(@"AddEmoticonWrap"), ec=NSClassFromString(@"EmojiInfoObj"), uc=NSClassFromString(@"EmoticonUploadInfoObj");
+        for(Class c in @[wc?:NSNull.null,ec?:NSNull.null,uc?:NSNull.null]) {
+            if((id)c==NSNull.null || !WUMatches(class_getInstanceMethod(c,@selector(init)),"@",@[])) return @"微信包装类或初始化签名不匹配，未提交";
+        }
+        id wrap=[[wc alloc] init], emoji=[[ec alloc] init], upload=[[uc alloc] init];
+        if(!wrap || !emoji || !upload || !current()) return @"微信包装对象初始化失败或上下文失效，未提交";
+        if(!Has(wrap,@"setFileType:","v",@[@"@"]) || !Has(wrap,@"fileType","@",@[]) || !Has(wrap,@"setEmojiInfoObj:","v",@[@"@"]) || !Has(wrap,@"emojiInfoObj","@",@[]) || !Has(wrap,@"setUploadInfoObj:","v",@[@"@"]) || !Has(wrap,@"uploadInfoObj","@",@[]) || !Has(emoji,@"setMd5:","v",@[@"@"]) || !Has(emoji,@"md5","@",@[]) || !Numeric(wrap,@"setSource:",YES) || !Numeric(wrap,@"source",NO) || !Numeric(wrap,@"setFileSize:",YES) || !Numeric(wrap,@"fileSize",NO)) return @"微信包装字段签名不匹配，未提交";
+        if(!SetNumber(wrap,@"setSource:",1) || !SetNumber(wrap,@"setFileSize:",bytes.length)) return @"微信包装数值超出范围，未提交";
+        ((void(*)(id,SEL,id))objc_msgSend)(wrap,NSSelectorFromString(@"setFileType:"),@2);
+        ((void(*)(id,SEL,id))objc_msgSend)(emoji,NSSelectorFromString(@"setMd5:"),digest);
+        ((void(*)(id,SEL,id))objc_msgSend)(wrap,NSSelectorFromString(@"setEmojiInfoObj:"),emoji);
+        ((void(*)(id,SEL,id))objc_msgSend)(wrap,NSSelectorFromString(@"setUploadInfoObj:"),upload);
+        id fileType=Object(wrap,@"fileType");
+        if(!current() || Number(wrap,@"source")!=1 || Number(wrap,@"fileSize")!=bytes.length || ![fileType isKindOfClass:NSNumber.class] || ![fileType isEqual:@2] || Object(wrap,@"emojiInfoObj")!=emoji || Object(wrap,@"uploadInfoObj")!=upload || ![Object(emoji,@"md5") isEqual:digest]) return @"微信包装字段回读或上下文校验失败，未提交";
+        // The required raw-data carrier and delegate lifetime are not established for this host.
+        // Never call startAddEmoticonWithWrap: with a guessed path or delegate.
+        return @"已校验GIF原始字节和微信包装字段；原始数据交付字段及回调生命周期尚未核实，未向微信提交，也未添加。";
+    } @catch(NSException *e) { return @"微信GIF包装准备异常，未提交"; }
+}

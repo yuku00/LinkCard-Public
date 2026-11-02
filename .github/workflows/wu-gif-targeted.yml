@@ -1,0 +1,22 @@
+name: GIF targeted iOS compile
+on: push
+permissions:
+  contents: read
+jobs:
+  compile:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compile changed Objective-C sources
+        working-directory: wechat-unified
+        run: |
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          for file in Sources/EmoticonSubmission.m Sources/EmoticonLibrary.m; do
+            xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=16.6 -fobjc-arc -fobjc-arc-exceptions -fblocks -fsyntax-only -Wall -Wextra -Werror -Wno-unused-parameter -Wno-nullability-completeness "$file"
+          done
+      - name: Contracts
+        working-directory: wechat-unified
+        run: python3 tests/test_official_gif.py && python3 tests/test_emoticon_library_contract.py

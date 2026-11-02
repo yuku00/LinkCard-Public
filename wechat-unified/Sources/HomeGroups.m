@@ -51,6 +51,44 @@ static WUHomeSnapshot *Snapshot(id m) {
 }
 static void Refresh(void);
 // Read the unfiltered host-owned arrays, never visible cell text or projected lists.
+void WUStatsReadSessionCandidates(BOOL (^current)(void), void (^done)(NSArray *, BOOL)) {
+    if(!NSThread.isMainThread || !current || !done || !current()) return;
+    @try {
+        id center=Obj(NSClassFromString(@"MMServiceCenter"),@"defaultCenter");
+        Class cls=NSClassFromString(@"MMNewSessionMgr"); SEL service=NSSelectorFromString(@"getService:");
+        Method sm=class_getInstanceMethod(object_getClass(center),service);
+        if(!cls || (!WUMatches(sm,"@",@[@"#"]) && !WUMatches(sm,"@",@[@"@"])) ) { done(nil,YES); return; }
+        id manager=((id(*)(id,SEL,Class))objc_msgSend)(center,service,cls);
+        SEL lookup=NSSelectorFromString(@"GetSessionByUserName:");
+        if(![manager isKindOfClass:cls] || !WUMatches(class_getInstanceMethod(object_getClass(manager),lookup),"@",@[@"@"])) { done(nil,YES); return; }
+        id raw=Obj(manager,@"GetUserNamesOnSessionList");
+        if(![raw isKindOfClass:NSArray.class]) { done(nil,YES); return; }
+        BOOL limited=[raw count]>20000;
+        NSArray *names=[[raw subarrayWithRange:NSMakeRange(0,MIN([raw count],20000))] copy];
+        NSMutableArray *rows=[NSMutableArray array];
+        __block NSUInteger index=0; __block BOOL partial=limited;
+        NSTimeInterval deadline=NSDate.timeIntervalSinceReferenceDate+1.5;
+        __block void (^step)(void)=nil;
+        step=^{
+            @try {
+                if(!current()) { step=nil; return; }
+                if(index<names.count && NSDate.timeIntervalSinceReferenceDate>=deadline) { step=nil; done([rows copy],YES); return; }
+                NSUInteger end=MIN(index+16,names.count);
+                while(index<end) {
+                    if(!current()) { step=nil; return; }
+                    id name=names[index++];
+                    if(![name isKindOfClass:NSString.class] || ![name length] || [name length]>256 || [name rangeOfCharacterFromSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].location!=NSNotFound) { partial=YES; continue; }
+                    id native=((id(*)(id,SEL,id))objc_msgSend)(manager,lookup,name);
+                    NSDictionary *row=Row(native);
+                    if(row && [row[@"username"] isEqual:name] && [@[@"private",@"chatroom"] containsObject:row[@"kind"]]) [rows addObject:row]; else partial=YES;
+                }
+                if(index<names.count) { dispatch_async(dispatch_get_main_queue(),step); return; }
+                step=nil; done([rows copy],partial);
+            } @catch(__unused NSException *e) { step=nil; if(current()) done(nil,YES); }
+        };
+        step();
+    } @catch(__unused NSException *e) { if(current()) done(nil,YES); }
+}
 NSArray<NSDictionary *> *WUStatsHostSessions(void) {
     if(!NSThread.isMainThread || !ready) return nil;
     @try {
