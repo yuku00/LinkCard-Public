@@ -24,6 +24,9 @@ static void OpenEmoticonLibrary(UIViewController *owner) {
             return @{@"wrap":wrap,@"identity":identity,@"path":[path copy],@"md5":md5};
         } @catch(NSException *e) { return nil; }
     };
+    // Pin the toolbar selection before presenting the library; never retarget a later message.
+    NSDictionary *selectedSnapshot=binding.capture();
+    binding.capture=^NSDictionary *{ return current()?selectedSnapshot:nil; };
     binding.selectionCurrent=^BOOL(NSDictionary *capture) {
         @try {
             if(!current()) return NO; id selected=Obj(weak,@"getSelectedMsgs"); id wrap=capture[@"wrap"];

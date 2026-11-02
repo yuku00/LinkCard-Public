@@ -100,6 +100,12 @@ static void WUWords(NSString *text, NSMutableDictionary *words) {
             if(payment && oldPayment && ![type isEqual:r[@"type"]]) { r[@"type"]=@"appUnknown"; r[@"paymentConflict"]=@YES; }
             else if(![r[@"paymentConflict"] boolValue] && ([r[@"type"] isEqual:@"other"] || (payment && !oldPayment))) r[@"type"]=type;
             if (sid.length && ![r[@"sid"] length]) r[@"sid"]=sid;
+            // Same confirmed message: fill missing observations only; never replace
+            // a known value with a possibly conflicting copy from another source.
+            if (![r[@"sender"] length] && WUString(input[@"sender"]).length) r[@"sender"]=WUString(input[@"sender"]);
+            if (![r[@"text"] length] && WUString(input[@"text"]).length) r[@"text"]=WUString(input[@"text"]);
+            if (![r[@"time"] longLongValue] && [input[@"time"] longLongValue]>0) r[@"time"]=input[@"time"];
+            if (sid.length || lk.length) r[@"reliable"]=@YES;
         } else {
             index=@(self.records.count);
             [self.records addObject:[@{@"sid":sid,@"lid":lid,@"source":source,@"sender":WUString(input[@"sender"]),@"time":input[@"time"]?:@0,@"type":type,@"text":WUString(input[@"text"]),@"ordinal":index,@"phase":@(self.interactionPhase),@"reliable":@(sid.length || lk.length)} mutableCopy]];

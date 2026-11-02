@@ -183,6 +183,19 @@ static NSArray *Registry(void) {
         if(next) [v save:next]; else dispatch_async(dispatch_get_main_queue(),^{ [v notice:@"名称/分组为空、超长或条目数超限，原设置保留。"]; });
     }]]; [self presentViewController:a animated:YES completion:nil];
 }
+- (void)removeManualEntry:(NSString *)identifier {
+    if(self.presentedViewController || !Options()[@"custom"][identifier]) return;
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"移除手动添加的入口？" message:@"只移除此手动登记；名称、分组、隐藏和排序偏好保留。插件自身及原入口不会被删除；如果插件自行注册，该入口仍可能显示。" preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __weak WUHubController *weak=self;
+    [a addAction:[UIAlertAction actionWithTitle:@"移除登记" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){
+        WUHubController *v=weak; if(!v.viewIfLoaded.window || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+        NSMutableDictionary *options=[Options() mutableCopy], *custom=[options[@"custom"] mutableCopy];
+        if(!custom[identifier]) return;
+        [custom removeObjectForKey:identifier]; options[@"custom"]=custom; [v save:options];
+    }]];
+    [self presentViewController:a animated:YES completion:nil];
+}
 - (UIContextMenuConfiguration *)tableView:(UITableView *)t contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)p point:(CGPoint)point {
     if(p.section!=1 || p.row<0 || (NSUInteger)p.row>=self.rows.count) return nil;
     NSDictionary *row=self.rows[p.row]; NSString *identifier=row[@"controller"]; __weak WUHubController *weak=self;
@@ -196,7 +209,12 @@ static NSArray *Registry(void) {
         for(NSNumber *delta in @[@(-1),@1]) [actions addObject:[UIAction actionWithTitle:delta.integerValue<0?@"前移一位":@"后移一位" image:nil identifier:nil handler:^(UIAction *a){
             if(!weak.viewIfLoaded.window) return;
             NSDictionary *next=WUHubMove(Options(),Registry(),identifier,delta.integerValue); if(next) [weak save:next];
+            else [weak notice:@"无法移动：已到边界、入口不可用或排序存储已满；原排序保留。"];
         }]];
+        if(Options()[@"custom"][identifier]) {
+            UIAction *remove=[UIAction actionWithTitle:@"移除手动登记…" image:nil identifier:nil handler:^(UIAction *a){ if(weak.viewIfLoaded.window) [weak removeManualEntry:identifier]; }];
+            remove.attributes=UIMenuElementAttributesDestructive; [actions addObject:remove];
+        }
         return [UIMenu menuWithTitle:row[@"title"] children:actions];
     }];
 }

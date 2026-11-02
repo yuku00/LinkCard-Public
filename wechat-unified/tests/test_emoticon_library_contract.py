@@ -12,6 +12,30 @@ class LibraryWiring(unittest.TestCase):
             self.assertIn(item, binding)
         for forbidden in ('UIImagePNGRepresentation', 'UIImageJPEGRepresentation', 'getAll', 'thumb', 'PHAsset', 'NSURLSession', 'DelMsg:'):
             self.assertNotIn(forbidden, binding)
+    def test_selected_gif_action_reaches_store_after_confirmation(self):
+        ui=source('EmoticonLibrary.m')
+        self.assertIn('保存聊天所选GIF（仅本地库）',ui)
+        self.assertIn('[self saveSelectedGIFOnly:YES]',ui)
+        self.assertIn('不是微信官方心形表情入库',ui)
+        save=ui.split('- (void)saveSelectedGIFOnly:')[1].split('- (void)importMenu')[0]
+        self.assertLess(save.index('[self input:'),save.index('[self write:'))
+        self.assertIn('dispatch_sync(dispatch_get_main_queue(),check)',save)
+        self.assertIn('return selected && valid();',save)
+        self.assertIn('current:selectedCurrent error:error',save)
+        self.assertIn('importSelectedPath:capture[@"path"] md5:capture[@"md5"] GIFOnly:GIFOnly',save)
+        for forbidden in ('UIImage', 'WUSubmit', 'AddEmoticon', 'PHPhoto'):
+            self.assertNotIn(forbidden,save)
+
+    def test_selected_gif_original_and_selection_gate(self):
+        binding=source('EmoticonLibraryBindings.inc')
+        self.assertLess(binding.index('selectedSnapshot=binding.capture()'),binding.index('WUShowEmoticonLibrary(owner,binding)'))
+        self.assertIn('return current()?selectedSnapshot:nil',binding)
+        method=source('EmoticonLibraryLogic.m').split('- (BOOL)importSelectedPath:')[1].split('- (BOOL)importFile:')[0]
+        self.assertLess(method.index('!current || !current()'),method.index('WUEmoticonRead(path)'))
+        self.assertIn('[WUEmoticonDigest(original) isEqual:md5]',method)
+        self.assertIn('GIFOnly && ![WUEmoticonType(original) isEqual:@"com.compuserve.gif"]',method)
+        self.assertIn('importData:original name:name group:group current:current',method)
+
     def test_one_submit_implementation_shared_by_repeat_and_library(self):
         text='\n'.join(p.read_text() for p in (ROOT / 'Sources').glob('*') if p.is_file())
         calls=re.findall(r'objc_msgSend\)\([^;]+NSSelectorFromString\(@"AddEmoticonMsg:MsgWrap:"\)', text)

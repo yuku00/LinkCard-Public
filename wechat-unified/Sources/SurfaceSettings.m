@@ -25,7 +25,13 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
     [self.tableView reloadData]; return YES;
 }
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p {
-    [t deselectRowAtIndexPath:p animated:YES]; if(p.section==0) return; if(p.section==2) { [self saveStyle:@{}]; return; }
+    [t deselectRowAtIndexPath:p animated:YES]; if(p.section==0) return;
+    if(p.section==2) {
+        UIAlertController *confirm=[UIAlertController alertControllerWithTitle:@"重置本项样式？" message:@"只清除当前项目的颜色、圆角和字体等样式；不修改开关或其他项目。" preferredStyle:UIAlertControllerStyleAlert];
+        [confirm addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+        [confirm addAction:[UIAlertAction actionWithTitle:@"重置" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x){ [self saveStyle:@{}]; }]];
+        [self presentViewController:confirm animated:YES completion:nil]; return;
+    }
     NSArray *field=self.fields[p.row]; NSString *key=field[0]; BOOL numeric=[@[@"radius",@"borderWidth",@"opacity",@"fontSize",@"fontWeight"] containsObject:key];
     UIAlertController *a=[UIAlertController alertControllerWithTitle:field[1] message:@"留空恢复默认值" preferredStyle:UIAlertControllerStyleAlert];
     [a addTextFieldWithConfigurationHandler:^(UITextField *f){ f.text=[WUSurfaceStyle(self.role)[key] description]; f.autocorrectionType=UITextAutocorrectionTypeNo; f.autocapitalizationType=UITextAutocapitalizationTypeNone; f.placeholder=numeric?@"点值 / 数值":@"#RRGGBBAA"; }];

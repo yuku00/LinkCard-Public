@@ -24,11 +24,12 @@
             NSDictionary *entry=self.entries[i+j]; UIButton *button=[UIButton buttonWithType:UIButtonTypeSystem];
             [button setTitle:entry[@"title"] forState:UIControlStateNormal]; button.titleLabel.numberOfLines=0; button.titleLabel.textAlignment=NSTextAlignmentCenter;
             button.titleLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; button.titleLabel.adjustsFontForContentSizeCategory=YES;
-            button.backgroundColor=UIColor.secondarySystemBackgroundColor; button.layer.cornerRadius=10; button.contentEdgeInsets=UIEdgeInsetsMake(12,6,12,6);
+            button.backgroundColor=UIColor.secondarySystemBackgroundColor; button.layer.cornerRadius=10;
             [button.heightAnchor constraintGreaterThanOrEqualToConstant:60].active=YES;
             __weak WUChatGridController *weak=self; void (^run)(void)=entry[@"run"];
             [button addAction:[UIAction actionWithHandler:^(__kindof UIAction *action){
-                WUChatGridController *panel=weak; if(!panel) return;
+                WUChatGridController *panel=weak; if(!panel || !panel.view.userInteractionEnabled) return;
+                panel.view.userInteractionEnabled=NO;
                 [panel dismissViewControllerAnimated:YES completion:^{ if(run) run(); }];
             }] forControlEvents:UIControlEventTouchUpInside];
             [row addArrangedSubview:button];

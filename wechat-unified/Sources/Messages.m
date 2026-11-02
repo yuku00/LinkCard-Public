@@ -176,6 +176,7 @@ static NSHashTable *chatActions;
     NSString *account=Account(), *session=Session(v); NSUInteger gen=generation;
     NSArray *selected=WUToolbarActions(WUAccountOptions(account)[@"toolbar"]);
     NSMutableArray *menu=[NSMutableArray array], *grid=[NSMutableArray array]; __weak WUChatActions *weak=self;
+    self.gridEntries=@[];
     if([WUValue(@"enabled") boolValue] && account.length && session.length) for(NSString *key in selected) {
         if([key isEqual:@"messageLinks"] && (!WUEnabled(@"enhancedLinks") || !Has(v,@"getSelectedMsgs","@",@[]))) continue;
         if([key isEqual:@"search"] && !Has(v,@"onSearchItem","v",@[])) continue;
@@ -185,7 +186,7 @@ static NSHashTable *chatActions;
         void (^run)(void)=^{
             WUChatActions *target=weak; UIViewController *owner=target.owner;
             @try {
-                if(!owner.viewIfLoaded.window || owner.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(owner)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:key]) return;
+                if(!owner.viewIfLoaded.window || owner.presentedViewController || (owner.navigationController && owner.navigationController.topViewController!=owner) || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![account isEqual:Account()] || gen!=generation || ![session isEqual:Session(owner)] || ![WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:key]) return;
                 if([key isEqual:@"settings"]) WUShowSettings(owner);
                 else if([key isEqual:@"messageLinks"]) OpenSelectedLinks(owner);
                 else if([key isEqual:@"voicePacks"]) OpenVoicePacks(owner);
@@ -215,7 +216,8 @@ static NSHashTable *chatActions;
     WURefreshMomentsInput(v);
 }
 - (void)openGrid {
-    UIViewController *v=self.owner; if(!v.viewIfLoaded.window || v.presentedViewController || !self.gridEntries.count) return;
+    [self refresh];
+    UIViewController *v=self.owner; if(!v.viewIfLoaded.window || v.presentedViewController || !self.gridEntries.count || ![WUValue(@"enabled") boolValue] || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
     WUChatGridController *panel=[WUChatGridController new]; panel.entries=self.gridEntries; panel.columns=self.gridColumns;
     UINavigationController *nav=[[UINavigationController alloc] initWithRootViewController:panel]; nav.modalPresentationStyle=UIModalPresentationPageSheet;
     [v presentViewController:nav animated:YES completion:nil];

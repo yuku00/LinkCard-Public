@@ -55,7 +55,12 @@ NSDictionary *WUHubMove(NSDictionary *o, NSArray<NSDictionary *> *registry, NSSt
     NSArray *rows=WUHubRows(registry,o,YES); NSMutableArray *ids=[[rows valueForKey:@"controller"] mutableCopy];
     NSUInteger at=[ids indexOfObject:identifier];
     if(at==NSNotFound || (delta<0 && !at) || (delta>0 && at+1>=ids.count)) return nil;
-    [ids exchangeObjectAtIndex:at withObjectAtIndex:(NSUInteger)((NSInteger)at+delta)];
-    NSMutableDictionary *out=[o mutableCopy]; out[@"order"]=ids;
+    // Keep positions for temporarily unavailable controllers instead of erasing their order.
+    NSMutableArray *order=[o[@"order"] mutableCopy];
+    for(NSString *name in ids) if(![order containsObject:name]) [order addObject:name];
+    NSUInteger other=(NSUInteger)((NSInteger)at+delta);
+    NSUInteger first=[order indexOfObject:ids[at]], second=[order indexOfObject:ids[other]];
+    [order exchangeObjectAtIndex:first withObjectAtIndex:second];
+    NSMutableDictionary *out=[o mutableCopy]; out[@"order"]=order;
     return WUHubValidOptions(out)?[out copy]:nil;
 }
