@@ -4,11 +4,16 @@ cd "$(dirname "$0")/.."
 mkdir -p build
 python3 tests/test_source.py
 python3 tests/test_github_transport.py
-bash tools/test_message_entries.sh
+python3 tests/miniads/contract.py
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=16.6 \
   -fobjc-arc -fobjc-arc-exceptions -fblocks -fsyntax-only -Wall -Wextra -Werror \
   -Wno-unused-parameter -Wno-nullability-completeness Sources/*.m
+python3 tools/test_hook_ownership.py | tee build/hook-ownership-tests.txt
+WU_REQUIRE_APPLE_TESTS=1 python3 tests/miniads/run.py | tee build/miniads-tests.txt
+rm -r build/miniads
+bash tools/test_message_entries.sh
+sh tools/test_emoticon_library.sh
 python3 tests/make_theme_fixtures.py > build/theme-fixtures.json
 sh tests/run_ui_tests.sh
 cp test-results/theme-primitives.txt test-results/theme-catalog.txt build/
@@ -16,8 +21,11 @@ xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/dictati
 build/dictation-logic-tests | tee build/dictation-logic-tests.txt
 rm build/dictation-logic-tests
 python3 tests/test_dictation_native.py
+WU_REQUIRE_APPLE_TESTS=1 python3 tests/test_voice_display.py | tee build/voice-display-tests.txt
 python3 tests/test_image_entry_contract.py
 python3 tests/test_image_entry_native.py
+python3 tests/test_article_image.py
+python3 tests/test_article_image_native.py
 WU_REQUIRE_APPLE_TESTS=1 sh tests/native/run.sh | tee build/native-tests.txt
 xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/interaction_logic.m Sources/InteractionLogic.m -framework Foundation -o build/interaction-tests
 build/interaction-tests | tee build/interaction-tests.txt
@@ -58,7 +66,7 @@ rm build/voice-logic-tests
 xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/ads_logic.m Sources/AdsLogic.m -framework Foundation -o build/ads-logic-tests
 build/ads-logic-tests | tee build/ads-logic-tests.txt
 rm build/ads-logic-tests
-xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I tests/ads-stubs -I Sources tests/ads_hooks.m Sources/Ads.m Sources/AdsLogic.m -framework Foundation -o build/ads-hook-tests
+xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I tests/ads-stubs -I Sources tests/ads_hooks.m Sources/Ads.m Sources/AdsLogic.m Sources/WUMiniAds.m -framework Foundation -framework JavaScriptCore -o build/ads-hook-tests
 build/ads-hook-tests | tee build/ads-hook-tests.txt
 rm build/ads-hook-tests
 xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/message_logic.m Sources/MessageLogic.m -framework Foundation -o build/message-logic-tests
@@ -87,7 +95,7 @@ xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" \
   -Wall -Wextra -Werror -Wno-unused-parameter -Wno-nullability-completeness \
   -O2 \
   -install_name @rpath/WeChatUnified.dylib \
-  Sources/*.m build/native-boot-ios.o build/codec-iphoneos/libWUOffline.a -Wl,-dead_strip -framework SafariServices -framework Photos -framework AVKit -framework AVFoundation -framework AudioToolbox -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework UniformTypeIdentifiers -lz \
+  Sources/*.m build/native-boot-ios.o build/codec-iphoneos/libWUOffline.a -Wl,-dead_strip -framework WebKit -framework SafariServices -framework Photos -framework AVKit -framework AVFoundation -framework AudioToolbox -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework JavaScriptCore -framework UniformTypeIdentifiers -lz \
   -o build/WeChatUnified.dylib
 bash tools/test_stats.sh
 xcrun strip -x build/WeChatUnified.dylib

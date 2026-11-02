@@ -1,4 +1,5 @@
 #import "WU.h"
+#import "WUArticleImage.h"
 #import "WUDictation.h"
 #import "WUNative.h"
 #import "GroupLogic.h"
@@ -24,7 +25,7 @@ static NSDictionary *ReadConfig(NSString *name) {
     if (n != d.length) return nil;
     id x = [NSJSONSerialization JSONObjectWithData:d options:0 error:NULL];
     if (![x isKindOfClass:NSDictionary.class] || ![x[@"schema"] isEqual:@1]) return nil;
-    for (NSString *k in @[@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress", @"voiceRealDuration", @"voiceCarry", @"voiceCountdown", @"voiceWaveform", @"voiceAlways", @"voicePulse", @"voiceSeek", @"enabled", @"ads", @"momentsAds", @"miniSplashAds", @"keywords", @"inputBorder", @"inputPulse", @"hideHomeSearch", @"fileSurface", @"emoticonSurface", @"noticeBorder", @"separators", @"convenientMoments", @"chatSearch", @"callbackConfirm", @"antiRevoke", @"multiRevoke", @"enhancedLinks", @"repeatEmoticon", @"mergeGroup", @"mergePrivate", @"mergeBottom", @"redReminder", @"themes", @"sunMoon", @"searchSurface", @"referSurface", @"plusSurface", @"toastSurface",@"timeSurface",@"swipeSurface"])
+    for (NSString *k in @[@"articleImage",@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress", @"voiceRealDuration", @"voiceCarry", @"voiceCountdown", @"voiceWaveform", @"voiceAlways", @"voicePulse", @"voiceSeek", @"enabled", @"ads", @"momentsAds", @"miniSplashAds", @"miniBannerAds", @"miniInterstitialAds", @"keywords", @"inputBorder", @"inputPulse", @"hideHomeSearch", @"fileSurface", @"emoticonSurface", @"noticeBorder", @"separators", @"convenientMoments", @"chatSearch", @"callbackConfirm", @"antiRevoke", @"multiRevoke", @"enhancedLinks", @"repeatEmoticon", @"mergeGroup", @"mergePrivate", @"mergeBottom", @"redReminder", @"themes", @"sunMoon", @"searchSurface", @"referSurface", @"plusSurface", @"toastSurface",@"timeSurface",@"swipeSurface", @"chatSendSurface", @"chatAttachmentSurface"])
         if (x[k] && ![x[k] isKindOfClass:NSNumber.class]) return nil;
     if (x[@"words"] && (![x[@"words"] isKindOfClass:NSString.class] || [x[@"words"] length] > 2048)) return nil;
     for(NSString *k in @[@"themePack",@"bubblePack"]) if(x[k] && (![x[k] isKindOfClass:NSString.class] || ([x[k] length] && ![[NSUUID alloc] initWithUUIDString:x[k]]))) return nil;
@@ -52,7 +53,7 @@ id WUValue(NSString *key) { @synchronized(NSProcessInfo.processInfo) { return sn
 BOOL WUEnabled(NSString *key) { return [WUValue(@"enabled") boolValue] && [WUValue(key) boolValue]; }
 BOOL WUSave(NSString *key, id value) {
     NSCAssert(NSThread.isMainThread, @"UI configuration is main-thread owned");
-    if(![@[@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress",@"voiceRealDuration",@"voiceCarry",@"voiceCountdown",@"voiceWaveform",@"voiceAlways",@"voicePulse",@"voiceSeek",@"enabled",@"ads",@"momentsAds",@"miniSplashAds",@"keywords",@"words",@"inputBorder",@"inputPulse",@"hideHomeSearch",@"fileSurface",@"emoticonSurface",@"noticeBorder",@"separators",@"convenientMoments",@"chatSearch",@"callbackConfirm",@"antiRevoke",@"multiRevoke",@"enhancedLinks", @"repeatEmoticon",@"mergeGroup",@"mergePrivate",@"mergeBottom",@"redReminder",@"themes",@"sunMoon",@"themePack",@"bubblePack",@"searchSurface",@"referSurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"accounts",@"pluginHub",@"themeOptions",@"surfaceStyles",@"native",@"repeatOptions"] containsObject:key]) return NO;
+    if(![@[@"articleImage",@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress",@"voiceRealDuration",@"voiceCarry",@"voiceCountdown",@"voiceWaveform",@"voiceAlways",@"voicePulse",@"voiceSeek",@"enabled",@"ads",@"momentsAds",@"miniSplashAds", @"miniBannerAds", @"miniInterstitialAds",@"keywords",@"words",@"inputBorder",@"inputPulse",@"hideHomeSearch",@"fileSurface",@"emoticonSurface",@"noticeBorder",@"separators",@"convenientMoments",@"chatSearch",@"callbackConfirm",@"antiRevoke",@"multiRevoke",@"enhancedLinks", @"repeatEmoticon",@"mergeGroup",@"mergePrivate",@"mergeBottom",@"redReminder",@"themes",@"sunMoon",@"themePack",@"bubblePack",@"searchSurface",@"referSurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"chatSendSurface",@"chatAttachmentSurface",@"accounts",@"pluginHub",@"themeOptions",@"surfaceStyles",@"native",@"repeatOptions"] containsObject:key]) return NO;
     BOOL pack=[@[@"themePack",@"bubblePack"] containsObject:key];
     if(pack) { if(![value isKindOfClass:NSString.class] || ([value length] && ![[NSUUID alloc] initWithUUIDString:value])) return NO; }
     else if([key isEqual:@"repeatOptions"]) { if(!WUValidRepeatOptions(value)) return NO; }
@@ -78,24 +79,36 @@ BOOL WUMatches(Method m, const char *result, NSArray<NSString *> *args) {
     return ok;
 }
 BOOL WUHook(NSString *name, NSString *selector, BOOL meta, const char *ret, NSArray<NSString *> *args, IMP replacement, IMP *original) {
-    if(!WUNativeGuardAllowsHooks()) return NO;
-    NSString *key=[NSString stringWithFormat:@"%@%@ %@",meta?@"+":@"-",name,selector];
-    if([hooks[key] isEqual:@"installed"]) return YES;
-    Class c=NSClassFromString(name); if(meta && c) c=object_getClass(c);
-    SEL s=NSSelectorFromString(selector); Method m=c?class_getInstanceMethod(c,s):NULL;
-    if(!WUMatches(m,ret,args)) { hooks[key]=@"missing/signature mismatch"; return NO; }
-    *original=method_getImplementation(m);
-    // Add an owned override when inherited; never replace a superclass method by accident.
-    if(!class_addMethod(c,s,replacement,method_getTypeEncoding(m))) method_setImplementation(class_getInstanceMethod(c,s),replacement);
-    WUNativeRecordHook(c,s,replacement,original);
-    hooks[key]=@"installed"; return YES;
+    if(!WUNativeGuardAllowsHooks() || !replacement || !original) return NO;
+    static NSMutableDictionary *owners;
+    @synchronized(NSProcessInfo.processInfo) {
+        if(!owners) owners=[NSMutableDictionary dictionary];
+        NSString *key=[NSString stringWithFormat:@"%@%@ %@",meta?@"+":@"-",name,selector];
+        Class c=NSClassFromString(name); if(meta && c) c=object_getClass(c);
+        SEL s=NSSelectorFromString(selector); Method m=c?class_getInstanceMethod(c,s):NULL;
+        NSArray *owner=owners[key];
+        if(owner) {
+            if([owner[0] pointerValue]!=(void *)replacement || [owner[1] pointerValue]!=(void *)original) return NO;
+            BOOL current=*original && WUMatches(m,ret,args) && method_getImplementation(m)==replacement;
+            hooks[key]=current?@"installed":@"overridden/signature mismatch";
+            return current;
+        }
+        if([hooks[key] isEqual:@"installed"]) return NO;
+        if(!WUMatches(m,ret,args)) { hooks[key]=@"missing/signature mismatch"; return NO; }
+        NSArray *record=@[[NSValue valueWithPointer:(void *)replacement],[NSValue valueWithPointer:(void *)original]];
+        *original=method_getImplementation(m);
+        // Add an owned override when inherited; never replace a superclass method by accident.
+        if(!class_addMethod(c,s,replacement,method_getTypeEncoding(m))) method_setImplementation(class_getInstanceMethod(c,s),replacement);
+        WUNativeRecordHook(c,s,replacement,original);
+        owners[key]=record; hooks[key]=@"installed"; return YES;
+    }
 }
 NSArray *WUHookStatus(void) {
     NSMutableArray *out=[NSMutableArray array];
     for(NSString *k in [[hooks allKeys] sortedArrayUsingSelector:@selector(compare:)]) [out addObject:[NSString stringWithFormat:@"%@ — %@",k,hooks[k]]];
     return out;
 }
-static void Install(void) { if(!WUNativeGuardAllowsHooks()) return; WUInstallNative(); WUInstallNativeInteractions(); WUInstallNativeGames(); WUInstallDictation(); WUInstallVoice(); WUInstallAds(); WUInstallTimeline(); WUInstallMomentsCache(); WUInstallAppearance(); WUInstallSurfaces(); WUInstallThemes(); WUInstallMessages(); WUInstallGroups(); WUInstallHomeGroups(); WUInstallPluginHub(); WUInstallSettings(); }
+static void Install(void) { if(!WUNativeGuardAllowsHooks()) return; WUInstallNative(); WUInstallNativeInteractions(); WUInstallNativeGames(); WUInstallDictation(); WUInstallVoice(); WUInstallAds(); WUInstallTimeline(); WUInstallMomentsCache(); WUInstallAppearance(); WUInstallSurfaces(); WUInstallThemes(); WUInstallMessages(); WUInstallGroups(); WUInstallHomeGroups(); WUInstallPluginHub(); WUInstallSettings(); WUInstallArticleImage(); }
 __attribute__((constructor)) static void Start(void) {
     @autoreleasepool {
         if(![NSBundle.mainBundle.bundleIdentifier isEqual:@"com.tencent.xin"]) return;

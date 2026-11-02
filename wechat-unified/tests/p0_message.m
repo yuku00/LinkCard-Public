@@ -49,7 +49,7 @@ int main(int argc, const char **argv) { @autoreleasepool {
     Class parent=NSClassFromString([@"Init" stringByAppendingString:encoding]);
     Class cls=objc_allocateClassPair(parent,"CMessageWrap",0); objc_registerClassPair(cls);
     host=[SharedHost new];
-    id source=[cls new];
+    SharedWrap *source=[cls new]; source.m_uiMessageType=47;
     CHECK(RepeatReady(source));
 #if __has_include("MessageConstruction.h")
     SharedWrap *emoticon=WUCreateMessage(cls,47,@"self");

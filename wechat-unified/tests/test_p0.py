@@ -32,8 +32,10 @@ config_result=execute('p0-config-tests')
 messages=(ROOT/'Sources/Messages.m').read_text()
 gate='#include <string.h>\n#include <stdlib.h>\n'
 gate+=between(core,'static const char *Unqualified','BOOL WUHook(')
-gate+=between(messages,'static BOOL Has(','static id Obj(')
-gate+=between(messages,'static BOOL NumberSetter','static void SetNumber')
+submission=(ROOT/'Sources/EmoticonSubmission.m').read_text()
+gate+=between(submission,'static BOOL Has(','static id Object(')
+gate+=between(submission,'static char NumericEncoding(','static BOOL SetNumber(')
+gate+=between(submission,'BOOL WUEmoticonSourceReady(','NSString *WUSubmitEmoticonCopy(')
 gate+=between(messages,'static BOOL RepeatReady','@interface WUCellActions')
 (BUILD/'p0_repeat_gate.inc').write_text(gate)
 if not (BUILD/'codec-macosx/libWUOffline.a').exists():

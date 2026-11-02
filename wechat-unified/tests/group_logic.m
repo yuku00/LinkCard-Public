@@ -12,6 +12,8 @@ int main(void) { @autoreleasepool {
     assert(!WUValidAccountOptions(@{@"A":@{@"toolbar":@[@"autoReply"]}}));
     assert(WUValidAccountOptions(@{@"A":@{@"toolbar":@[@"repository"]}}));
     assert(WUValidAccountOptions(@{@"A":@{@"toolbar":@[@"emojiSave"]}}));
+    assert(WUValidAccountOptions(@{@"A":@{@"toolbar":@[@"messageLinks",@"imageEmoji",@"emoticonLibrary"]}}));
+    assert([WUToolbarActions(@[@"emoticonLibrary",@"emoticonLibrary",@"imageEmoji"]) isEqual:(@[@"emoticonLibrary",@"imageEmoji"])]);
     assert(!WUValidAccountOptions(@{@"A":@{@"toolbar":@[@"search",@"search"]}}));
     assert(WUValidMD5(a)); assert(!WUValidMD5(@"bad")); assert(!WUValidMD5(@"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"));
     NSArray *ids=@[a,@"custom_emoticon_pid",b];

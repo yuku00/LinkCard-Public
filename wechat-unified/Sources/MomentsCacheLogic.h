@@ -1,5 +1,8 @@
 #import <Foundation/Foundation.h>
 NSArray *WUMCacheMergeComments(NSArray *old, NSArray *observed, NSError **error);
+NSString *WUMCacheCommentStateText(NSDictionary *comment);
+// Completion ret==0 only permits a displayed-snapshot refresh, NOT a true-delete label.
+BOOL WUMCacheSaveCommentCompletion(NSURL *root, NSString *account, NSString *username, NSString *tid, int64_t ret, NSArray *observed, NSTimeInterval now, BOOL (^valid)(void), NSError **error);
 BOOL WUMCacheSaveComments(NSURL *root, NSString *account, NSString *username, NSString *tid, NSArray *observed, NSTimeInterval now, BOOL (^valid)(void), NSError **error);
 NSDictionary *WUMCacheNormalize(id tid, id username, id text);
 NSArray *WUMCacheLoad(NSURL *root, NSString *account, NSError **error);

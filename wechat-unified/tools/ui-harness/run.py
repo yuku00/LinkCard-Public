@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run exactly the existing four UIKit XCTest methods on an installed simulator."""
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -65,7 +66,17 @@ def capture(command, output=None, timeout=120):
     return data
 
 
+def cleanup_owned(out):
+    marker=Path(out)/'booted-by-harness.json'
+    if not marker.is_file(): return
+    device=json.loads(marker.read_text())['udid']
+    subprocess.run(['xcrun','simctl','shutdown',device],check=False,timeout=60,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    marker.unlink(missing_ok=True)
+
+
 def main():
+    if len(sys.argv)==3 and sys.argv[1]=='--cleanup':
+        cleanup_owned(sys.argv[2]); return
     if len(sys.argv) != 3:
         raise RuntimeError("Usage: python3 run.py SOURCE_ROOT NEW_RESULT_DIRECTORY")
     if platform.system() != "Darwin":
@@ -82,9 +93,11 @@ def main():
     project = generate(root, out / "project")
     capture(["plutil", "-lint", str(project / "project.pbxproj")])
     booted_here = device["state"] != "Booted"
+    passed=False
     try:
         if booted_here:
             capture(["xcrun", "simctl", "boot", device["udid"]])
+            (out/'booted-by-harness.json').write_text(json.dumps({'udid':device['udid']}))
         capture(["xcrun", "simctl", "bootstatus", device["udid"], "-b"], timeout=240)
         result = out / "SurfaceTests.xcresult"
         command = ["xcodebuild", "test", "-project", str(project), "-scheme", "SurfaceHarness",
@@ -114,10 +127,11 @@ def main():
             records.extend(test_records(json.loads(capture(command + ["--id", ref], out / f"tests-{i}.json"))))
         require_four_passes(records)
         (out / "verified-tests.json").write_text(json.dumps(records, indent=2))
+        passed=True
         print("PASS: 4/4 real UIKit simulator XCTest. NOT real-device/WeChat validation.", flush=True)
     finally:
-        if booted_here:
-            subprocess.run(["xcrun", "simctl", "shutdown", device["udid"]], check=False, timeout=60)
+        if not (passed and os.environ.get('WU_HARNESS_KEEP_BOOTED')=='1'):
+            cleanup_owned(out)
 
 
 if __name__ == "__main__":

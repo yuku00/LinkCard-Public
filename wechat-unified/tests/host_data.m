@@ -125,6 +125,25 @@ static void Profiles(void) {
     Spin(^BOOL{ return value!=nil; }); NSDictionary *summary=WUStatsProfileSummary(value);
     CHECK([summary[@"memberCount"] isEqual:@3] && [summary[@"unknownContact"] isEqual:@1]);
     CHECK([summary[@"unknownAge"] isEqual:@3] && [summary[@"sex"][@"unknown"] isEqual:@3]);
+    // Real adapter, synthetic loaded sessions: dedupe, distinguish false/unknown,
+    // never include self or rooms, aggregate only confirmed true flags.
+    peer.m_uiSex=2; peer.m_uiAge=23; peer.m_nsCountry=@"CN"; peer.m_nsProvince=@"P";
+    self.isMyContact=NO;
+    NSArray *privateSessions=@[@{@"username":@"peer",@"kind":@"private"},@{@"username":@"peer",@"kind":@"private"},
+        @{@"username":@"self",@"kind":@"private"},@{@"username":@"missing",@"kind":@"private"},
+        @{@"username":@"other",@"kind":@"private"},@{@"username":@"r@chatroom",@"kind":@"private"}];
+    CContact *notFriend=Person(@"other"); mgr.contacts=@{@"peer":peer,@"self":self,@"other":notFriend}; value=nil;
+    WUStatsReadHostProfile(mgr,@"self",@"peer",privateSessions,^BOOL{ return YES; },^(NSDictionary *v){ value=v; });
+    Spin(^BOOL{ return value!=nil; }); NSDictionary *f=value[@"loadedFriends"];
+    CHECK([f[@"scanned"] isEqual:@3] && [f[@"memberCount"] isEqual:@1]);
+    CHECK([f[@"nonFriend"] isEqual:@1] && [f[@"unknownFriend"] isEqual:@1]);
+    CHECK([f[@"sex"][@"female"] isEqual:@1] && [f[@"ages"][@"23"] isEqual:@1]);
+    CHECK(!f[@"members"] && ![[f description] containsString:@"peer"]);
+    CHECK([[WUStatsProfileLines(WUStatsProfileSummary(value),NSTimeZone.localTimeZone) componentsJoinedByString:@"\n"] containsString:@"不是全好友名册"]);
+    NSMutableArray *large=[NSMutableArray array]; for(NSUInteger i=0;i<501;i++) [large addObject:@{@"username":[NSString stringWithFormat:@"u%03lu",(unsigned long)i],@"kind":@"private"}];
+    value=nil; WUStatsReadHostProfile(mgr,@"self",@"peer",large,^BOOL{ return YES; },^(NSDictionary *v){ value=v; });
+    Spin(^BOOL{ return value!=nil; }); f=value[@"loadedFriends"];
+    CHECK([f[@"scanned"] isEqual:@500] && [f[@"unknownFriend"] isEqual:@500] && [f[@"truncated"] boolValue]);
     __block BOOL current=YES,delivered=NO;
     WUStatsReadHostProfile(mgr,@"self",@"r@chatroom",sessions,^BOOL{ return current; },^(NSDictionary *v){ delivered=YES; });
     current=NO; NSUInteger calls=mgr.calls; __block BOOL tick=NO;

@@ -36,6 +36,13 @@ def upload():
     allowed += ['Sources/LinkLogic.h', 'Sources/LinkLogic.m', 'Sources/MessageEntries.h', 'Sources/MessageEntries.m', 'Sources/MessageEntryBindings.inc', 'Sources/RepeatOptions.h', 'Sources/RepeatSettings.m', 'tests/message_entry_logic.m', 'tests/test_message_entries.py', 'tools/test_message_entries.sh']
     allowed += ['Sources/WUImageEntry.h','Sources/WUImageEntry.m','tests/image-entry-stubs/UIKit/UIKit.h','tests/image_entry_native.m','tests/test_image_entry_native.py','tests/test_image_entry_contract.py']
     allowed += ['Sources/WUNativeEntries.m','tests/native-gaps/native_entries.m','tests/native-gaps/native_boundary.m','tests/native-gaps/run.sh']
+    allowed += ['Sources/WUArticleImage.h','Sources/WUArticleImage.m','Sources/WUArticleImageDOM.inc','Sources/WUArticleImageFetch.h','Sources/WUArticleImageFetch.m','tests/test_article_image.py','tests/article_image_dom.js','tests/test_article_image_native.py','tests/article_image_fetch_native.m','tests/article_image_data_native.m','tests/article_image_ui.m','tools/test_article_image_ios.py','ARTICLE-IMAGE.md']
+    allowed += ['Sources/WUMiniAds.h','Sources/WUMiniAds.m','Sources/WUMiniAdsScript.inc','tests/miniads/bridge.m','tests/miniads/fixture.js','tests/miniads/run.py','tests/miniads/contract.py']
+    allowed += ['Sources/VoiceDisplay.h','Sources/VoiceDisplay.m','Sources/VoiceDisplayPolicy.h','tests/test_voice_display.py','tests/voice_display_policy.c','tests/voice_display_native.m']
+    allowed += ['tests/WUStatsHistoryTests.m','tests/history-events/comment_history.m','tests/history-events/extract_callback.py','tests/history-events/test_contract.py']
+    allowed += ['Sources/EmoticonLibrary.h','Sources/EmoticonLibrary.m','Sources/EmoticonLibraryBindings.inc','Sources/EmoticonLibraryLogic.h','Sources/EmoticonLibraryLogic.m','Sources/EmoticonLibrarySafety.h','Sources/EmoticonSubmission.h','Sources/EmoticonSubmission.m','tests/emoticon_library_atomic.c','tests/emoticon_library_native.m','tests/test_emoticon_library_contract.py','tools/test_emoticon_library.sh']
+    allowed += ['tests/hook_ownership.m','tools/test_hook_ownership.py']
+    allowed += ['Sources/VoicePath.h']
     # Exact manifest closure only: no SDK repository/history, binaries or private media.
     vendor=json.loads((ROOT/'Vendor/manifest.json').read_text())
     for name,digest in vendor['sha256'].items():

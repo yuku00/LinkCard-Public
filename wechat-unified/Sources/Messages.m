@@ -12,6 +12,9 @@
 #import "MessageEntries.h"
 #import "WUImageEntry.h"
 #import "RepeatOptions.h"
+#import "EmoticonLibrary.h"
+#import "EmoticonSubmission.h"
+static void OpenEmoticonLibrary(UIViewController *owner);
 static void OpenSelectedLinks(UIViewController *owner);
 static void DownloadRepeat(UIView *cell);
 static void OpenVoicePacks(UIViewController *owner);
@@ -175,7 +178,7 @@ static NSHashTable *chatActions;
         if([key isEqual:@"search"] && !Has(v,@"onSearchItem","v",@[])) continue;
         if([key isEqual:@"stats"] && !StatsReady(Service(@"CMessageMgr"))) continue;
         if([key isEqual:@"moments"] && (!WUEnabled(@"convenientMoments") || !WUMomentsAvailable())) continue;
-        NSString *title=@{@"messageLinks":@"所选消息链接",@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"repository":@"消息仓库",@"voiceForward":@"所选语音转发",@"voicePacks":@"本地语音包",@"emojiSave":@"所选表情保存图库",@"imageEmoji":@"所选图片 → 微信表情编辑",@"moments":@"半屏朋友圈"}[key];
+        NSString *title=@{@"messageLinks":@"所选消息链接",@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"repository":@"消息仓库",@"voiceForward":@"所选语音转发",@"voicePacks":@"本地语音包",@"emojiSave":@"所选表情保存图库",@"imageEmoji":@"所选图片 → 微信表情编辑",@"emoticonLibrary":@"本地表情分组 / 资源库",@"moments":@"半屏朋友圈"}[key];
         [menu addObject:[UIAction actionWithTitle:title image:nil identifier:nil handler:^(UIAction *action){
             WUChatActions *target=weak; UIViewController *owner=target.owner;
             @try {
@@ -183,6 +186,7 @@ static NSHashTable *chatActions;
                 if([key isEqual:@"settings"]) WUShowSettings(owner);
                 else if([key isEqual:@"messageLinks"]) OpenSelectedLinks(owner);
                 else if([key isEqual:@"voicePacks"]) OpenVoicePacks(owner);
+                else if([key isEqual:@"emoticonLibrary"]) OpenEmoticonLibrary(owner);
                 else if([key isEqual:@"voiceForward"]) ForwardSelectedVoice(owner);
                 else if([key isEqual:@"emojiSave"]) SaveSelectedEmoticon(owner);
                 else if([key isEqual:@"imageEmoji"]) WUOpenSelectedImageEditor(owner);
@@ -272,26 +276,12 @@ static void ChatAppeared(UIViewController *v,SEL s,BOOL animated) {
 static void ChatDisappeared(UIViewController *v,SEL s,BOOL animated) {
     UIViewController *presented=v.presentedViewController;
     BOOL ownStats=[presented isKindOfClass:UINavigationController.class] && [[(UINavigationController *)presented topViewController] isKindOfClass:NSClassFromString(@"WUStatsController")];
-    if(!WUImageEntryOwnsNavigation(v) && !ownStats && !WUMessageEntriesOwnsController(presented) && !WUNativeOwnsController(presented) && !WUIsMomentsSheet(presented) && !WUIsRepositoryController(presented) && !WUIsVoicePacksController(presented)) CancelPending();
+    if(!WUImageEntryOwnsNavigation(v) && !ownStats && !WUMessageEntriesOwnsController(presented) && !WUNativeOwnsController(presented) && !WUIsMomentsSheet(presented) && !WUIsRepositoryController(presented) && !WUIsVoicePacksController(presented) && !WUIsEmoticonLibraryController(presented)) CancelPending();
     ((void(*)(id,SEL,BOOL))chatDisappearOriginal)(v,s,animated);
 }
 
 #import "MessageConstruction.h"
-static BOOL NumberSetter(id o, NSString *s) {
-    for(NSString *t in @[@"I",@"i",@"Q",@"q"]) if(Has(o,s,"v",@[t])) return YES;
-    return NO;
-}
-static void SetNumber(id o, NSString *s, uint64_t n) {
-    NSInvocation *v=[NSInvocation invocationWithMethodSignature:[o methodSignatureForSelector:NSSelectorFromString(s)]];
-    v.target=o; v.selector=NSSelectorFromString(s); [v setArgument:&n atIndex:2]; [v invoke];
-}
-static BOOL RepeatReady(id wrap) {
-    Class c=NSClassFromString(@"CMessageWrap");
-    if(!WUMessageCanConstruct(c) || !Has(wrap,@"copyToMsg:","v",@[@"@"]) || !Has(Service(@"CMessageMgr"),@"AddEmoticonMsg:MsgWrap:","v",@[@"@",@"@"])) return NO;
-    for(NSString *s in @[@"setM_nsFromUsr:",@"setM_nsToUsr:",@"setM_nsRealChatUsr:"]) if(!WUMatches(class_getInstanceMethod(c,NSSelectorFromString(s)),"v",@[@"@"])) return NO;
-    for(NSString *s in @[@"setM_uiCreateTime:",@"setM_uiMesLocalID:",@"setM_n64MesSvrID:"]) if(!NumberSetter(wrap,s)) return NO;
-    return YES;
-}
+static BOOL RepeatReady(id wrap) { return WUEmoticonSourceReady(wrap,Service(@"CMessageMgr")); }
 @interface WUCellActions : NSObject
 @property(nonatomic,weak) UIView *cell;
 @property(nonatomic,strong) UIButton *repeat;
@@ -358,18 +348,11 @@ static NSDictionary *GroupInfo(id model, NSString *session, NSString *account) {
         Confirm(v,@"repeatEmoticon",@"向当前会话复读这个表情？",^BOOL{ return weak.cell.window && Wrap(weak.cell)==source && [Info(source) isEqual:frozen] && !weak.submitting; },^{
             WUCellActions *state=weak; if(!state) return; state.submitting=YES;
             @try {
-                // Fresh object, copy only via the host protocol, then clear original identity.
-                id message=WUCreateMessage(NSClassFromString(@"CMessageWrap"),47,account);
-                if(!message) { Notice(v,@"无法构造新表情消息，未提交。"); return; }
-                ((void(*)(id,SEL,id))objc_msgSend)(source,NSSelectorFromString(@"copyToMsg:"),message);
-                ((void(*)(id,SEL,id))objc_msgSend)(message,NSSelectorFromString(@"setM_nsFromUsr:"),account);
-                ((void(*)(id,SEL,id))objc_msgSend)(message,NSSelectorFromString(@"setM_nsToUsr:"),session);
-                ((void(*)(id,SEL,id))objc_msgSend)(message,NSSelectorFromString(@"setM_nsRealChatUsr:"),nil);
-                SetNumber(message,@"setM_uiCreateTime:",(uint64_t)NSDate.date.timeIntervalSince1970); SetNumber(message,@"setM_uiMesLocalID:",0); SetNumber(message,@"setM_n64MesSvrID:",0);
-                if(![account isEqual:Account()] || !WUEnabled(@"repeatEmoticon") || ![session isEqual:Session(v)]) return;
-                // The sole submission point. No AddMsg/forward fallback, no automatic retry.
-                ((void(*)(id,SEL,id,id))objc_msgSend)(Service(@"CMessageMgr"),NSSelectorFromString(@"AddEmoticonMsg:MsgWrap:"),session,message);
-                dispatch_async(dispatch_get_main_queue(),^{ Notice(v,@"表情发送已请求，送达状态以宿主为准。"); });
+                NSUInteger repeatGeneration=WUContextGenerationSnapshot();
+                NSString *result=WUSubmitEmoticonCopy(source,Service(@"CMessageMgr"),account,session,^BOOL{
+                    return repeatGeneration==WUContextGenerationSnapshot() && [account isEqual:Account()] && [session isEqual:Session(v)] && WUEnabled(@"repeatEmoticon") && [(WUValue(@"repeatOptions")?:WURepeatDefaults())[@"normalRepeat"] boolValue] && state.cell.window && Wrap(state.cell)==source && [Info(source) isEqual:frozen];
+                });
+                dispatch_async(dispatch_get_main_queue(),^{ Notice(v,result); });
             } @catch(NSException *e) { dispatch_async(dispatch_get_main_queue(),^{ Notice(v,@"表情操作结果未知，未重试；请核对聊天记录。"); }); }
             @finally { state.submitting=NO; }
         });
@@ -434,9 +417,15 @@ static void Arrival(id self, SEL cmd, id sessionArg, id wrap) {
                 for(WUCellActions *a in cellActions.allObjects) if(a.cell.window && [Session(Chat(a.cell)) isEqual:session] && Num(Wrap(a.cell),@"m_n64MesSvrID")==[m[@"id"] unsignedLongLongValue]) { target=a.cell; break; }
                 if(target) {
                     [alert addAction:[UIAlertAction actionWithTitle:@"定位当前红包消息" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){
-                        UIView *cell=target;
-                        if(!WUEnabled(@"redReminder") || ![account isEqual:Account()] || g!=generation || !cell.window || ![Session(Chat(cell)) isEqual:session] || Num(Wrap(cell),@"m_n64MesSvrID")!=[m[@"id"] unsignedLongLongValue]) return;
-                        for(UIView *p=cell.superview;p;p=p.superview) if([p isKindOfClass:UIScrollView.class]) { [(UIScrollView *)p scrollRectToVisible:[cell convertRect:cell.bounds toView:p] animated:YES]; UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification,cell); break; }
+                        @try {
+                            UIView *cell=target;
+                            BOOL valid=WUEnabled(@"redReminder") && [account isEqual:Account()] && g==generation && UIApplication.sharedApplication.applicationState==UIApplicationStateActive && cell.window && [Session(Chat(cell)) isEqual:session] && Num(Wrap(cell),@"m_n64MesSvrID")==[m[@"id"] unsignedLongLongValue];
+                            if(valid) for(UIView *p=cell.superview;p;p=p.superview) if([p isKindOfClass:UIScrollView.class]) { [(UIScrollView *)p scrollRectToVisible:[cell convertRect:cell.bounds toView:p] animated:YES]; UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification,cell); return; }
+                        } @catch(NSException *e) {}
+                        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.5*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+                            UIViewController *visible=ForegroundOwner();
+                            Notice(visible,@"红包消息定位失败或上下文已变化，请在会话列表手动查找。不会自动领取。");
+                        });
                     }]];
                 } else alert.message=@"收到新的红包消息，请在会话列表打开对应聊天。本宿主跨会话定位接口尚未适配；不会自动领取。";
                 [pendingAlerts addObject:alert]; [owner presentViewController:alert animated:YES completion:nil];
@@ -495,6 +484,8 @@ static void OpenStats(UIViewController *owner) {
         WUStatsBinding *binding=[WUStatsBinding new]; binding.account=account; binding.session=session; binding.group=[session hasSuffix:@"@chatroom"]; binding.messageManager=mgr;
         // Exact encoding is pinned only AFTER the independent semantic/width gate.
         binding.verifiedEncoding=[NSString stringWithUTF8String:method_getTypeEncoding(method)];
+        binding.scanAppMessages=YES; binding.appEncoding=WUStatsAppMethodEncoding(mgr);
+        binding.decodeAppPage=^NSDictionary *(NSArray *page,NSDictionary *cursor) { return WUStatsDecodeHostPage(page,0,account,session,YES); };
         binding.initialCursor=@{@"id":@0,@"time":@0}; // 0x158ca0c..30, not a guessed UINT_MAX cursor.
         NSUInteger g=generation; __weak UIViewController *weak=owner;
         binding.stillCurrent=^BOOL{ return weak && UIApplication.sharedApplication.applicationState==UIApplicationStateActive && [WUValue(@"enabled") boolValue] && [account isEqual:Account()] && g==generation && [session isEqual:Session(weak)] && [WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:@"stats"]; };
@@ -513,24 +504,7 @@ static void OpenStats(UIViewController *owner) {
             dispatch_async(dispatch_get_main_queue(),^{ if(g==WUContextGeneration() && [account isEqual:Account()]) done(ok); });
         }); };
         NSDictionary *(^decodeForSession)(NSArray *,uint32_t,NSDictionary *,NSString *)=^NSDictionary *(NSArray *page,uint32_t left,NSDictionary *cursor,NSString *session) {
-            BOOL group=[session hasSuffix:@"@chatroom"];
-            NSMutableArray *records=[NSMutableArray arrayWithCapacity:page.count]; uint64_t minID=0, minTime=0;
-            for(id wrap in page) {
-                if(![wrap isKindOfClass:NSClassFromString(@"CMessageWrap")]) return nil;
-                NSDictionary *m=Info(wrap); if(!InSession(m,account,session)) return nil;
-                uint64_t local=[m[@"local"] unsignedLongLongValue], time=[m[@"time"] unsignedLongLongValue];
-                if(local>UINT32_MAX || time>UINT32_MAX) return nil;
-                if(local && (!minID || local<minID || (local==minID && time<minTime))) { minID=local; minTime=time; }
-                NSString *sender=group?([m[@"from"] isEqual:account]?account:m[@"real"]):m[@"from"];
-                NSString *type=@"other"; switch([m[@"type"] unsignedIntValue]) { case 1:type=@"text";break; case 3:type=@"image";break; case 34:type=@"voice";break; case 43:case 62:type=@"video";break; case 47:type=@"emoji";break; case 48:type=@"location";break; case 10000:type=@"system";break; default:break; }
-                if([m[@"type"] unsignedIntValue]==49 && [Str(Obj(wrap,@"m_oWCPayInfoItem"),@"m_c2cNativeUrl") hasPrefix:@"wxpay://c2cbizmessagehandler/hongbao/receivehongbao?"]) type=@"redpacket";
-                NSString *text=[type isEqual:@"text"]?Str(wrap,@"m_nsContent"):@"";
-                if(text.length>8192) text=[text substringToIndex:8192];
-                [records addObject:@{@"sid":[m[@"id"] stringValue],@"lid":[m[@"local"] stringValue],@"sender":sender?:@"",@"time":m[@"time"],@"type":type,@"text":text?:@"",@"source":@"normal"}];
-            }
-            // Do not equate a short page or an untrusted LeftCount alone with end.
-            if(page.count && !minID) return nil;
-            return @{@"records":[records copy],@"next":@{@"id":@(minID),@"time":@(minTime)},@"done":@(page.count==0 && left==0)};
+            return WUStatsDecodeHostPage(page,left,account,session,NO);
         };
         binding.decodePage=^NSDictionary *(NSArray *page,uint32_t left,NSDictionary *cursor) { return decodeForSession(page,left,cursor,session); };
         __weak WUStatsBinding *weakBinding=binding;
@@ -541,6 +515,8 @@ static void OpenStats(UIViewController *owner) {
             WUStatsBinding *child=[WUStatsBinding new]; child.account=account; child.session=target; child.group=[target hasSuffix:@"@chatroom"]; child.messageManager=mgr;
             child.verifiedEncoding=base.verifiedEncoding; child.initialCursor=base.initialCursor; child.stillCurrent=base.stillCurrent; child.timeZone=base.timeZone; child.dateRange=base.dateRange;
             child.decodePage=^NSDictionary *(NSArray *page,uint32_t left,NSDictionary *cursor) { return decodeForSession(page,left,cursor,target); };
+            child.scanAppMessages=base.scanAppMessages; child.appEncoding=base.appEncoding;
+            child.decodeAppPage=^NSDictionary *(NSArray *page,NSDictionary *cursor) { return WUStatsDecodeHostPage(page,0,account,target,YES); };
             return child;
         };
         WUStatsBindOwner(owner,binding); WUShowStats(owner);
@@ -609,6 +585,7 @@ static void OpenRepository(UIViewController *owner) {
 
 
 #include "MessageEntryBindings.inc"
+#include "EmoticonLibraryBindings.inc"
 
 // Evidence: WCPulse 0xb8514 / 0xb8760-68 (NO,NO), 0x12be34 raw Photos resource.
 static char emojiSaveKey;

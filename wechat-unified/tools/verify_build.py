@@ -1,12 +1,21 @@
 """Verify one successful published build and snapshot its exact source allowlist.
 Does not install the product, execute it, or claim host compatibility.
 """
-import base64, hashlib, json, struct, sys, zipfile
+import ast, base64, hashlib, json, struct, sys, zipfile
 from pathlib import PurePosixPath
 from github_native import ROOT, REPO, api, request_bytes
 
 def sha(data): return hashlib.sha256(data).hexdigest()
 def blob(data): return hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+
+def verified_ui(out, filename, runner):
+    tree=ast.parse((ROOT/runner).read_text())
+    matches=[n.value for n in tree.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='EXPECTED' for t in n.targets)]
+    assert len(matches)==1
+    expected=ast.literal_eval(matches[0]); assert isinstance(expected,set) and expected
+    records=json.loads((out/filename).read_text())
+    assert len(records)==len(expected) and {r[0] for r in records}==expected and all(r[1]=='Success' for r in records)
+    return records
 
 def verify(run):
     if not run.isdigit(): raise ValueError('Numeric run ID required')
@@ -34,8 +43,10 @@ def verify(run):
     assert (magic,cpu,kind)==(0xfeedfacf,0x100000c,6)
     digest=sha(library); assert digest in (out/'SHA256SUMS').read_text()
     assert 'valid on disk' in (out/'signature.txt').read_text()
-    ui=json.loads((out/'uikit-verified-tests.json').read_text())
-    assert len(ui)==4 and all(row[1]=='Success' for row in ui)
+    ui=verified_ui(out,'uikit-verified-tests.json','tools/ui-harness/run.py')
+    article_ui=[]
+    if 'wechat-unified/tools/test_article_image_ios.py' in state['paths']:
+        article_ui=verified_ui(out,'article-uikit-verified-tests.json','tools/test_article_image_ios.py')
     assert api('GET',p+'/git/ref/heads/'+state['branch'])['object']['sha']==commit
     treeid=api('GET',p+'/git/commits/'+commit)['tree']['sha']
     tree=api('GET',p+'/git/trees/'+treeid+'?recursive=1'); assert not tree.get('truncated')
@@ -53,7 +64,7 @@ def verify(run):
             rows.append({'path':name,'sha256':sha(content),'bytes':len(content)})
             z.writestr(name,content)
         z.writestr('SOURCE-MANIFEST.json',json.dumps({'commit':commit,'run':run,'scope':'current source checkpoint, NOT complete retained-feature delivery or real WeChat validation','files':rows},ensure_ascii=False,indent=2))
-    result={'run':run,'commit':commit,'artifact':meta['id'],'zip_bytes':len(data),'zip_sha256':sha(data),'dylib_bytes':len(library),'dylib_sha256':digest,'source_files':len(rows),'source_zip':source.name,'source_sha256':sha(source.read_bytes()),'local_result_notes_differ':note_differences,'UIKit':ui,'real_host_tested':False}
+    result={'run':run,'commit':commit,'artifact':meta['id'],'zip_bytes':len(data),'zip_sha256':sha(data),'dylib_bytes':len(library),'dylib_sha256':digest,'source_files':len(rows),'source_zip':source.name,'source_sha256':sha(source.read_bytes()),'local_result_notes_differ':note_differences,'UIKit':ui,'article_UIKit':article_ui,'UIKit_total':len(ui)+len(article_ui),'real_host_tested':False}
     (ROOT/('artifacts/verification-'+run+'.json')).write_text(json.dumps(result,ensure_ascii=False,indent=2))
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=='__main__': verify(sys.argv[1])

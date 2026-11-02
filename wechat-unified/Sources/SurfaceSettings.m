@@ -1,6 +1,6 @@
 #import "WU.h"
 #import "ThemeCatalog.h"
-static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入框",@"noticeBorder":@"聊天系统通知",@"searchSurface":@"搜索栏",@"referSurface":@"输入区引用卡片",@"plusSurface":@"首页右上加号菜单",@"toastSurface":@"宿主Toast",@"timeSurface":@"聊天时间标签",@"swipeSurface":@"首页左滑菜单",@"fileSurface":@"文件消息背景",@"emoticonSurface":@"表情消息背景"}; }
+static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入框",@"noticeBorder":@"聊天系统通知",@"searchSurface":@"搜索栏",@"referSurface":@"输入区引用卡片",@"plusSurface":@"首页右上加号菜单",@"toastSurface":@"宿主Toast",@"timeSurface":@"聊天时间标签",@"swipeSurface":@"首页左滑菜单",@"fileSurface":@"文件消息背景",@"emoticonSurface":@"表情消息背景",@"chatSendSurface":@"聊天发送按钮",@"chatAttachmentSurface":@"聊天附件按钮"}; }
 @interface WUSurfaceEditor : UITableViewController
 @property(nonatomic,copy) NSString *role;
 @property(nonatomic,strong) NSArray *fields;
@@ -9,7 +9,7 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
 - (void)viewDidLoad { [super viewDidLoad]; self.title=RoleTitles()[self.role]; self.fields=@[@[@"radius",@"圆角 (0–80pt)"],@[@"borderWidth",@"描边尺寸 (0–8pt)"],@[@"opacity",@"背景视图透明度 (0–1)"],@[@"fontSize",@"字体尺寸 (8–48pt)"],@[@"fontWeight",@"系统字体粗细 (-1–1)"],@[@"fontName",@"已安装字体 PostScript 名"],@[@"background",@"浅色背景"],@[@"backgroundDark",@"深色背景"],@[@"text",@"浅色文字"],@[@"textDark",@"深色文字"],@[@"tint",@"浅色图标"],@[@"tintDark",@"深色图标"],@[@"border",@"浅色描边"],@[@"borderDark",@"深色描边"]]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 3; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==1?self.fields.count:1; }
-- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s==0?@"仍受整合总开关控制。仅修改已确认的视图及其中实际文字控件；文件/表情背景没有文字时字体项不生效。":s==1?@"颜色使用 #RGB / #RGBA / #RRGGBB / #RRGGBBAA 或 transparent。留空恢复该项默认。深色未配置跟随浅色；显式设置优先于主题色表。字体不存在时保留原字体，修改字重时使用系统字体。不猜发送按钮标题、不修改聊天附件面板或系统键盘。":@"重置只删除本项样式，不删除主题、不修改业务开关。关闭后按逐属性所有权恢复，不覆盖宿主后来修改的值。"; }
+- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s==0?@"仍受整合总开关控制。仅修改已确认的视图及其中实际文字控件；文件/表情背景没有文字时字体项不生效。":s==1?@"颜色使用 #RGB / #RGBA / #RRGGBB / #RRGGBBAA 或 transparent。留空恢复该项默认。深色未配置跟随浅色；显式设置优先于主题色表。字体不存在时保留原字体，修改字重时使用系统字体。聊天按钮不改点击行为；不修改聊天附件面板或系统键盘。":@"重置只删除本项样式，不删除主题、不修改业务开关。关闭后按逐属性所有权恢复，不覆盖宿主后来修改的值。"; }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil]; c.textLabel.numberOfLines=0;
     if(p.section==0) { c.textLabel.text=@"启用本项美化"; UISwitch *s=[UISwitch new]; s.on=[WUValue(self.role) boolValue]; [s addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventValueChanged]; c.accessoryView=s; }

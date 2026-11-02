@@ -71,6 +71,7 @@ static BOOL StaticImage(NSData *data) {
     BOOL ok=src && CGImageSourceGetCount(src)==1;
     if(src) CFRelease(src); return ok;
 }
+BOOL WUImageEntryValidateData(NSData *data) { @try { return StaticImage(data); } @catch(__unused NSException *e) { return NO; } }
 static void Notice(UIViewController *owner, NSString *text) {
     if(!owner.viewIfLoaded.window || owner.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"图片转表情" message:text preferredStyle:UIAlertControllerStyleAlert];
@@ -90,6 +91,7 @@ static void Notice(UIViewController *owner, NSString *text) {
 @property(nonatomic,strong) UIAlertController *prompt;
 @property(nonatomic,strong) NSTimer *timer;
 @property(nonatomic) BOOL stopped, consumed, pushing;
+@property(nonatomic,copy) BOOL (^dataCurrent)(BOOL editing);
 - (BOOL)current;
 - (void)stop;
 - (void)fail:(NSString *)message;
@@ -102,6 +104,13 @@ static NSMutableSet<WUImageEntry *> *entries;
 - (BOOL)current {
     @try {
         UIViewController *owner=self.owner; UINavigationController *nav=self.nav;
+        if(self.dataCurrent) {
+            BOOL (^sourceCurrent)(BOOL)=[self.dataCurrent copy];
+            if(self.stopped || !owner || !nav || owner.navigationController!=nav || ![nav.viewControllers containsObject:owner] || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![self.account isEqual:WUCurrentAccount()] || self.generation!=WUContextGeneration() || !sourceCurrent || !sourceCurrent(self.editor!=nil)) return NO;
+            if(self.stopped) return NO;
+            if(self.editor) return self.pushing || ([nav.viewControllers containsObject:self.editor] && [nav.viewControllers indexOfObjectIdenticalTo:owner]<[nav.viewControllers indexOfObjectIdenticalTo:self.editor]);
+            return nav.topViewController==owner && owner.viewIfLoaded.window && !owner.presentedViewController;
+        }
         if(self.stopped || !owner || !nav || owner.navigationController!=nav || ![nav.viewControllers containsObject:owner] || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![self.account isEqual:WUCurrentAccount()] || self.generation!=WUContextGeneration() || ![self.session isEqual:WUChatSession(owner)] || ![WUToolbarActions(WUAccountOptions(self.account)[@"toolbar"]) containsObject:@"imageEmoji"]) return NO;
         if(self.editor) { if(!self.pushing && (![nav.viewControllers containsObject:self.editor] || [nav.viewControllers indexOfObjectIdenticalTo:owner]>=[nav.viewControllers indexOfObjectIdenticalTo:self.editor])) return NO; }
         else if(nav.topViewController!=owner || !owner.viewIfLoaded.window || (owner.presentedViewController && owner.presentedViewController!=self.prompt)) return NO;
@@ -129,7 +138,7 @@ static NSMutableSet<WUImageEntry *> *entries;
     @try { if(ownsImage && Has(editor,@"setM_image:","v",@[@"@"])) ((void(*)(id,SEL,id))objc_msgSend)(editor,NSSelectorFromString(@"setM_image:"),nil); } @catch(__unused NSException *e) {}
     @try { if(self.prompt && self.owner.presentedViewController==self.prompt && !self.prompt.presentedViewController) [self.prompt dismissViewControllerAnimated:NO completion:nil]; } @catch(__unused NSException *e) {}
     self.pushing=NO; self.editor=nil; self.prompt=nil; self.image=nil; self.wrap=nil; self.identity=nil; self.paths=nil;
-    self.account=nil; self.session=nil; self.owner=nil; self.nav=nil;
+    self.account=nil; self.session=nil; self.owner=nil; self.nav=nil; self.dataCurrent=nil;
     [entries removeObject:self];
 }
 - (void)fail:(NSString *)message {
@@ -209,6 +218,32 @@ void WUCancelImageEntries(void) {
     if(!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(),^{ WUCancelImageEntries(); }); return; }
     for(WUImageEntry *op in entries.allObjects) [op stop];
 }
+static void EnsureEntries(void) {
+    static dispatch_once_t once; dispatch_once(&once,^{
+        entries=[NSMutableSet set];
+        for(NSString *name in @[UIApplicationWillResignActiveNotification,WUChanged]) [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ WUCancelImageEntries(); }];
+    });
+}
+void WUCancelImageDataEditor(UIViewController *owner) {
+    if(!NSThread.isMainThread) return;
+    for(WUImageEntry *op in entries.allObjects) if(op.owner==owner && op.dataCurrent) [op stop];
+}
+BOOL WUOpenConfirmedImageDataEditor(UIViewController *owner, NSData *data, BOOL (^current)(BOOL)) {
+    if(!NSThread.isMainThread || !current || !current(NO) || !WUImageEntryValidateData(data)) return NO;
+    @try {
+        for(WUImageEntry *live in entries) if(live.owner==owner) return NO;
+        EnsureEntries();
+        WUImageEntry *op=[WUImageEntry new]; op.owner=owner; op.nav=owner.navigationController;
+        op.account=WUCurrentAccount(); op.generation=WUContextGeneration(); op.dataCurrent=current;
+        op.image=[UIImage imageWithData:data];
+        if(!op.account.length || !op.image || op.image.images.count || ![op current]) return NO;
+        [entries addObject:op];
+        __weak WUImageEntry *weak=op;
+        op.timer=[NSTimer timerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *timer){ WUImageEntry *live=weak; if(![live current]) [live stop]; }];
+        [NSRunLoop.mainRunLoop addTimer:op.timer forMode:NSRunLoopCommonModes];
+        [op open]; return !op.stopped && op.editor!=nil;
+    } @catch(__unused NSException *e) { WUCancelImageDataEditor(owner); return NO; }
+}
 void WUOpenSelectedImageEditor(UIViewController *owner) {
     if(!NSThread.isMainThread) return;
     @try {
@@ -221,10 +256,7 @@ void WUOpenSelectedImageEditor(UIViewController *owner) {
         id wrap=[selected firstObject]; NSDictionary *identity=Identity(wrap,account,session); NSArray *paths=identity?Paths(wrap):nil;
         if(!identity) { Notice(owner,@"所选单张图片的消息身份或当前会话归属不可核验，未读取。"); return; }
         if(!paths.count) { Notice(owner,@"没有可核验的所选图片缓存路径。请先在微信加载图片；此版本若没有匹配的路径 getter，则不支持此入口。"); return; }
-        static dispatch_once_t once; dispatch_once(&once,^{
-            entries=[NSMutableSet set];
-            for(NSString *name in @[UIApplicationWillResignActiveNotification,WUChanged]) [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ WUCancelImageEntries(); }];
-        });
+        EnsureEntries();
         WUImageEntry *op=[WUImageEntry new]; op.owner=owner; op.nav=owner.navigationController; op.account=account; op.session=session; op.generation=WUContextGeneration(); op.wrap=wrap; op.identity=identity; op.paths=paths;
         [entries addObject:op];
         __weak WUImageEntry *weak=op;

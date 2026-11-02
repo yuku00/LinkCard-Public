@@ -1,11 +1,12 @@
 #import "WU.h"
 #import "AdsLogic.h"
+#import "WUMiniAds.h"
 static IMP momentsValid, splashWindow, splashHot;
 static BOOL momentsReady, splashWindowReady, splashHotReady;
 BOOL WUAdsAvailable(NSString *key) {
     if([key isEqual:@"momentsAds"]) return momentsReady && NSClassFromString(@"WCDataItem")!=Nil;
     if([key isEqual:@"miniSplashAds"]) return splashWindowReady && splashHotReady;
-    return NO;
+    return WUMiniAdsAvailable(key);
 }
 static BOOL MomentsValid(id o,SEL s,id ad,id item) {
     BOOL original=((BOOL(*)(id,SEL,id,id))momentsValid)(o,s,ad,item);
@@ -32,6 +33,7 @@ static id Plugins(id o,SEL s) {
     return [out copy];
 }
 void WUInstallAds(void) {
+    WUInstallMiniAds();
     // Dedicated validation only: no storage, push, serialization or normal feed interception.
     momentsReady=WUHook(@"WCAdvertiseDataHelper",@"IsAdvertiseDataValid:dataItem:",NO,@encode(BOOL),@[@"@",@"@"],(IMP)MomentsValid,&momentsValid);
     // Preserve all JS callbacks, content state and reward paths. Both gates must be present.

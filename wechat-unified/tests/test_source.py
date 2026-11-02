@@ -28,9 +28,11 @@ class Guardrails(unittest.TestCase):
         messages=(ROOT/'Sources/Messages.m').read_text()
         voice=(ROOT/'Sources/VoiceSendLogic.m').read_text()
         helper=(ROOT/'Sources/MessageConstruction.m').read_text()
-        self.assertIn('WUCreateMessage(NSClassFromString(@"CMessageWrap"),47,account)',messages)
+        submit=(ROOT/'Sources/EmoticonSubmission.m').read_text()
+        self.assertIn('WUCreateMessage(NSClassFromString(@"CMessageWrap"),47,account)',submit)
+        self.assertIn('WUSubmitEmoticonCopy(source,Service(@"CMessageMgr")',messages)
         self.assertIn('WUCreateMessage(cls,34,self.account)',voice)
-        self.assertEqual(messages.count('WUMessageCanConstruct('),2)
+        self.assertEqual(messages.count('WUMessageCanConstruct('),1)
         self.assertNotIn('WUVoiceConstruct',voice)
         self.assertNotIn('WUMessageConstruct',messages)
         self.assertNotIn('objc_msgSend',helper)
@@ -56,12 +58,16 @@ class Guardrails(unittest.TestCase):
         self.assertGreaterEqual(len(hooks),10)
         self.assertEqual(len(hooks),len(set(hooks)))
     def test_no_unexpected_delete_or_excluded_client(self):
-        for forbidden in ['DelMsg:', 'sendVoice', 'NSURLSession', 'UIKeyboardDockView', 'MSHookMessageEx', 'dlopen(', 'system(', 'OpenRedEnvelopesRequest', 'HBHelperUtil']:
+        no_network='\n'.join(p.read_text() for p in (ROOT/'Sources').glob('*')
+                             if p.name not in {'WUArticleImageFetch.h','WUArticleImageFetch.m'})
+        self.assertNotIn('NSURLSession',no_network)
+        for forbidden in ['DelMsg:', 'sendVoice', 'UIKeyboardDockView', 'MSHookMessageEx', 'dlopen(', 'system(', 'OpenRedEnvelopesRequest', 'HBHelperUtil']:
             # Only the evidence-backed host selector is allowed; old helper/AI senders remain forbidden.
             checked=SRC.replace('ResendVoiceMsg:MsgWrap:', '') if forbidden=='sendVoice' else SRC
             self.assertNotIn(forbidden,checked)
         messages=(ROOT/'Sources/Messages.m').read_text()
-        self.assertEqual(len(re.findall(r'objc_msgSend\)\([^;]+NSSelectorFromString\(@"AddEmoticonMsg:MsgWrap:"\)', messages)),1)
+        self.assertEqual(len(re.findall(r'objc_msgSend\)\([^;]+NSSelectorFromString\(@"AddEmoticonMsg:MsgWrap:"\)', SRC)),1)
+        self.assertNotIn('NSSelectorFromString(@"AddEmoticonMsg:MsgWrap:")',messages)
         self.assertNotIn('SendPatMgr',messages)  # BOOL protocol is deliberately not deferred/replayed.
     def test_runtime_signature_checks_and_local_override(self):
         self.assertIn('method_getNumberOfArguments',SRC)
@@ -217,7 +223,7 @@ class Guardrails(unittest.TestCase):
     def test_moments_cache_real_host_safe_local_only(self):
         ui=(ROOT/'Sources/MomentsCache.m').read_text()
         logic=(ROOT/'Sources/MomentsCacheLogic.m').read_text()
-        for required in ['getHomepageData', 'onDataUpdated:maxItemID:minItemID:reqFirstPageMd5:', 'Bound(o)', 'WUContextGeneration()', 'UIApplicationStateActive', 'pathForExistData', 'WUMCacheStore', 'WUDraftMediaURLs', 'pending.count>=32', 'isPrivate', 'exceedsVisibleTimeRange', '曾见内容', 'WUMomentsDecodeDisplayedComments(item,displayed)', 'WUMomentsCacheObserveNormalizedComments(item,snapshot', 'view.viewIfLoaded.window', 'lastErrorAccount isEqual:self.account', 'enabled.boolValue && !Available()', '退出重开联系人朋友圈']:
+        for required in ['getHomepageData', 'onDataUpdated:maxItemID:minItemID:reqFirstPageMd5:', 'Bound(o)', 'WUContextGeneration()', 'UIApplicationStateActive', 'pathForExistData', 'WUMCacheStore', 'WUDraftMediaURLs', 'pending.count>=32', 'isPrivate', 'exceedsVisibleTimeRange', '曾见内容', 'WUMomentsDecodeDisplayedComments(item,displayed)', 'StoreNormalizedComments(item,snapshot', 'WUMCacheSaveCommentCompletion', 'view.viewIfLoaded.window', 'lastErrorAccount isEqual:self.account', 'enabled.boolValue && !Available()', '退出重开联系人朋友圈']:
             self.assertIn(required,ui)
         # The detail-only timer cancels playback on account changes; it never fetches content.
         self.assertIn('if(!v || ![v.browser current])',ui)

@@ -100,9 +100,9 @@ NSDictionary *WUThemeReadDescriptor(NSData *d,NSError **error) {
     for(NSString *path in catalogs) { id names=catalogs[path]; if(!WUThemeSafePath(path)||![path.pathExtension.lowercaseString isEqual:@"car"]||![names isKindOfClass:NSArray.class]||![names count]||[names count]>256) return Invalid(error,@"CAR资源名列表无效"); for(id name in names) if(!WUThemeSafePath(name)) return Invalid(error,@"CAR资源名无效"); }
     NSMutableDictionary *result=[v mutableCopy]; result[@"aliases"]=clean; return result;
 }
-NSArray *WUSurfaceRoles(void) { return @[@"inputBorder",@"noticeBorder",@"searchSurface",@"referSurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"fileSurface",@"emoticonSurface"]; }
+NSArray *WUSurfaceRoles(void) { return @[@"inputBorder",@"noticeBorder",@"searchSurface",@"referSurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"fileSurface",@"emoticonSurface",@"chatSendSurface",@"chatAttachmentSurface"]; }
 BOOL WUValidSurfaceStyles(id v) {
-    if(![v isKindOfClass:NSDictionary.class]||[v count]>10) return NO;
+    if(![v isKindOfClass:NSDictionary.class]||[v count]>WUSurfaceRoles().count) return NO;
     NSDictionary *ranges=@{@"radius":@[@0,@80],@"borderWidth":@[@0,@8],@"fontSize":@[@8,@48],@"fontWeight":@[@(-1),@1],@"opacity":@[@0,@1]};
     for(NSString *role in v) {
         id style=v[role]; if(![WUSurfaceRoles() containsObject:role]||![style isKindOfClass:NSDictionary.class]) return NO;

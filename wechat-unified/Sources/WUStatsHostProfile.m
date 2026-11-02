@@ -44,6 +44,12 @@ NSDictionary *WUStatsParseMembers(id raw) {
 @property(nonatomic,copy) NSString *session;
 @property(nonatomic,copy) NSArray *rooms;
 @property(nonatomic,copy) NSArray *members;
+@property(nonatomic,copy) NSArray *privateIDs;
+@property(nonatomic,strong) NSMutableArray *friendProfiles;
+@property(nonatomic) NSUInteger privateIndex;
+@property(nonatomic) NSUInteger nonFriendCount;
+@property(nonatomic) NSUInteger unknownFriendCount;
+@property(nonatomic) BOOL privateTruncated;
 @property(nonatomic,strong) NSMutableArray *profiles;
 @property(nonatomic,strong) NSMutableArray *common;
 @property(nonatomic,copy) NSDictionary *peer;
@@ -58,10 +64,13 @@ NSDictionary *WUStatsParseMembers(id raw) {
 @end
 @implementation WUHostProfileRead
 - (BOOL)valid { @try { return self.current && self.current(); } @catch(__unused NSException *e) { return NO; } }
-- (void)drop { self.done=nil; self.current=nil; self.manager=nil; self.profiles=nil; self.common=nil; self.peer=nil; self.members=nil; }
+- (void)drop { self.done=nil; self.current=nil; self.manager=nil; self.profiles=nil; self.common=nil; self.peer=nil; self.members=nil; self.privateIDs=nil; self.friendProfiles=nil; }
 - (void)finish {
     if(![self valid]) { [self drop]; return; }
-    NSDictionary *value=@{@"peer":self.peer,@"members":[self.profiles copy],@"commonGroups":[self.common copy],@"group":@([self.session hasSuffix:@"@chatroom"]),@"membersComplete":@(self.membersComplete),@"roomsChecked":@(self.roomIndex),@"unknownRooms":@(self.unknownRooms),@"truncated":@(self.truncated),@"scope":@"当前联系人/群的本地资料；共同群仅已加载会话中最多50个群。不是完整好友名册或服务器关系证明。"};
+    NSDictionary *friends=WUStatsProfileSummary(@{@"members":self.friendProfiles});
+    NSMutableDictionary *friendSummary=[friends mutableCopy];
+    [friendSummary addEntriesFromDictionary:@{@"scanned":@(self.privateIndex),@"nonFriend":@(self.nonFriendCount),@"unknownFriend":@(self.unknownFriendCount),@"truncated":@(self.privateTruncated)}];
+    NSDictionary *value=@{@"loadedFriends":[friendSummary copy],@"peer":self.peer,@"members":[self.profiles copy],@"commonGroups":[self.common copy],@"group":@([self.session hasSuffix:@"@chatroom"]),@"membersComplete":@(self.membersComplete),@"roomsChecked":@(self.roomIndex),@"unknownRooms":@(self.unknownRooms),@"truncated":@(self.truncated),@"scope":@"当前联系人/群的本地资料；共同群仅已加载会话中最多50个群。不是完整好友名册或服务器关系证明。"};
     void (^done)(NSDictionary *)=self.done; [self drop]; if(done) done(value);
 }
 - (void)step {
@@ -82,6 +91,16 @@ NSDictionary *WUStatsParseMembers(id raw) {
             });
         }); return;
     }
+    NSUInteger privateEnd=MIN(self.privateIndex+8,self.privateIDs.count);
+    while(self.privateIndex<privateEnd) {
+        if(![self valid]) { [self drop]; return; }
+        NSDictionary *row=WUStatsContactProfile(self.manager,self.privateIDs[self.privateIndex++],NSDate.date.timeIntervalSince1970);
+        id flag=row[@"friend"];
+        if(![flag isKindOfClass:NSNumber.class]) self.unknownFriendCount++;
+        else if([flag boolValue]) [self.friendProfiles addObject:row];
+        else self.nonFriendCount++;
+    }
+    if(self.privateIndex<self.privateIDs.count) { dispatch_async(dispatch_get_main_queue(),^{ [self step]; }); return; }
     NSUInteger end=MIN(self.memberIndex+8,self.members.count);
     while(self.memberIndex<end) {
         if(![self valid]) { [self drop]; return; }
@@ -96,7 +115,7 @@ NSDictionary *WUStatsParseMembers(id raw) {
 void WUStatsReadHostProfile(id manager, NSString *account, NSString *session, NSArray *sessions, BOOL (^current)(void), void (^done)(NSDictionary *)) {
     if(!NSThread.isMainThread || !ID(account) || !ID(session) || !current || !done || !current()) return;
     WUHostProfileRead *job=[WUHostProfileRead new]; job.manager=manager; job.account=[account copy]; job.session=[session copy]; job.current=current; job.done=done;
-    job.peer=WUStatsContactProfile(manager,session,NSDate.date.timeIntervalSince1970); job.profiles=[NSMutableArray array]; job.common=[NSMutableArray array]; job.members=@[];
+    job.peer=WUStatsContactProfile(manager,session,NSDate.date.timeIntervalSince1970); job.profiles=[NSMutableArray array]; job.common=[NSMutableArray array]; job.members=@[]; job.friendProfiles=[NSMutableArray array];
     NSArray *known=[sessions copy];
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
         NSMutableOrderedSet *rooms=[NSMutableOrderedSet orderedSet]; BOOL truncated=NO;
@@ -108,8 +127,17 @@ void WUStatsReadHostProfile(id manager, NSString *account, NSString *session, NS
             if(rooms.count==50 && ![rooms containsObject:name]) { truncated=YES; break; }
             [rooms addObject:[name copy]];
         }
+        NSMutableSet *unique=[NSMutableSet set];
+        for(id row in known) {
+            if(![row isKindOfClass:NSDictionary.class] || ![row[@"kind"] isEqual:@"private"]) continue;
+            NSString *name=row[@"username"];
+            if(ID(name) && ![name isEqual:account] && ![name hasSuffix:@"@chatroom"]) [unique addObject:[name copy]];
+        }
+        NSArray *all=[[unique allObjects] sortedArrayUsingSelector:@selector(compare:)];
+        BOOL privateTruncated=all.count>500;
+        NSArray *privateIDs=privateTruncated?[all subarrayWithRange:NSMakeRange(0,500)]:all;
         NSArray *snapshot=[rooms.array copy];
-        dispatch_async(dispatch_get_main_queue(),^{ job.rooms=snapshot; job.truncated=truncated; [job step]; });
+        dispatch_async(dispatch_get_main_queue(),^{ job.rooms=snapshot; job.truncated=truncated; job.privateIDs=privateIDs; job.privateTruncated=privateTruncated; [job step]; });
     });
 }
 NSDictionary *WUStatsProfileSummary(NSDictionary *snapshot) {
@@ -141,6 +169,13 @@ NSArray<NSString *> *WUStatsProfileLines(NSDictionary *p, NSTimeZone *zone) {
     if(!p) return @[@"尚未读取宿主资料"];
     NSDictionary *peer=p[@"peer"]; BOOL group=[p[@"group"] boolValue];
     NSMutableArray *lines=[NSMutableArray arrayWithObjects:p[@"scope"],@"资料为本次扫描时的本地快照，不受消息日期范围筛选；空值/异常/未知枚举均保留未知。未刷新资料、未联网、未持久化画像。",nil];
+    NSDictionary *loaded=p[@"loadedFriends"];
+    if([loaded isKindOfClass:NSDictionary.class]) {
+        [lines addObject:[NSString stringWithFormat:@"已加载私聊会话对应资料：检查 %@，好友标志为是 %@、否 %@、未知 %@%@。仅会话子集，不是全好友名册或好友总数。",loaded[@"scanned"],loaded[@"memberCount"],loaded[@"nonFriend"],loaded[@"unknownFriend"],[loaded[@"truncated"] boolValue]?@"；按用户名排序仅检查前500个":@""]];
+        [lines addObject:[NSString stringWithFormat:@"上述标志为是的资料性别：男 %@ · 女 %@ · 未知 %@；地区未知 %@ · 年龄未知 %@。",loaded[@"sex"][@"male"],loaded[@"sex"][@"female"],loaded[@"sex"][@"unknown"],loaded[@"unknownRegion"],loaded[@"unknownAge"]]];
+        for(NSDictionary *row in loaded[@"regions"]) [lines addObject:[NSString stringWithFormat:@"已加载好友资料地区 %@ / %@：%@",[row[@"country"] length]?row[@"country"]:@"未知",[row[@"province"] length]?row[@"province"]:@"未知",row[@"count"]]];
+        for(NSString *age in [[loaded[@"ages"] allKeys] sortedArrayUsingSelector:@selector(localizedStandardCompare:)]) [lines addObject:[NSString stringWithFormat:@"已加载好友资料年龄 %@ 岁：%@",age,loaded[@"ages"][age]]];
+    }
     NSDateFormatter *f=[NSDateFormatter new]; f.locale=[NSLocale localeWithLocaleIdentifier:@"zh_CN"]; f.timeZone=zone; f.dateFormat=@"yyyy-MM-dd HH:mm:ss zzz";
     NSString *(^date)(id)=^NSString *(id n) { return [n isKindOfClass:NSNumber.class]?[f stringFromDate:[NSDate dateWithTimeIntervalSince1970:[n doubleValue]]]:@"未知"; };
     if(group) {

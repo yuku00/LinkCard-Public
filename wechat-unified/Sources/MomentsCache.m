@@ -74,7 +74,7 @@ void WUMomentsCacheObserveHost(id item) {
         dispatch_async(dispatch_get_main_queue(),^{ [pending removeObject:key]; if(Current(a,g) && error) SetError(a,error); });
     }});
 }
-void WUMomentsCacheObserveNormalizedComments(id item, NSArray<NSDictionary *> *comments, NSString *account, NSUInteger generation) {
+static void StoreNormalizedComments(id item, NSArray<NSDictionary *> *comments, NSString *account, NSUInteger generation, NSNumber *completionCode) {
     if(!Current(account,generation) || ![item isKindOfClass:NSClassFromString(@"WCDataItem")] || !PublicItem(item)) return;
     NSString *user=Object(item,@"username"); if(![user isKindOfClass:NSString.class] || !Allowed(account,user,generation)) return;
     NSDictionary *n=WUMCacheNormalize(Tid(item),user,Object(item,@"contentDesc"));
@@ -83,9 +83,14 @@ void WUMomentsCacheObserveNormalizedComments(id item, NSArray<NSDictionary *> *c
     dispatch_async(IO(),^{
         __block BOOL allowed=NO; dispatch_sync(dispatch_get_main_queue(),^{ allowed=Allowed(a,user,generation); });
         if(!allowed) return; NSError *error=nil;
-        WUMCacheSaveComments(Root(@"Text"),a,user,n[@"tid"],snapshot,NSDate.date.timeIntervalSince1970,^BOOL{ return generation==WUContextGenerationSnapshot(); },&error);
+        BOOL (^current)(void)=^BOOL{ return generation==WUContextGenerationSnapshot(); };
+        if(completionCode) WUMCacheSaveCommentCompletion(Root(@"Text"),a,user,n[@"tid"],completionCode.longLongValue,snapshot,NSDate.date.timeIntervalSince1970,current,&error);
+        else WUMCacheSaveComments(Root(@"Text"),a,user,n[@"tid"],snapshot,NSDate.date.timeIntervalSince1970,current,&error);
         dispatch_async(dispatch_get_main_queue(),^{ if(Current(a,generation) && error) SetError(a,error); });
     });
+}
+void WUMomentsCacheObserveNormalizedComments(id item, NSArray<NSDictionary *> *comments, NSString *account, NSUInteger generation) {
+    StoreNormalizedComments(item,comments,account,generation,nil);
 }
 static IMP updatedObjects,updatedNumbers,homepageData;
 static char bindingKey;
@@ -100,8 +105,10 @@ static id HomepageData(id o, SEL s) {
     @try { if(Bound(o)) ObserveItems(result); } @catch(NSException *e) { }
     return result;
 }
-static IMP commentAppeared,commentReload;
-static void ObserveDisplayedComments(UIViewController *view) {
+static IMP commentAppeared,commentReload,commentDeleteFinished;
+static char commentCompletionDepthKey;
+static void ObserveDisplayedComments(UIViewController *view, NSNumber *completionCode) {
+    if([objc_getAssociatedObject(view,&commentCompletionDepthKey) unsignedIntegerValue]) return;
     if(!NSThread.isMainThread || ![view isKindOfClass:NSClassFromString(@"WCCommentDetailViewControllerFB")] || !view.viewIfLoaded.window || !Bound(view)) return;
     NSArray *b=objc_getAssociatedObject(view,&bindingKey);
     if(![WUValue(@"enabled") boolValue] || ![Options(b[0])[@"enabled"] boolValue]) return;
@@ -112,25 +119,47 @@ static void ObserveDisplayedComments(UIViewController *view) {
     if(![user isKindOfClass:NSString.class] || !Allowed(b[0],user,[b[1] unsignedIntegerValue])) return;
     id displayed=Object(view,@"arrCommentList");
     NSArray *snapshot=WUMomentsDecodeDisplayedComments(item,displayed);
-    if(snapshot.count) {
-        // This parent is itself visible in the opened detail controller. Capture that
-        // actual host object first; the serial IO queue commits it before comments.
-        // Comment payloads alone still cannot create an unseen parent record.
-        WUMomentsCacheObserveHost(item);
-        WUMomentsCacheObserveNormalizedComments(item,snapshot,b[0],[b[1] unsignedIntegerValue]);
+    if(snapshot) {
+        // An explicit detail visit may capture its visible parent. Completion events
+        // only update already-owned rows; even success cannot invent a parent.
+        if(!completionCode && snapshot.count) WUMomentsCacheObserveHost(item);
+        StoreNormalizedComments(item,snapshot,b[0],[b[1] unsignedIntegerValue],completionCode);
     }
 }
 static void CommentAppeared(UIViewController *o, SEL s, BOOL animated) {
     // Bind before the original, never rebind an old controller to a new account.
     if(NSThread.isMainThread && !objc_getAssociatedObject(o,&bindingKey)) { NSString *a=WUCurrentAccount(); if(a.length) objc_setAssociatedObject(o,&bindingKey,@[a,@(WUContextGeneration())],OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
     ((void(*)(id,SEL,BOOL))commentAppeared)(o,s,animated);
-    @try { ObserveDisplayedComments(o); } @catch(__unused NSException *e) { }
+    @try { ObserveDisplayedComments(o,nil); } @catch(__unused NSException *e) { }
 }
 static void CommentReload(UIViewController *o, SEL s, id item) {
     ((void(*)(id,SEL,id))commentReload)(o,s,item);
-    @try { ObserveDisplayedComments(o); } @catch(__unused NSException *e) { }
+    @try { ObserveDisplayedComments(o,nil); } @catch(__unused NSException *e) { }
 }
+// 0x592350: x3/x4 go through objc_storeStrong (object IDs); x2 is
+// retained/tested as 64-bit zero. Runtime selects the actual integer ABI.
+// Neither ID is decoded by that sample: c32/c64/tid aliases remain unproved.
+#define WU_COMMENT_COMPLETION(NAME, TYPE) \
+static void NAME(UIViewController *o, SEL s, TYPE ret, id commentID, id dataID) { \
+    if(!NSThread.isMainThread) { ((void(*)(id,SEL,TYPE,id,id))commentDeleteFinished)(o,s,ret,commentID,dataID); return; } \
+    id binding=objc_getAssociatedObject(o,&bindingKey); \
+    NSUInteger depth=[objc_getAssociatedObject(o,&commentCompletionDepthKey) unsignedIntegerValue]; \
+    objc_setAssociatedObject(o,&commentCompletionDepthKey,@(depth+1),OBJC_ASSOCIATION_RETAIN_NONATOMIC); \
+    @try { ((void(*)(id,SEL,TYPE,id,id))commentDeleteFinished)(o,s,ret,commentID,dataID); } \
+    @finally { objc_setAssociatedObject(o,&commentCompletionDepthKey,@(depth),OBJC_ASSOCIATION_RETAIN_NONATOMIC); } \
+    @try { if(ret==0 && depth==0 && binding && binding==objc_getAssociatedObject(o,&bindingKey) && Bound(o)) ObserveDisplayedComments(o,@0); } @catch(__unused NSException *e) { } \
+}
+WU_COMMENT_COMPLETION(CommentFinishedI32,int32_t)
+WU_COMMENT_COMPLETION(CommentFinishedU32,uint32_t)
+WU_COMMENT_COMPLETION(CommentFinishedI64,int64_t)
+WU_COMMENT_COMPLETION(CommentFinishedU64,uint64_t)
+#undef WU_COMMENT_COMPLETION
 void WUInstallMomentsCache(void) {
+    NSString *completion=@"onCommentItemDeleteFinished:commentItemID:dataItemID:";
+    Method cm=class_getInstanceMethod(NSClassFromString(@"WCCommentDetailViewControllerFB"),NSSelectorFromString(completion));
+    NSArray *codes=@[@"i",@"I",@"q",@"Q"];
+    IMP handlers[]={(IMP)CommentFinishedI32,(IMP)CommentFinishedU32,(IMP)CommentFinishedI64,(IMP)CommentFinishedU64};
+    for(NSUInteger i=0;i<codes.count;i++) if(WUMatches(cm,"v",@[codes[i],@"@",@"@"])) { WUHook(@"WCCommentDetailViewControllerFB",completion,NO,"v",@[codes[i],@"@",@"@"],handlers[i],&commentDeleteFinished); break; }
     WUHook(@"WCCommentDetailViewControllerFB",@"viewDidAppear:",NO,"v",@[@"B"],(IMP)CommentAppeared,&commentAppeared);
     WUHook(@"WCCommentDetailViewControllerFB",@"reloadData:",NO,"v",@[@"@"],(IMP)CommentReload,&commentReload);
     WUHook(@"WCHomepageMgr",@"getHomepageData",NO,"@",@[],(IMP)HomepageData,&homepageData);
@@ -196,7 +225,7 @@ static char videoStatusKey;
     UILabel *text=[UILabel new]; text.numberOfLines=0; text.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; text.text=[NSString stringWithFormat:@"%@\n\n%@\n\n曾见内容，不证明真实删除；无法恢复未收到内容。仅保存已打开详情列表中归属、ID、作者和正文可核验的评论。创建时间未知；缺回复对象不推断。快照不证明删除。",self.row[@"username"],self.row[@"text"]]; [stack addArrangedSubview:text];
     for(NSDictionary *comment in self.row[@"comments"]) {
         UILabel *label=[UILabel new]; label.numberOfLines=0; label.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-        label.text=[NSString stringWithFormat:@"%@%@\n%@",comment[@"author"],[comment[@"replyTo"] length]?[@" 回复 " stringByAppendingString:comment[@"replyTo"]]:@"",comment[@"text"]]; [stack addArrangedSubview:label];
+        label.text=[NSString stringWithFormat:@"%@%@\n%@\n%@",comment[@"author"],[comment[@"replyTo"] length]?[@" 回复 " stringByAppendingString:comment[@"replyTo"]]:@"",comment[@"text"],WUMCacheCommentStateText(comment)]; [stack addArrangedSubview:label];
     }
     NSString *account=[self.browser.account copy], *uuid=self.row[@"id"], *token=NSUUID.UUID.UUIDString; NSUInteger generation=self.browser.generation; self.lease=token;
     __weak WUMCacheDetail *weak=self;
@@ -264,7 +293,7 @@ static char videoStatusKey;
 }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 2; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?1:self.rows.count; }
-- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { if(s!=0) return nil; return [NSString stringWithFormat:@"仅缓存手动访问时宿主已提供的条目。曾见内容≠服务器当前内容，不判定真实删除。上限200条/正文索引1MiB；图片最多9张、每张8MiB；单条本地视频最多64MiB，账号媒体512MiB。视频可离线浏览；评论仅接已打开的详情列表，最多50条/6KiB，签名、字段或归属不明则跳过；不监听删除、不回插宿主。清理仅回收本模块无引用且无浏览租约的自有媒体；串行复制在途时不会清理。%@",[lastErrorAccount isEqual:self.account]?(lastError?:@""):@""]; }
+- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { if(s!=0) return nil; return [NSString stringWithFormat:@"仅缓存手动访问时宿主已提供的条目。曾见内容≠服务器当前内容，不判定真实删除。上限200条/正文索引1MiB；图片最多9张、每张8MiB；单条本地视频最多64MiB，账号媒体512MiB。视频可离线浏览；评论仅接已打开的详情列表，最多50条/6KiB，签名、字段或归属不明则跳过；仅观察原删除完成回调之后的已显示列表；未证明回调ID与评论ID命名空间对应，自己删除仍不标真删。好友删除无可信通知，只留历史快照；创建/删除时间未知，不回插宿主。清理仅回收本模块无引用且无浏览租约的自有媒体；串行复制在途时不会清理。%@",[lastErrorAccount isEqual:self.account]?(lastError?:@""):@""]; }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.numberOfLines=2; c.detailTextLabel.numberOfLines=2;
     if(p.section==0) { c.textLabel.text=@"按保留天数安全清理（保留收藏）"; NSDictionary *o=Options(self.account); c.detailTextLabel.text=[NSString stringWithFormat:@"缓存%@ · 监控%lu人 · 保留%@天",[o[@"enabled"] boolValue]?@"开启":@"关闭",(unsigned long)[o[@"monitor"] count],o[@"days"]]; }

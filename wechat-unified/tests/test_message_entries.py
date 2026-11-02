@@ -22,7 +22,9 @@ class MessageEntries(unittest.TestCase):
             self.assertIn(token,ui)
     def test_no_new_sender_or_global_url_hook(self):
         messages=source('Messages.m')
-        self.assertEqual(len(re.findall(r'objc_msgSend\)\([^;]+NSSelectorFromString\(@"AddEmoticonMsg:MsgWrap:"\)',messages)),1)
+        self.assertIn('WUSubmitEmoticonCopy(',messages)
+        production='\n'.join(p.read_text() for p in (ROOT/'Sources').glob('*.m'))
+        self.assertEqual(len(re.findall(r'objc_msgSend\)\([^;]+NSSelectorFromString\(@"AddEmoticonMsg:MsgWrap:"\)',production)),1)
         new=''.join(source(n) for n in ['MessageEntries.m','MessageEntryBindings.inc','LinkLogic.m','RepeatSettings.m'])
         for token in ['WUHook(', 'NSURLSession','PHPhotoLibrary','UIImagePNGRepresentation','AddMsg:', 'AddEmoticonMsg:', 'UIPasteboard']:
             self.assertNotIn(token,new)

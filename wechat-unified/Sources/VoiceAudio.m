@@ -1,5 +1,6 @@
 #import "VoiceAudio.h"
 #import "VoiceLogic.h"
+#import "VoicePath.h"
 #import "OfflineVoice.h"
 #include <stdlib.h>
 #import <AudioToolbox/AudioToolbox.h>
@@ -9,10 +10,7 @@
 #include <math.h>
 #include <string.h>
 NSData *WUVoiceReadLocal(NSString *path) {
-    if(![path isKindOfClass:NSString.class] || !path.isAbsolutePath) return nil;
-    NSString *resolved=path.stringByStandardizingPath.stringByResolvingSymlinksInPath;
-    NSString *home=[NSHomeDirectory().stringByResolvingSymlinksInPath stringByAppendingString:@"/"];
-    if(![resolved hasPrefix:home] || ![resolved isEqual:path.stringByStandardizingPath]) return nil;
+    path=WUVoiceCanonicalLocalPath(path); if(!path) return nil;
     int fd=open(path.fileSystemRepresentation,O_RDONLY|O_NOFOLLOW|O_NONBLOCK); if(fd<0) return nil;
     struct stat st; if(fstat(fd,&st) || !S_ISREG(st.st_mode) || st.st_size<12 || st.st_size>8*1024*1024) { close(fd); return nil; }
     NSMutableData *data=[NSMutableData dataWithLength:(NSUInteger)st.st_size]; size_t got=0;

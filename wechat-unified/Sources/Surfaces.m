@@ -11,7 +11,11 @@ void WURestoreMessageSurface(UIView *cell) {
     objc_setAssociatedObject(cell,&cardKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 static IMP searchLayout,referLayout,plusLayout,toastLayout,timeLayout,swipeLayout;
+static IMP referWindow,toastWindow;
 static void Restore(UIView *v) { WURestoreConfiguredSurface(v); }
+// Restore before UIKit's original callback, then request a fresh layout if reattached.
+static void ReferWindow(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))referWindow)(v,s); if(v.window) [v setNeedsLayout]; }
+static void ToastWindow(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))toastWindow)(v,s); if(v.window) [v setNeedsLayout]; }
 static void WUStyleSurface(UIView *v,NSString *key,CGFloat radius) {
     WUApplyConfiguredSurface(v,key,radius,YES); if(WUEnabled(key)) [styled addObject:v];
 }
@@ -40,13 +44,68 @@ static void Swipe(UIView *v,SEL s) {
     id menu=object_getIvar(v,ivar); if(![menu isKindOfClass:UIView.class]||![menu isDescendantOfView:v]) return;
     WUStyleSurface(menu,@"swipeSurface",14); objc_setAssociatedObject(v,&childrenKey,@[menu],OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
+// 8.0.55 public headers only; all selectors and ownership are revalidated at runtime.
+static IMP chatToolLayout,chatToolWindow;
+static char chatButtonsKey;
+static NSHashTable<UIView *> *chatTools;
+static NSMutableSet<NSString *> *chatButtonRoles;
+BOOL WUChatButtonSurfaceAvailable(NSString *role) { return [chatButtonRoles containsObject:role]; }
+static void RestoreChatButtons(UIView *tool) {
+    for(UIView *button in objc_getAssociatedObject(tool,&chatButtonsKey)) WURestoreConfiguredSurface(button);
+    objc_setAssociatedObject(tool,&chatButtonsKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static id CheckedObjectGetter(id object,NSString *name) {
+    SEL sel=NSSelectorFromString(name); Method method=class_getInstanceMethod(object_getClass(object),sel);
+    if(!WUMatches(method,@encode(id),@[])) return nil;
+    @try { return ((id(*)(id,SEL))objc_msgSend)(object,sel); } @catch(NSException *e) { return nil; }
+}
+static void RefreshChatButtons(UIView *tool) {
+    RestoreChatButtons(tool);
+    if(!tool.window) return;
+    Class chatClass=NSClassFromString(@"BaseMsgContentViewController");
+    UIViewController *owner=nil;
+    for(UIResponder *r=tool.nextResponder;r;r=r.nextResponder) if(chatClass && [r isKindOfClass:chatClass] && [r isKindOfClass:UIViewController.class]) { owner=(id)r; break; }
+    if(!owner || !owner.viewIfLoaded || ![tool isDescendantOfView:owner.viewIfLoaded]) return;
+    if(CheckedObjectGetter(owner,@"toolView")!=tool && CheckedObjectGetter(owner,@"getInputToolView")!=tool) return;
+    id send=CheckedObjectGetter(tool,@"sendButton"), attachment=CheckedObjectGetter(tool,@"attachmentButton");
+    Class mmButton=NSClassFromString(@"MMUIButton");
+    NSMutableArray *buttons=[NSMutableArray array];
+    if([send isKindOfClass:UIButton.class] && send!=tool && [send isDescendantOfView:tool]) {
+        [chatButtonRoles addObject:@"chatSendSurface"]; WUApplyConfiguredSurface(send,@"chatSendSurface",8,YES); [buttons addObject:send];
+    }
+    if(mmButton && [mmButton isSubclassOfClass:UIButton.class] && [attachment isKindOfClass:mmButton] && attachment!=tool && attachment!=send && [attachment isDescendantOfView:tool]) {
+        [chatButtonRoles addObject:@"chatAttachmentSurface"]; WUApplyConfiguredSurface(attachment,@"chatAttachmentSurface",8,YES); [buttons addObject:attachment];
+    }
+    objc_setAssociatedObject(tool,&chatButtonsKey,buttons,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static void ChatToolLayout(UIView *tool,SEL sel) {
+    RestoreChatButtons(tool); ((void(*)(id,SEL))chatToolLayout)(tool,sel);
+    [chatTools addObject:tool]; RefreshChatButtons(tool);
+}
+static void ChatToolWindow(UIView *tool,SEL sel) {
+    RestoreChatButtons(tool); ((void(*)(id,SEL))chatToolWindow)(tool,sel);
+    [chatTools addObject:tool]; if(tool.window) [tool setNeedsLayout];
+}
 void WUInstallSurfaces(void) {
     static dispatch_once_t once; dispatch_once(&once, ^{ styled=NSHashTable.weakObjectsHashTable; cardRoles=[NSMutableSet set]; [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(UIView *v in styled) { Restore(v); [v setNeedsLayout]; } [styled removeAllObjects]; }]; });
+    static dispatch_once_t chatOnce; dispatch_once(&chatOnce, ^{
+        chatTools=NSHashTable.weakObjectsHashTable; chatButtonRoles=[NSMutableSet set];
+        [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){
+            for(UIView *tool in chatTools.allObjects) { RestoreChatButtons(tool); [tool setNeedsLayout]; }
+        }];
+    });
+    Class toolClass=NSClassFromString(@"MMInputToolView");
+    if(toolClass && [toolClass isSubclassOfClass:UIView.class] && WUHook(@"MMInputToolView",@"didMoveToWindow",NO,"v",@[],(IMP)ChatToolWindow,&chatToolWindow))
+        WUHook(@"MMInputToolView",@"layoutSubviews",NO,"v",@[],(IMP)ChatToolLayout,&chatToolLayout);
     WUHook(@"ChatTimeCellView",@"layoutSubviews",NO,"v",@[],(IMP)Time,&timeLayout);
     Class base=NSClassFromString(@"MMBaseMultiMenuTableViewCell"); Ivar ivar=base?class_getInstanceVariable(base,"_menuContentView"):NULL;
     if(ivar && ivar_getTypeEncoding(ivar)[0]=='@') WUHook(@"NewMainFrameCell",@"layoutSubviews",NO,"v",@[],(IMP)Swipe,&swipeLayout);
     WUHook(@"WCSearchBar",@"layoutSubviews",NO,"v",@[],(IMP)Search,&searchLayout);
-    WUHook(@"MMInputMsgReferView",@"layoutSubviews",NO,"v",@[],(IMP)Refer,&referLayout);
+    Class refer=NSClassFromString(@"MMInputMsgReferView");
+    if(refer && [refer isSubclassOfClass:UIView.class] && WUHook(@"MMInputMsgReferView",@"layoutSubviews",NO,"v",@[],(IMP)Refer,&referLayout))
+        WUHook(@"MMInputMsgReferView",@"didMoveToWindow",NO,"v",@[],(IMP)ReferWindow,&referWindow);
     WUHook(@"MainFrameActionFloatView",@"layoutSubviews",NO,"v",@[],(IMP)Plus,&plusLayout);
-    WUHook(@"MMToastView",@"layoutSubviews",NO,"v",@[],(IMP)Toast,&toastLayout);
+    Class toast=NSClassFromString(@"MMToastView");
+    if(toast && [toast isSubclassOfClass:UIView.class] && WUHook(@"MMToastView",@"layoutSubviews",NO,"v",@[],(IMP)Toast,&toastLayout))
+        WUHook(@"MMToastView",@"didMoveToWindow",NO,"v",@[],(IMP)ToastWindow,&toastWindow);
 }

@@ -12,6 +12,9 @@ NS_ASSUME_NONNULL_BEGIN
 // using calendar arithmetic (not 86400 seconds across DST). nil means invalid.
 FOUNDATION_EXPORT NSDictionary * _Nullable WUStatsDateRange(NSString *start, NSString *end, NSTimeZone *zone);
 FOUNDATION_EXPORT BOOL WUStatsTimeInRange(NSNumber *time, NSDictionary * _Nullable range);
+// Pins Runtime Method only after validating the evidenced App query shape.
+FOUNDATION_EXPORT NSString * _Nullable WUStatsAppMethodEncoding(id manager);
+FOUNDATION_EXPORT NSDictionary * _Nullable WUStatsDecodeHostPage(NSArray *page, uint32_t left, NSString *account, NSString *session, BOOL app);
 
 @interface WUStatsBinding : NSObject
 @property(nonatomic, copy, nullable) NSDictionary *dateRange;
@@ -32,6 +35,11 @@ FOUNDATION_EXPORT BOOL WUStatsTimeInRange(NSNumber *time, NSDictionary * _Nullab
 @property(nonatomic, strong) id messageManager;
 // Exact independently verified method encoding, including offsets. Empty => unavailable.
 @property(nonatomic, copy) NSString *verifiedEncoding;
+// Production bindings always request App supplementation. Missing ABI => partial,
+// not an ordinary-only scan advertised as complete. Legacy callers may opt out.
+@property(nonatomic) BOOL scanAppMessages;
+@property(nonatomic, copy, nullable) NSString *appEncoding;
+@property(nonatomic, copy, nullable) NSDictionary * _Nullable (^decodeAppPage)(NSArray *, NSDictionary *);
 @property(nonatomic, copy) BOOL (^stillCurrent)(void);
 // Converts a host page into normalized records and a verified next cursor.
 // Return {records: NSArray, next: {id: NSNumber,time: NSNumber}, done: NSNumber}.

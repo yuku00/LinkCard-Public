@@ -21,7 +21,7 @@ NSDictionary *WUMCacheNormalize(id tid, id username, id text) {
     return @{@"tid":[tid copy],@"username":[username copy],@"text":[text copy]};
 }
 static BOOL WUCommentRecordValid(id r) {
-    if(![r isKindOfClass:NSDictionary.class] || [r count]!=5 || !Text(r[@"id"],80) || ![r[@"id"] length] || !Text(r[@"author"],256) || ![r[@"author"] length] || !Text(r[@"text"],1000) || !Text(r[@"replyTo"],256)) return NO;
+    if(![r isKindOfClass:NSDictionary.class] || [r count]!=(r[@"visibility"]?6:5) || (r[@"visibility"] && ![@[@"visibleSnapshot",@"historical"] containsObject:r[@"visibility"]]) || !Text(r[@"id"],80) || ![r[@"id"] length] || !Text(r[@"author"],256) || ![r[@"author"] length] || !Text(r[@"text"],1000) || !Text(r[@"replyTo"],256)) return NO;
     id t=r[@"time"]; return [t isKindOfClass:NSNumber.class] && isfinite([t doubleValue]) && [t doubleValue]>=0 && [t doubleValue]<=253402300799.0 && floor([t doubleValue])==[t doubleValue];
 }
 NSArray *WUMCacheMergeComments(NSArray *old, NSArray *observed, NSError **e) {
@@ -45,6 +45,19 @@ NSArray *WUMCacheMergeComments(NSArray *old, NSArray *observed, NSError **e) {
     NSData *json=[NSJSONSerialization dataWithJSONObject:result options:0 error:e];
     if(!json || json.length>6000) { Fail(e); return nil; }
     return result; // Missing observations never delete old comments or claim server deletion.
+}
+static BOOL WUCommentStableID(NSString *s) {
+    NSString *max=nil;
+    if([s hasPrefix:@"c32:"]) max=@"2147483647";
+    else if([s hasPrefix:@"c64:"]) max=@"18446744073709551615";
+    if(!max) return NO; s=[s substringFromIndex:4];
+    if(!s.length || [s hasPrefix:@"0"] || s.length>max.length) return NO;
+    for(NSUInteger i=0;i<s.length;i++) if([s characterAtIndex:i]<'0' || [s characterAtIndex:i]>'9') return NO;
+    return s.length<max.length || [s compare:max options:NSLiteralSearch]!=NSOrderedDescending;
+}
+NSString *WUMCacheCommentStateText(NSDictionary *comment) {
+    NSString *state=[comment[@"visibility"] isEqual:@"visibleSnapshot"]?@"最近一次详情快照可见（非实时）":@"历史快照（本次未确认可见）";
+    return [state stringByAppendingString:@"；真实删除未确认；创建/删除时间未知"];
 }
 static BOOL Row(id r) {
     if(![r isKindOfClass:NSDictionary.class] || [r count]!=(r[@"comments"]?9:8) || (r[@"comments"] && !WUMCacheMergeComments(@[],r[@"comments"],NULL)) || !Text(r[@"id"],36) || ![[NSUUID alloc] initWithUUIDString:r[@"id"]] || ![r[@"favorite"] isKindOfClass:NSNumber.class] || ![r[@"status"] isEqual:@"seen"]) return NO;
@@ -89,11 +102,26 @@ BOOL WUMCacheSaveComments(NSURL *d, NSString *a, NSString *user, NSString *tid, 
         NSMutableArray *rows=[old mutableCopy];
         NSUInteger i=[rows indexOfObjectPassingTest:^BOOL(NSDictionary *r, NSUInteger idx, BOOL *stop){ return [r[@"username"] isEqual:user] && [r[@"tid"] isEqual:tid]; }];
         if(i==NSNotFound) return Fail(e); // Comments cannot create an unseen parent moment.
-        NSDictionary *r=rows[i]; NSArray *merged=WUMCacheMergeComments(r[@"comments"]?:@[],observed,e); if(!merged) return NO;
+        NSDictionary *r=rows[i];
+        // Validate first; unknown/absent rows become historical, never deleted.
+        if(!WUMCacheMergeComments(@[],observed,e)) return NO;
+        NSMutableArray *history=[NSMutableArray array], *visible=[NSMutableArray array];
+        for(NSDictionary *c in r[@"comments"]?:@[]) { NSMutableDictionary *n=[c mutableCopy]; n[@"visibility"]=@"historical"; [history addObject:n]; }
+        for(NSDictionary *c in observed) {
+            NSMutableDictionary *n=[c mutableCopy]; n[@"visibility"]=WUCommentStableID(c[@"id"])?@"visibleSnapshot":@"historical";
+            [visible addObject:n];
+        }
+        NSArray *merged=WUMCacheMergeComments(history,visible,e); if(!merged) return NO;
         if([merged isEqual:r[@"comments"]]) return valid();
         NSMutableDictionary *next=[r mutableCopy]; next[@"comments"]=merged; next[@"last"]=@(MAX(now,[r[@"last"] doubleValue])); rows[i]=next;
         if(!valid()) return Fail(e); return Save(d,a,rows,e);
     }
+}
+// Success refreshes only a verified displayed snapshot. Callback ID namespaces
+// are not proved by the sample, so no deleted/tombstone state is manufactured.
+BOOL WUMCacheSaveCommentCompletion(NSURL *d, NSString *a, NSString *user, NSString *tid, int64_t ret, NSArray *observed, NSTimeInterval now, BOOL (^valid)(void), NSError **e) {
+    if(ret!=0) return NO; // No load, write, timestamp update, or parent creation on failure.
+    return WUMCacheSaveComments(d,a,user,tid,observed,now,valid,e);
 }
 NSArray *WUMCacheLoad(NSURL *d, NSString *a, NSError **e) { @synchronized(NSFileManager.defaultManager) { return Load(d,a,e); } }
 static NSDictionary *Observe(NSURL *d, NSString *a, NSDictionary *item, NSString *uuid, NSTimeInterval now, BOOL (^valid)(void), NSError **e) {
