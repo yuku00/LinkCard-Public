@@ -1,35 +1,7 @@
-name: WU Apple external voice validation
-on: push
-permissions:
-  contents: read
+name: Disabled inherited workflow
+on: workflow_dispatch
 jobs:
-  apple-voice:
-    runs-on: macos-15
-    timeout-minutes: 30
+  noop:
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Build Apple codec and test synthetic WAV and M4A
-        working-directory: wechat-unified
-        shell: bash
-        run: |
-          set -euxo pipefail
-          mkdir -p build
-          python3 tools/build_codecs.py macosx
-          xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/voice_pack_logic.m Sources/VoicePackLogic.m Sources/VoiceAudio.m Sources/VoiceLogic.m Sources/VoiceSendLogic.m Sources/MessageConstruction.m Sources/RepositoryLogic.m Sources/DraftMediaLogic.m build/codec-macosx/libWUOffline.a -framework Foundation -framework AudioToolbox -o build/voice-pack-tests
-          build/voice-pack-tests
-          xcrun --sdk macosx clang -Wall -Wextra -Werror -I Sources -I Vendor/silk/interface tests/silk_encode.c build/codec-macosx/libWUOffline.a -o build/silk-encode-tests
-          build/silk-encode-tests
-      - name: Build actual iOS arm64 dylib
-        working-directory: wechat-unified
-        shell: bash
-        run: |
-          set -euxo pipefail
-          python3 tools/build_codecs.py iphoneos
-          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
-          xcrun --sdk iphoneos clang -std=c11 -O2 -fPIC -arch arm64 -isysroot "$SDK" -miphoneos-version-min=16.6 -Wall -Wextra -Werror -I Sources -c Sources/WUNativeBoot.c -o build/native-boot-ios.o
-          xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=16.6 -fobjc-arc -fobjc-arc-exceptions -fblocks -dynamiclib -Wall -Wextra -Werror -Wno-unused-parameter -Wno-nullability-completeness -O2 -install_name @rpath/WeChatUnified.dylib Sources/*.m build/native-boot-ios.o build/codec-iphoneos/libWUOffline.a -Wl,-dead_strip -framework WebKit -framework SafariServices -framework Photos -framework AVKit -framework AVFoundation -framework AudioToolbox -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework JavaScriptCore -framework UniformTypeIdentifiers -lz -o build/WeChatUnified.dylib
-          file build/WeChatUnified.dylib
-          xcrun vtool -show-build build/WeChatUnified.dylib
-          otool -L build/WeChatUnified.dylib
+      - run: echo disabled

@@ -96,6 +96,22 @@ int main(void) { @autoreleasepool {
     CHECK([store acquire:imported[@"id"] error:NULL]!=nil); [store releaseResource:imported[@"id"]];
     CHECK(![store pair:imported[@"id"] selectedData:amr format:@4 version:@"8.0.70/1" current:yes error:NULL]);
     CHECK([store remove:imported[@"id"] current:yes error:NULL]);
+    // External audio must be encoded here, bound to this version, and reach the existing one-shot sender.
+    CHECK([store importFile:wavURL name:@"generated" version:@"8.0.70/1" current:yes error:NULL]);
+    NSDictionary *generated=[[store load:NULL] firstObject];
+    CHECK([generated[@"source"] isEqual:@"external-encoded-silk-v1"] && [generated[@"pairing"] isEqual:@0]);
+    CHECK(WUVoicePackMatches(generated,@"8.0.70/1") && !WUVoicePackMatches(generated,@"8.0.71/1"));
+    NSData *bytes=generated[@"data"]; CHECK(bytes.length>10 && !memcmp(bytes.bytes,"\x02#!SILK_V3",10));
+    NSMutableDictionary *tampered=[generated mutableCopy]; tampered[@"data"]=amr; CHECK(!WUVoicePackMatches(tampered,@"8.0.70/1"));
+    PackHost *externalHost=[PackHost new]; WUVoiceForwardOperation *external=[[WUVoiceForwardOperation alloc] initWithData:bytes account:@"a" target:@"recipient"];
+    CHECK([[external submitWithManager:externalHost audioSender:externalHost messageClass:PackWrap.class current:yes] hasPrefix:@"已请求"]);
+    [external submitWithManager:externalHost audioSender:externalHost messageClass:PackWrap.class current:yes];
+    CHECK(externalHost.inserts==1 && externalHost.sends==1 && externalHost.last.m_uiMessageType==34 && externalHost.last.m_uiVoiceFormat==4 && externalHost.last.m_uiVoiceTime==1000 && [externalHost.last.m_dtVoice isEqual:bytes]);
+    CHECK([store remove:generated[@"id"] current:yes error:NULL]);
+    NSURL *amrURL=[root URLByAppendingPathComponent:@"synthetic.amr"]; CHECK([amr writeToURL:amrURL atomically:YES]);
+    CHECK([store importFile:amrURL name:@"amr" version:@"8.0.70/1" current:yes error:NULL]);
+    NSDictionary *converted=[[store load:NULL] firstObject]; CHECK(WUVoicePackMatches(converted,@"8.0.70/1") && ![converted[@"data"] isEqual:amr]);
+    CHECK([store remove:converted[@"id"] current:yes error:NULL]);
     CHECK([@"bad index" writeToURL:index atomically:YES encoding:NSUTF8StringEncoding error:NULL]);
     CHECK(![store load:NULL]); CHECK(![store saveData:amr format:@4 version:@"8.0.70/1" name:@"a" current:yes error:NULL]); CHECK(![store remove:identifier current:yes error:NULL]);
     CHECK([NSFileManager.defaultManager removeItemAtURL:root error:NULL]);

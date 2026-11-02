@@ -1,0 +1,26 @@
+name: WU external audio targeted
+on: push
+permissions:
+  contents: read
+jobs:
+  voice:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build codecs and production voice-pack test
+        working-directory: wechat-unified
+        run: |
+          mkdir -p build
+          python3 tools/build_codecs.py macosx
+          xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/voice_pack_logic.m Sources/VoicePackLogic.m Sources/VoiceAudio.m Sources/VoiceLogic.m Sources/VoiceSendLogic.m Sources/MessageConstruction.m Sources/RepositoryLogic.m Sources/DraftMediaLogic.m build/codec-macosx/libWUOffline.a -framework Foundation -framework AudioToolbox -o build/voice-external-tests
+          build/voice-external-tests
+      - name: Compile iOS touched sources
+        working-directory: wechat-unified
+        run: |
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          for name in VoicePackLogic VoicePacks VoiceAudio; do
+            xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=16.6 -fobjc-arc -fobjc-arc-exceptions -fblocks -c -Wall -Wextra -Werror -Wno-unused-parameter -Wno-nullability-completeness "Sources/$name.m" -o "build/$name.o"
+          done

@@ -5,15 +5,20 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <unistd.h>
+#include <string.h>
 static BOOL Fail(NSError **e, NSString *s) { if(e) *e=[NSError errorWithDomain:@"WUVoicePack" code:1 userInfo:@{NSLocalizedDescriptionKey:s}]; return NO; }
 static BOOL Text(id x, NSUInteger n) { return [x isKindOfClass:NSString.class] && [x length]>0 && [x length]<=n; }
 static BOOL Pairing(id r) {
     BOOL selected=[r[@"source"] isEqual:@"selected-type34"] && [r[@"format"] isEqual:@4] && [r[@"pairing"] isEqual:@1] && Text(r[@"version"],160);
     BOOL imported=[r[@"source"] isEqual:@"imported-audio"] && [r[@"format"] isEqual:@(-1)] && [r[@"pairing"] isEqual:@0] && [r[@"version"] isEqual:@""];
-    return selected || imported;
+    BOOL generated=[r[@"source"] isEqual:@"external-encoded-silk-v1"] && [r[@"format"] isEqual:@4] && [r[@"pairing"] isEqual:@0] && Text(r[@"version"],160);
+    return selected || imported || generated;
 }
 BOOL WUVoicePackMatches(NSDictionary *r, NSString *version) {
-    return [r isKindOfClass:NSDictionary.class] && Text(version,160) && [r[@"version"] isEqual:version] && [r[@"pairing"] isEqual:@1] && [r[@"format"] isEqual:@4] && [r[@"source"] isEqual:@"selected-type34"];
+    if(![r isKindOfClass:NSDictionary.class] || !Text(version,160) || ![r[@"version"] isEqual:version] || ![r[@"format"] isEqual:@4]) return NO;
+    if([r[@"source"] isEqual:@"selected-type34"] && [r[@"pairing"] isEqual:@1]) return YES;
+    NSData *data=r[@"data"]; const unsigned char *p=[data isKindOfClass:NSData.class]?data.bytes:NULL;
+    return [r[@"source"] isEqual:@"external-encoded-silk-v1"] && [r[@"pairing"] isEqual:@0] && data.length>10 && p && !memcmp(p,"\x02#!SILK_V3",10) && [r[@"ms"] unsignedIntValue]>0 && WUVoiceMeasuredMS(data)==[r[@"ms"] unsignedIntValue];
 }
 static NSMutableDictionary *Leases(void) { static NSMutableDictionary *v; static dispatch_once_t once; dispatch_once(&once,^{ v=[NSMutableDictionary dictionary]; }); return v; }
 @interface WUVoicePackStore ()
@@ -79,6 +84,9 @@ static NSMutableDictionary *Leases(void) { static NSMutableDictionary *v; static
     }
 }
 - (BOOL)importFile:(NSURL *)url name:(NSString *)name current:(BOOL (^)(void))current error:(NSError **)error {
+    return [self importFile:url name:name version:nil current:current error:error];
+}
+- (BOOL)importFile:(NSURL *)url name:(NSString *)name version:(NSString *)version current:(BOOL (^)(void))current error:(NSError **)error {
     @synchronized(Leases()) {
         if(!current || !current()) return Fail(error,@"导入上下文失效");
         NSData *file=WUDraftMediaReadSource(url,10*1024*1024), *audio=file;
@@ -91,15 +99,22 @@ static NSMutableDictionary *Leases(void) { static NSMutableDictionary *v; static
             // origin only documents the export; it cannot become trusted pairing.
         }
         if(!Text(name,80)) return Fail(error,@"名称须为1至80字符");
+        // Only bytes generated here can receive the encoder provenance; imported metadata never can.
+        BOOL generated=NO;
+        if(Text(version,160)) {
+            NSData *encoded=WUVoiceTranscodeSilk(audio,current);
+            if(!encoded) return Fail(error,@"音频损坏、格式不受支持、转码失败或超过60秒");
+            audio=encoded; generated=YES;
+        }
         uint32_t ms=WUVoiceMeasuredMS(audio);
-        if(!ms && ![url.pathExtension.lowercaseString isEqual:@"wuvoice"]) {
+        if(!ms && !generated && ![url.pathExtension.lowercaseString isEqual:@"wuvoice"]) {
             audio=WUVoiceTranscodeSilk(file,current);
             ms=WUVoiceMeasuredMS(audio);
         }
         if(!ms) return Fail(error,@"音频损坏、格式不受支持、转码失败或超过60秒；未猜测宿主format");
         NSArray *old=[self load:error]; if(!old) return NO;
         NSMutableArray *rows=[old mutableCopy];
-        [rows insertObject:@{@"id":NSUUID.UUID.UUIDString,@"name":name,@"source":@"imported-audio",@"format":@(-1),@"version":@"",@"pairing":@0,@"ms":@(ms),@"data":[audio copy]} atIndex:0];
+        [rows insertObject:@{@"id":NSUUID.UUID.UUIDString,@"name":name,@"source":generated?@"external-encoded-silk-v1":@"imported-audio",@"format":generated?@4:@(-1),@"version":generated?version:@"",@"pairing":@0,@"ms":@(ms),@"data":[audio copy]} atIndex:0];
         return [self commit:rows current:current error:error];
     }
 }
