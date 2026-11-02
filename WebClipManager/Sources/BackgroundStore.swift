@@ -6,7 +6,7 @@ import Darwin
 final class BackgroundStore {
     private let parent: URL
     private let verifyAncestors: Bool
-    enum Purpose { case background, deletionSettings }
+    enum Purpose { case background, deletionSettings, notesAutoReadSettings }
     private let directory: String
     private let imageName: String
     private let limit = 12 * 1024 * 1024
@@ -30,6 +30,9 @@ final class BackgroundStore {
             imageName = "background.jpg"
         case .deletionSettings:
             directory = "org.example.WebClipManager.deletion-settings"
+            imageName = "settings.dat"
+        case .notesAutoReadSettings:
+            directory = "org.example.WebClipManager.notes-auto-read-settings"
             imageName = "settings.dat"
         }
         if let parent = parent {

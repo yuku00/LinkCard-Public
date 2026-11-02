@@ -293,6 +293,12 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     private var menuButton: UIBarButtonItem!
     private var lastGridWidth: CGFloat = 0
     private let deleteSettings = DeleteSettings()
+    private let notesAutoReadSettings = NotesAutoReadSettings()
+    private var notesAutoReadPolicy = NotesAutoReadPolicy()
+    private var isSelecting = false
+    private var selectionButton: UIBarButtonItem!
+    private var selectAllButton: UIBarButtonItem!
+    private var clearSelectionButton: UIBarButtonItem!
     var gridColumns: Int { traitCollection.preferredContentSizeCategory.isAccessibilityCategory || tableView.bounds.width < 320 ? 1 : 2 }
     private var gridItemHeight: CGFloat {
         let head = UIFont.preferredFont(forTextStyle: .headline).lineHeight
@@ -341,6 +347,14 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
             }
         ]))
         navigationItem.leftBarButtonItem?.accessibilityLabel = "设置持久背景"
+        let backgroundButton = navigationItem.leftBarButtonItem!
+        selectionButton = UIBarButtonItem(title: "多选", style: .plain, target: self, action: #selector(toggleSelectionMode))
+        selectionButton.accessibilityIdentifier = "selectionMode"
+        selectAllButton = UIBarButtonItem(title: "全选", style: .plain, target: self, action: #selector(selectVisible))
+        selectAllButton.accessibilityLabel = "全选当前筛选结果"
+        clearSelectionButton = UIBarButtonItem(title: "取消选择", style: .plain, target: self, action: #selector(clearSelection))
+        clearSelectionButton.accessibilityLabel = "取消所有选择（包括隐藏项）"
+        navigationItem.leftBarButtonItems = [backgroundButton, selectionButton]
         NotificationCenter.default.addObserver(self, selector: #selector(refreshBackground), name: BackgroundSession.changed, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(refreshBackground), name: UIApplication.didBecomeActiveNotification, object: nil)
         BackgroundSession.loadOnce()
@@ -368,10 +382,15 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     }
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        guard mode == .clips, !hasAttemptedInitialRead else { return }
-        hasAttemptedInitialRead = true
+        if mode == .clips {
+            guard !hasAttemptedInitialRead else { return }
+            hasAttemptedInitialRead = true
+        } else {
+            guard notesAutoReadPolicy.beginIfAllowed(enabled: notesAutoReadSettings.isEnabled, busy: busy, hasSelection: !selected.isEmpty, readState: readState) else { return }
+        }
         Task { [weak self] in
-            guard let self = self, self.readState == "notRead", !self.busy else { return }
+            guard let self = self, self.readState == "notRead", !self.busy,
+                  self.mode == .clips || (self.selected.isEmpty && self.notesAutoReadSettings.isEnabled) else { return }
             await self.loadItems()
         }
     }
@@ -424,6 +443,12 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     private func update() {
         guard isViewLoaded, readButton != nil, exportButton != nil, menuButton != nil else { return }
         readButton.isEnabled = !busy
+        selectionButton.isEnabled = !busy
+        selectionButton.title = isSelecting ? "完成" : "多选"
+        selectAllButton.isEnabled = !busy && !visibleIDs.isEmpty
+        clearSelectionButton.isEnabled = !busy && !selected.isEmpty
+        navigationItem.leftBarButtonItems = isSelecting ? [navigationItem.leftBarButtonItems!.first!, selectionButton, clearSelectionButton] : [navigationItem.leftBarButtonItems!.first!, selectionButton]
+        navigationItem.rightBarButtonItems = isSelecting ? [menuButton, exportButton, selectAllButton] : [menuButton, exportButton, readButton]
         exportButton.isEnabled = !busy && staging == nil && !selected.isEmpty
         let disabled: UIMenuElement.Attributes = busy ? .disabled : []
         var actions: [UIMenuElement] = []
@@ -445,6 +470,19 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
             actions.append(UIAction(title: "回收站", attributes: disabled) { [weak self] _ in self?.showRecycle() })
             actions.append(UIAction(title: "精确重复 URL", attributes: disabled, state: duplicatesOnly ? .on : .off) { [weak self] _ in
                 guard let self = self else { return }; self.duplicatesOnly.toggle(); self.update()
+            })
+        }
+        if mode == .notes {
+            actions.append(UIAction(title: "自动读取本机 Notes（进入此页时；默认关闭）", attributes: disabled, state: notesAutoReadSettings.isEnabled ? .on : .off) { [weak self] _ in
+                guard let self = self, !self.busy else { return }
+                do {
+                    let enabling = !self.notesAutoReadSettings.isEnabled
+                    try self.notesAutoReadSettings.setEnabled(enabling)
+                    if enabling {
+                        self.recycleMessage("自动读取已开启", "下次进入此页时，若尚未读取且没有选择，将自动只读读取；也可点击页头“读取”。")
+                    }
+                } catch { self.recycleMessage("无法保存设置", "自动读取设置未保存：\(error.localizedDescription)") }
+                self.update()
             })
         }
         actions.append(UIAction(title: "选择全部当前结果（\(visibleIDs.count)）", attributes: busy || visibleIDs.isEmpty ? .disabled : []) { [weak self] _ in
@@ -592,9 +630,19 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         super.traitCollectionDidChange(previousTraitCollection)
         if previousTraitCollection?.preferredContentSizeCategory != traitCollection.preferredContentSizeCategory { update() }
     }
+    @objc private func toggleSelectionMode() {
+        guard !busy else { return }
+        isSelecting.toggle()
+        update()
+    }
+    @objc private func clearSelection() {
+        guard !busy else { return }
+        SelectionPolicy.clear(&selected)
+        update()
+    }
     @objc func selectVisible() {
-        let ids = mode == .clips ? visibleClips.map(\.id) : visibleNotes.map { $0.id.uuidString }
-        selected.formUnion(ids)
+        guard !busy else { return }
+        SelectionPolicy.selectVisible(visibleIDs, selected: &selected)
         update()
     }
     @objc func clearMemory() {
@@ -606,7 +654,8 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     @objc func confirmRead() {
         guard !busy else { return }
         let message = mode == .clips ? "只读扫描系统 WebClips。不会删除或修改桌面项目。" : "只读定位 Notes，创建内存一致性快照，解析未锁定正文。跳过锁定、未下载或不支持内容；不下载附件。上限 1000 篇 / 16 MiB，数据库 128 MiB。"
-        let alert = UIAlertController(title: "读取确认", message: message, preferredStyle: .alert)
+        let warning = selected.isEmpty ? "" : "\n\n读取成功后会替换当前读取结果并清除现有选择；取消则全部保留。"
+        let alert = UIAlertController(title: "读取确认", message: message + warning, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
         alert.addAction(UIAlertAction(title: "只读读取", style: .default) { [weak self] _ in
             Task { await self?.loadItems() }
@@ -628,7 +677,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
             } else {
                 let loader = notesLoader
                 let batch = try await Task.detached { try loader() }.value
-                notes = batch.notes; selected = Set(notes.map { $0.id.uuidString })
+                notes = batch.notes; SelectionPolicy.afterRead(success: true, selected: &selected)
                 readState = "loaded"; status = batch.summary
             }
         } catch {
@@ -674,7 +723,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         toggleSelection(visibleNotes[indexPath.row].id.uuidString)
     }
     private func toggleSelection(_ id: String) {
-        if !selected.insert(id).inserted { selected.remove(id) }
+        SelectionPolicy.toggle(id, selected: &selected)
         update()
     }
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int { max(0, min(gridColumns, visibleClips.count - collectionView.tag * gridColumns)) }
