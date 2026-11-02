@@ -4,6 +4,8 @@
 #import "EmoticonLibraryLogic.h"
 #import "EmoticonLogic.h"
 #import "EmoticonSubmission.h"
+#import "EmoticonLibrarySafety.h"
+static __attribute__((unused)) bool debugCurrent(void *p) { (void)p; return true; }
 #include <unistd.h>
 #include <string.h>
 #include "emoticon_matches.inc"
@@ -113,7 +115,7 @@ int main(void) { @autoreleasepool {
     NSURL *file=[root URLByAppendingPathComponent:@"synthetic-cache.data"]; CHECK([gif writeToURL:file options:0 error:NULL]);
     WUEmoticonLibraryStore *store=[[WUEmoticonLibraryStore alloc] initWithRoot:root account:@"a"], *other=[[WUEmoticonLibraryStore alloc] initWithRoot:root account:@"b"];
     CHECK(store && other); BOOL (^valid)(void)=^BOOL{ return YES; }; NSError *error=nil;
-    CHECK([store load:&error] && !error); BOOL created=[store createGroup:@"第一组" current:valid error:&error]; if(!created) fprintf(stderr,"createGroup error: %s\n",error.description.UTF8String ?: "none"); CHECK(created); CHECK([store createGroup:@"第二组" current:valid error:&error]);
+    CHECK([store load:&error] && !error); BOOL created=[store createGroup:@"第一组" current:valid error:&error]; if(!created) { NSURL *d=[root URLByAppendingPathComponent:@"61" isDirectory:YES]; errno=0; int fd=WUEmojiOpenDirectory(d.path.fileSystemRepresentation); int e=errno; if(fd>=0) close(fd); errno=0; bool ok=WUEmojiAtomicCommit(d.path.fileSystemRepresentation,"11111111-1111-4111-8111-111111111111","test",4,debugCurrent,NULL); fprintf(stderr,"createGroup: %s; dir=%d errno=%d; direct=%d errno=%d\n",error.description.UTF8String ?: "none",fd,e,ok,errno); } CHECK(created); CHECK([store createGroup:@"第二组" current:valid error:&error]);
     NSDictionary *state=[store load:&error]; NSString *group=state[@"groups"][0][@"id"], *second=state[@"groups"][1][@"id"];
     CHECK([store importFile:file name:@"动画原件" group:group current:valid error:&error]); CHECK([WUEmoticonRead(file.path) isEqual:gif]);
     state=[store load:&error]; NSDictionary *row=state[@"rows"][0]; NSString *identifier=row[@"id"];
