@@ -17,7 +17,8 @@ import UIKit
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         window.rootViewController = UINavigationController(rootViewController: list); window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil }
-        list.loadViewIfNeeded(); await list.loadItems(); list.view.layoutIfNeeded()
+        list.loadViewIfNeeded(); window.setNeedsLayout(); window.layoutIfNeeded()
+        await list.loadItems(); window.layoutIfNeeded(); list.view.layoutIfNeeded()
         XCTAssertEqual(list.visibleClips.count, 130)
         XCTAssertEqual(list.tableView.numberOfRows(inSection: 1), 65)
         let first = try XCTUnwrap(list.tableView.cellForRow(at: IndexPath(row: 0, section: 1)) as? ClipGridRow)
@@ -62,8 +63,9 @@ import UIKit
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         window.rootViewController = navigation; window.makeKeyAndVisible()
         defer { window.isHidden = true; window.rootViewController = nil }
-        list.loadViewIfNeeded(); await list.loadItems()
-        list.view.layoutIfNeeded()
+        list.loadViewIfNeeded(); window.setNeedsLayout(); window.layoutIfNeeded()
+        await list.loadItems()
+        window.layoutIfNeeded(); list.view.layoutIfNeeded()
         XCTAssertEqual(list.gridColumns, 2)
         XCTAssertEqual(list.visibleClips.count, 3)
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { ctx in window.layer.render(in: ctx.cgContext) }
