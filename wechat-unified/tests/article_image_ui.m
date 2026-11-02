@@ -45,11 +45,12 @@ BOOL WUHook(NSString *a,NSString *b,BOOL c,const char *d,NSArray *e,IMP f,IMP *g
 @end
 @interface ArticleMenu : UIContextMenuInteraction <UIContextMenuInteractionDelegate>
 @property(nonatomic,strong) UIMenu *root;
+- (instancetype)initForTest;
 @end
 @implementation ArticleMenu
-- (instancetype)init { return [super initWithDelegate:self]; }
+- (instancetype)initForTest { return [super initWithDelegate:self]; }
 - (UIContextMenuConfiguration *)contextMenuInteraction:(UIContextMenuInteraction *)interaction configurationForMenuAtLocation:(CGPoint)location { return nil; }
-- (void)updateVisibleMenuWithBlock:(UIMenu *(^)(UIMenu *))block { self.root=block(self.root); }
+- (void)updateVisibleMenuWithBlock:(UIMenu *(NS_NOESCAPE ^)(UIMenu *))block { self.root=block(self.root); }
 @end
 @interface EmoticonPickViewController : UIViewController
 @property(nonatomic,strong) UIImage *m_image;
@@ -102,7 +103,7 @@ static void OriginalLayout(id web,SEL selector) {}
 - (void)testOriginalMenuAndButtonsRemainIdentical {
     UIBarButtonItem *host=[[UIBarButtonItem alloc] initWithTitle:@"host" style:UIBarButtonItemStylePlain target:nil action:nil]; self.owner.navigationItem.rightBarButtonItems=@[host];
     UIAction *original=[UIAction actionWithTitle:@"host-action" image:nil identifier:@"host-action" handler:^(UIAction *a){}];
-    ArticleMenu *menu=[ArticleMenu new]; menu.root=[UIMenu menuWithTitle:@"host" children:@[original]]; [self.web addInteraction:menu];
+    ArticleMenu *menu=[[ArticleMenu alloc] initForTest]; menu.root=[UIMenu menuWithTitle:@"host" children:@[original]]; [self.web addInteraction:menu];
     [self select]; XCTAssertTrue(self.op.menuAdded); XCTAssertEqual(menu.root.children.firstObject,original); XCTAssertEqual(menu.root.children.count,2u);
     [self.op reset]; XCTAssertEqual(menu.root.children.count,1u); XCTAssertEqual(menu.root.children.firstObject,original); XCTAssertEqualObjects(self.owner.navigationItem.rightBarButtonItems,@[host]);
 }
