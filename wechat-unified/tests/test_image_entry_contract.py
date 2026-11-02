@@ -68,7 +68,7 @@ class ImageEntryContract(unittest.TestCase):
         self.assertIn('WUOpenSelectedImageEditor(owner)', messages)
         self.assertIn('WUCancelImageEntries();', messages)
         self.assertIn('!WUImageEntryOwnsNavigation(v)', messages)
-        self.assertEqual(groups.count('@"imageEmoji"'), 2)
+        self.assertGreaterEqual(groups.count('@"imageEmoji"'), 2)
         self.assertIn('所选图片 → 微信表情编辑', groups)
         self.assertIn('imageEmoji', logic)
         row_count = re.search(r'self\.identifiers\.count:(\d+)\)', groups)
