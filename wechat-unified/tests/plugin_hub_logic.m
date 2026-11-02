@@ -21,7 +21,8 @@ int main(void) { @autoreleasepool {
     assert(WUHubFilterRows(searchable,@"无结果").count==0);
     assert([WUHubFilterRows(searchable,@"  ") isEqual:searchable]);
     assert(WUHubFilterRows(WUHubRows(registry,edited,NO),@"ASettings").count==0);
-    assert(WUHubFilterRows(@[@42,@{@"title":@42}],@"42").count==0);
+    NSArray *malformedRows=@[@42,@{ @"title":@42 }];
+    assert(WUHubFilterRows(malformedRows,@"42").count==0);
     NSDictionary *visible=WUHubSetEntry(edited,@"ASettings",@"我的设置",@"美化",NO);
     assert([visible[@"hidden"] count]==0 && WUHubRows(registry,visible,NO).count==2);
     NSDictionary *moved=WUHubMove(o,registry,@"BSettings",-1);
