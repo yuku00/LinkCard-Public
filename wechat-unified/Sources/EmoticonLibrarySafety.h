@@ -15,6 +15,13 @@ static inline int WUEmojiOpenDirectory(const char *path) {
     if(!path || path[0]!='/') return -1;
     char *copy=strdup(path); if(!copy) return -1;
     int fd=open("/",O_RDONLY|O_DIRECTORY|O_NOFOLLOW); char *save=NULL;
+#if defined(__APPLE__)
+    // Darwin's system /var alias points to /private/var; retain no-follow checks below it.
+    if(!strncmp(path,"/var/",5)) {
+        char target[32]; ssize_t n=readlink("/var",target,sizeof(target)-1);
+        if(n>0) { target[n]='\0'; if(!strcmp(target,"private/var") || !strcmp(target,"/private/var")) { close(fd); fd=open("/private",O_RDONLY|O_DIRECTORY|O_NOFOLLOW); } }
+    }
+#endif
     for(char *p=strtok_r(copy,"/",&save);p && fd>=0;p=strtok_r(NULL,"/",&save)) {
         if(!strcmp(p,".") || !strcmp(p,"..")) { close(fd); fd=-1; break; }
         int next=openat(fd,p,O_RDONLY|O_DIRECTORY|O_NOFOLLOW); close(fd); fd=next;

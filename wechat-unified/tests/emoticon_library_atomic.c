@@ -2,6 +2,7 @@
 #define _DARWIN_C_SOURCE 1
 #endif
 #define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700
 #include "EmoticonLibrarySafety.h"
 #include <assert.h>
 #include <dirent.h>
