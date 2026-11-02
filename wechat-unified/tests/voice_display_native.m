@@ -173,7 +173,7 @@ int main(int argc,const char **argv) { @autoreleasepool {
     @catch(NSException *e) { assert(Read(m)==12000 && [label.text isEqual:@"host:12000"]); }
     b.cell.body=nil;
     [b refreshDisplay]; m.kind=1; [b refreshDisplay]; assert(!b.appliedText); m.kind=34;
-    b.audio=@{@"duration":@NAN}; [b refreshDisplay]; assert(!b.appliedText);
+    b.audio=@{@"duration":@(NAN)}; [b refreshDisplay]; assert(!b.appliedText);
     b.audio=@{@"duration":@61001}; [b refreshDisplay];
     assert([label.text isEqual:@"1:01"]);
     [b.display layout:^{ assert(Read(m)==60000); }];

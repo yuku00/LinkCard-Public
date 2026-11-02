@@ -159,6 +159,11 @@ class Guardrails(unittest.TestCase):
             self.assertIn(required,moments)
         self.assertNotIn('UIModalPresentationFullScreen',moments)
         self.assertNotIn('sendPat:',moments)
+        self.assertNotIn('WUMomentsDraftsAction',moments)
+        self.assertNotIn('草稿 / 保存',moments)
+        native_settings=(ROOT/'Sources/WUNativeSettings.m').read_text()
+        self.assertNotIn('@"hotDisable"',native_settings)
+        self.assertNotIn('@"hotCompat"',native_settings)
         self.assertIn('WUCancelMoments();',(ROOT/'Sources/Messages.m').read_text())
     def test_moments_rp_is_object_scoped_and_never_sent(self):
         moments=(ROOT/'Sources/Moments.m').read_text()
