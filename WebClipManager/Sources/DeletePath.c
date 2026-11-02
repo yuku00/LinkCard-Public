@@ -23,7 +23,17 @@ static const char *alias(const char *p) {
     return strncmp(p, "/private/var/", 13) == 0 ? p + 8 : p;
 }
 int wcm_path_equal_alias(const char *a, const char *b) {
-    return wcm_path_valid(a) && wcm_path_valid(b) && strcmp(alias(a), alias(b)) == 0;
+    if (!a || !wcm_path_valid(b)) return 0;
+    size_t n = strlen(a);
+    // A single final separator denotes the same directory, not a new component.
+    if (n > 1 && a[n - 1] == '/') {
+        char *trimmed = strndup(a, n - 1);
+        if (!trimmed) return 0;
+        int equal = wcm_path_valid(trimmed) && strcmp(alias(trimmed), alias(b)) == 0;
+        free(trimmed);
+        return equal;
+    }
+    return wcm_path_valid(a) && strcmp(alias(a), alias(b)) == 0;
 }
 int wcm_open_directory(const char *root, const char *leaf, const char **stage, int *error) {
     *stage = "pathValidation"; *error = 0;

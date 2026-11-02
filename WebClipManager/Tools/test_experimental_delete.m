@@ -2,10 +2,11 @@
 #import "../Sources/ExperimentalDelete.h"
 static NSString *root, *ident = @"A.webclip";
 static BOOL blocked, managed, throwCheck; static int calls, checks, flip;
+static id pathOverride;
 @interface Mock : NSObject @end
 @implementation Mock
 + (id)webClipWithIdentifier:(id)x { return [self new]; }
-+ (id)pathForWebClipWithIdentifier:(id)x { return [root stringByAppendingPathComponent:x]; }
++ (id)pathForWebClipWithIdentifier:(id)x { return pathOverride ?: [root stringByAppendingPathComponent:x]; }
 - (id)identifier { return ident; }
 - (BOOL)removalDisallowed { if (throwCheck) @throw [NSException exceptionWithName:@"test" reason:nil userInfo:nil]; checks++; return blocked || (flip && checks > 1); }
 - (BOOL)configurationIsManaged { return managed; }
@@ -14,7 +15,7 @@ static BOOL blocked, managed, throwCheck; static int calls, checks, flip;
 @interface NoConfig : NSObject @end
 @implementation NoConfig
 + (id)webClipWithIdentifier:(id)x { return [self new]; }
-+ (id)pathForWebClipWithIdentifier:(id)x { return [root stringByAppendingPathComponent:x]; }
++ (id)pathForWebClipWithIdentifier:(id)x { return pathOverride ?: [root stringByAppendingPathComponent:x]; }
 - (id)identifier { return ident; }
 - (BOOL)removalDisallowed { return blocked; }
 - (BOOL)removeFromDisk { calls++; return YES; }
@@ -34,6 +35,20 @@ int main(void) { @autoreleasepool {
     NSCAssert([[NSFileManager defaultManager] createDirectoryAtPath:[root stringByAppendingPathComponent:ident] withIntermediateDirectories:YES attributes:nil error:NULL], @"mkdir");
     NSDictionary *base=@{@"Title":@"WCM-DELETE-TEST", @"ConfigurationIsManaged":@NO};
     run(base,Mock.class,YES); run(base,NoConfig.class,YES);
+    NSString *exact = [root stringByAppendingPathComponent:ident];
+    pathOverride = [exact stringByAppendingString:@"/"]; run(base,Mock.class,YES);
+    pathOverride = [exact stringByAppendingString:@"//"]; run(base,Mock.class,NO);
+    pathOverride = [root stringByAppendingPathComponent:@"A"]; run(base,Mock.class,NO);
+    pathOverride = [exact stringByAppendingString:@".webclip"]; run(base,Mock.class,NO);
+    pathOverride = [NSURL fileURLWithPath:exact]; run(base,Mock.class,NO);
+    pathOverride = [exact stringByAppendingString:@"/../other"]; run(base,Mock.class,NO);
+    NSDictionary *badPath = WCMExperimentalDeleteForTesting(ident, root, Mock.class);
+    NSCAssert([badPath[@"reason"] containsString:@"runtimePathCompare"], @"compare stage");
+    NSCAssert(![badPath[@"reason"] containsString:ident] && ![badPath[@"reason"] containsString:root], @"private path leaked");
+    pathOverride = [NSURL fileURLWithPath:exact];
+    NSDictionary *badType = WCMExperimentalDeleteForTesting(ident, root, Mock.class);
+    NSCAssert([badType[@"reason"] containsString:@"runtimePathType"], @"type stage");
+    pathOverride = nil;
     blocked=YES; run(base,Mock.class,NO); blocked=NO;
     managed=YES; run(base,Mock.class,NO); managed=NO;
     throwCheck=YES; run(base,Mock.class,NO); throwCheck=NO;

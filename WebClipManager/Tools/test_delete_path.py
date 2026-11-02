@@ -10,7 +10,10 @@ with tempfile.TemporaryDirectory() as temp:
     for s in [b'',b'/',b'/a//b',b'/a/./b',b'/a/../b',b'/a/']: assert not c.wcm_path_valid(s)
     for s in [b'/a/b',b'/private/var/x',b'/var/x']: assert c.wcm_path_valid(s)
     assert c.wcm_path_equal_alias(b'/var/x',b'/private/var/x')
-    for s in [b'/various/x',b'/var/../x',b'/var//x',b'/var/x/']:
+    assert c.wcm_path_equal_alias(b'/var/x/',b'/private/var/x')
+    assert c.wcm_path_equal_alias(b'/private/var/x/',b'/var/x')
+    assert not c.wcm_path_equal_alias(b'/var/x//',b'/private/var/x')
+    for s in [b'/various/x',b'/var/../x',b'/var//x',b'/var/x//',b'/var/x/../']:
         assert not c.wcm_path_equal_alias(s,b'/private/var/x')
     d=temp/'parent'; d.mkdir(); (d/'good.webclip').mkdir(); (d/'link.webclip').symlink_to(d/'good.webclip',target_is_directory=True)
     (temp/'ancestor').symlink_to(d,target_is_directory=True)

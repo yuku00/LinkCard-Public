@@ -56,15 +56,15 @@ static NSString *checkPlist(int dir) {
     return nil;
 }
 static NSDictionary *performDelete(NSString *identifier, NSString *root, Class cls) {
-    if (!validID(identifier)) return pathRefusal("pathValidation", 0);
+    if (!validID(identifier)) return pathRefusal("inputIdentifier", 0);
     const char *r = safeUTF8(root), *leaf = safeUTF8(identifier);
-    if (!r || !leaf || !wcm_path_valid(r)) return pathRefusal("pathValidation", 0);
+    if (!r || !leaf || !wcm_path_valid(r)) return pathRefusal("inputRootOrEncoding", 0);
     // Only this exact system alias is mapped; never resolve arbitrary symlinks.
     if ([root hasPrefix:@"/var/"]) root = [@"/private" stringByAppendingString:root];
     NSString *expected = [NSString stringWithFormat:@"%@/%@", root, identifier];
     const char *stage; int error;
     int dir = wcm_open_directory(safeUTF8(root), leaf, &stage, &error);
-    if (dir < 0) return pathRefusal(stage, error);
+    if (dir < 0) return pathRefusal(!strcmp(stage, "pathValidation") ? "initialOpenValidation" : stage, error);
     NSString *err = checkPlist(dir); if (err) { close(dir); return refuse(err); }
     @try {
     SEL factory = NSSelectorFromString(@"webClipWithIdentifier:");
@@ -75,9 +75,16 @@ static NSDictionary *performDelete(NSString *identifier, NSString *root, Class c
     id (*objectGet)(id, SEL) = (void *)objc_msgSend;
     BOOL (*boolGet)(id, SEL) = (void *)objc_msgSend;
     id path = classArg(cls,pathSel,identifier);
-    if (![path isKindOfClass:NSString.class]) { close(dir); return refuse(@"运行时路径不是字符串"); }
+    BOOL isString = [path isKindOfClass:NSString.class];
+    BOOL isURL = [path isKindOfClass:NSURL.class];
+    if (!isString) { close(dir); return refuse([NSString stringWithFormat:@"未调用删除；路径检查失败（阶段 runtimePathType，string %d，url %d）", isString, isURL]); }
     const char *runtimePath = safeUTF8(path);
-    if (!runtimePath || !wcm_path_equal_alias(runtimePath, safeUTF8(expected))) { close(dir); return pathRefusal("pathValidation", 0); }
+    if (!runtimePath || !wcm_path_equal_alias(runtimePath, safeUTF8(expected))) {
+        NSString *p = path;
+        NSString *prefix = [p hasPrefix:@"/private/var/mobile/Library/WebClips/"] ? @"privateWebClips" : ([p hasPrefix:@"/var/mobile/Library/WebClips/"] ? @"varWebClips" : @"other");
+        close(dir);
+        return refuse([NSString stringWithFormat:@"未调用删除；路径检查失败（阶段 runtimePathCompare，utf8 %d，length %lu，absolute %d，trailingSlash %d，prefix %@）", runtimePath != NULL, (unsigned long)p.length, [p hasPrefix:@"/"], [p hasSuffix:@"/"], prefix]);
+    }
     id object = classArg(cls,factory,identifier);
     if (!object || ![object isKindOfClass:cls]) { close(dir); return refuse(@"无法取得匹配的 UIWebClip 实例"); }
     // A subclass may override methods: check the actual dispatch class as well.
