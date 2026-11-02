@@ -62,7 +62,8 @@ static NSArray *Registry(void) {
     for(NSString *name in custom) if(!all[name] && all.count<100) all[name]=@{@"controller":name,@"title":custom[name],@"version":@""};
     return [all.allValues copy];
 }
-@interface WUHubController : UITableViewController
+@interface WUHubController : UITableViewController <UISearchBarDelegate>
+@property(nonatomic,strong) UISearchBar *entrySearch;
 @property(nonatomic,copy) NSArray<NSDictionary *> *rows;
 @property(nonatomic,copy) NSArray *registry;
 @property(nonatomic) BOOL showHidden;
@@ -73,6 +74,9 @@ static NSArray *Registry(void) {
 - (void)viewDidLoad {
     [super viewDidLoad]; self.title=@"插件收纳";
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"添加" style:UIBarButtonItemStylePlain target:self action:@selector(add)];
+    self.entrySearch=[[UISearchBar alloc] initWithFrame:CGRectMake(0,0,0,56)];
+    self.entrySearch.placeholder=@"搜索入口名称、分组或类名"; self.entrySearch.delegate=self;
+    self.tableView.tableHeaderView=self.entrySearch;
     for(NSString *name in @[WUChanged,HubChanged]) [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:name object:nil];
     WUInstallPluginHub(); [self refresh];
 }
@@ -82,11 +86,13 @@ static NSArray *Registry(void) {
     if(self.groupFilter && ![[all valueForKey:@"group"] containsObject:self.groupFilter]) self.groupFilter=nil;
     NSMutableArray *rows=[NSMutableArray array];
     for(NSDictionary *row in all) if(!self.groupFilter || [row[@"group"] isEqual:self.groupFilter]) [rows addObject:row];
-    self.rows=rows;
+    self.rows=WUHubFilterRows(rows,self.entrySearch.text);
     self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:self.groupFilter?:@"全部分组" style:UIBarButtonItemStylePlain target:self action:@selector(chooseGroup)];
     self.navigationItem.leftItemsSupplementBackButton=YES;
     [self.tableView reloadData];
 }
+- (void)searchBar:(UISearchBar *)searchBar textDidChange:(NSString *)searchText { [self refresh]; }
+- (void)searchBarSearchButtonClicked:(UISearchBar *)searchBar { [searchBar resignFirstResponder]; }
 - (void)chooseGroup {
     if(self.presentedViewController) return;
     NSMutableOrderedSet *groups=[NSMutableOrderedSet orderedSet];
@@ -114,7 +120,8 @@ static NSArray *Registry(void) {
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return s==0?@"控制":@"已注册 / 已发现的设置入口"; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
     if(s==0) return @"只整理已加载插件的设置入口；不会卸载、注入插件，也不会自动隐藏原入口。受整合总开关控制。";
-    return self.rows.count?@"长按入口可改名、分组、前后排序或隐藏。停用后不允许打开；不存在的类只保留元数据，不实例化替代。第三方插件内部行为仍由它自己负责。":@"尚无可收纳入口。可由插件调用本地注册接口，或手动添加已知设置控制器类名；不会扫描聊天或猜测任意类。";
+    if(!self.rows.count && self.entrySearch.text.length) return @"没有匹配的入口；试试其他关键词或显示已隐藏入口。";
+    return self.rows.count?@"长按入口可改名、分组、前后排序或隐藏。停用后不允许打开；不存在的类只保留元数据，不实例化替代。第三方插件内部行为仍由它自己负责。":@"当前分组没有可收纳入口。可切换分组、显示隐藏项，或手动添加已知设置控制器类名；不会扫描聊天或猜测任意类。";
 }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0;
@@ -183,6 +190,19 @@ static NSArray *Registry(void) {
         if(next) [v save:next]; else dispatch_async(dispatch_get_main_queue(),^{ [v notice:@"名称/分组为空、超长或条目数超限，原设置保留。"]; });
     }]]; [self presentViewController:a animated:YES completion:nil];
 }
+- (void)removeManualEntry:(NSString *)identifier {
+    if(self.presentedViewController || !Options()[@"custom"][identifier]) return;
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"移除手动添加的入口？" message:@"只移除此手动登记；名称、分组、隐藏和排序偏好保留。插件自身及原入口不会被删除；如果插件自行注册，该入口仍可能显示。" preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __weak WUHubController *weak=self;
+    [a addAction:[UIAlertAction actionWithTitle:@"移除登记" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){
+        WUHubController *v=weak; if(!v.viewIfLoaded.window || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+        NSMutableDictionary *options=[Options() mutableCopy], *custom=[options[@"custom"] mutableCopy];
+        if(!custom[identifier]) return;
+        [custom removeObjectForKey:identifier]; options[@"custom"]=custom; [v save:options];
+    }]];
+    [self presentViewController:a animated:YES completion:nil];
+}
 - (UIContextMenuConfiguration *)tableView:(UITableView *)t contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)p point:(CGPoint)point {
     if(p.section!=1 || p.row<0 || (NSUInteger)p.row>=self.rows.count) return nil;
     NSDictionary *row=self.rows[p.row]; NSString *identifier=row[@"controller"]; __weak WUHubController *weak=self;
@@ -196,7 +216,12 @@ static NSArray *Registry(void) {
         for(NSNumber *delta in @[@(-1),@1]) [actions addObject:[UIAction actionWithTitle:delta.integerValue<0?@"前移一位":@"后移一位" image:nil identifier:nil handler:^(UIAction *a){
             if(!weak.viewIfLoaded.window) return;
             NSDictionary *next=WUHubMove(Options(),Registry(),identifier,delta.integerValue); if(next) [weak save:next];
+            else [weak notice:@"无法移动：已到边界、入口不可用或排序存储已满；原排序保留。"];
         }]];
+        if(Options()[@"custom"][identifier]) {
+            UIAction *remove=[UIAction actionWithTitle:@"移除手动登记…" image:nil identifier:nil handler:^(UIAction *a){ if(weak.viewIfLoaded.window) [weak removeManualEntry:identifier]; }];
+            remove.attributes=UIMenuElementAttributesDestructive; [actions addObject:remove];
+        }
         return [UIMenu menuWithTitle:row[@"title"] children:actions];
     }];
 }

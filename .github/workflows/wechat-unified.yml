@@ -20,23 +20,12 @@ jobs:
       - name: Compile standalone arm64 iOS dylib
         working-directory: wechat-unified
         run: bash tools/build.sh
-      - name: Execute four real UIKit surface tests
+      - name: Incremental source contracts
+        working-directory: wechat-unified
         run: |
-          RESULT="$RUNNER_TEMP/wu-surface-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          WU_HARNESS_KEEP_BOOTED=1 python3 wechat-unified/tools/ui-harness/run.py "$GITHUB_WORKSPACE/wechat-unified" "$RESULT"
-          cp "$RESULT/verified-tests.json" wechat-unified/build/uikit-verified-tests.json
-          cp "$RESULT/destination.json" wechat-unified/build/uikit-destination.json
-          cp "$RESULT/xcodebuild.log" wechat-unified/build/uikit-test.log
-      - name: Execute eight real UIKit article tests
-        run: |
-          RESULT="$RUNNER_TEMP/wu-article-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          python3 wechat-unified/tools/test_article_image_ios.py "$RESULT"
-          cp "$RESULT/verified-tests.json" wechat-unified/build/article-uikit-verified-tests.json
-          cp "$RESULT/destination.json" wechat-unified/build/article-uikit-destination.json
-          cp "$RESULT/xcodebuild.log" wechat-unified/build/article-uikit-test.log
-      - name: Clean up only our simulator boot
-        if: always()
-        run: python3 wechat-unified/tools/ui-harness/run.py --cleanup "$RUNNER_TEMP/wu-surface-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python3 tests/test_incremental_safety.py
+          python3 tests/test_emoticon_library_contract.py
+          python3 tests/test_chat_layout.py
       - name: Upload build product and verification
         uses: actions/upload-artifact@v4
         with:

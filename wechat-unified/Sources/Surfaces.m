@@ -31,7 +31,21 @@ void WURefreshMessageSurface(UIView *cell,NSString *role) {
     if(WUEnabled(role)) objc_setAssociatedObject(cell,&cardKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 static void Search(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))searchLayout)(v,s); WUStyleSurface(v,@"searchSurface",14); }
-static void Refer(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))referLayout)(v,s); WUStyleSurface(v,@"referSurface",12); }
+static id CheckedObjectGetter(id object,NSString *name);
+static BOOL IsTextMessageReply(UIView *v) {
+    Class cls=NSClassFromString(@"TextMessageCellView");
+    if(!cls || ![cls isSubclassOfClass:UIView.class]) return NO;
+    for(UIView *parent=v.superview;parent;parent=parent.superview) {
+        if([parent isKindOfClass:cls]) return CheckedObjectGetter(parent,@"msgReplyView")==v || CheckedObjectGetter(parent,@"getMsgReplyView")==v;
+    }
+    return NO;
+}
+static void Refer(UIView *v,SEL s) {
+    Restore(v); ((void(*)(id,SEL))referLayout)(v,s);
+    // Preserve the old shared setting unless the message-specific override is enabled.
+    NSString *role=IsTextMessageReply(v) && WUEnabled(@"referMessageSurface") ? @"referMessageSurface" : @"referSurface";
+    WUStyleSurface(v,role,12);
+}
 static void Plus(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))plusLayout)(v,s); WUStyleSurface(v,@"plusSurface",18); }
 static void Toast(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))toastLayout)(v,s); WUStyleSurface(v,@"toastSurface",16); }
 static void RestoreChildren(UIView *v) { for(UIView *c in objc_getAssociatedObject(v,&childrenKey)) Restore(c); objc_setAssociatedObject(v,&childrenKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
@@ -86,6 +100,38 @@ static void ChatToolWindow(UIView *tool,SEL sel) {
     RestoreChatButtons(tool); ((void(*)(id,SEL))chatToolWindow)(tool,sel);
     [chatTools addObject:tool]; if(tool.window) [tool setNeedsLayout];
 }
+// Scope the preview toolbar to a verified text-message delegate and owned descendant.
+static IMP textPreviewLayout,textPreviewDisappear;
+static char textPreviewTargetKey;
+static NSHashTable<UIViewController *> *textPreviews;
+static BOOL textPreviewAvailable;
+BOOL WUTextPreviewSurfaceAvailable(void) { return textPreviewAvailable; }
+static void RestoreTextPreview(UIViewController *controller) {
+    UIView *target=objc_getAssociatedObject(controller,&textPreviewTargetKey);
+    if(target) WURestoreConfiguredSurface(target);
+    objc_setAssociatedObject(controller,&textPreviewTargetKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static void TextPreviewLayout(UIViewController *controller,SEL sel) {
+    RestoreTextPreview(controller); ((void(*)(id,SEL))textPreviewLayout)(controller,sel);
+    [textPreviews addObject:controller];
+    if(!controller.viewIfLoaded.window) return;
+    Class cellClass=NSClassFromString(@"TextMessageCellView"), toolbarClass=NSClassFromString(@"MMTextFloatBottomToolView");
+    id delegate=CheckedObjectGetter(controller,@"m_delegate");
+    Class ownerClass=NSClassFromString(@"TextFloatViewController");
+    Ivar ivar=ownerClass?class_getInstanceVariable(ownerClass,"m_bottomToolView"):NULL;
+    if(!cellClass || ![cellClass isSubclassOfClass:UIView.class] || ![delegate isKindOfClass:cellClass] ||
+       ![(UIView *)delegate window] || !toolbarClass || ![toolbarClass isSubclassOfClass:UIView.class] ||
+       !ivar || ivar_getTypeEncoding(ivar)[0]!='@') return;
+    id target=object_getIvar(controller,ivar);
+    if(![target isKindOfClass:toolbarClass] || target==controller.viewIfLoaded || ![target isDescendantOfView:controller.viewIfLoaded]) return;
+    textPreviewAvailable=YES;
+    if(!WUEnabled(@"textPreviewSurface")) return;
+    WUApplyConfiguredSurface(target,@"textPreviewSurface",14,YES);
+    objc_setAssociatedObject(controller,&textPreviewTargetKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static void TextPreviewDisappear(UIViewController *controller,SEL sel,BOOL animated) {
+    RestoreTextPreview(controller); ((void(*)(id,SEL,BOOL))textPreviewDisappear)(controller,sel,animated);
+}
 void WUInstallSurfaces(void) {
     static dispatch_once_t once; dispatch_once(&once, ^{ styled=NSHashTable.weakObjectsHashTable; cardRoles=[NSMutableSet set]; [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(UIView *v in styled) { Restore(v); [v setNeedsLayout]; } [styled removeAllObjects]; }]; });
     static dispatch_once_t chatOnce; dispatch_once(&chatOnce, ^{
@@ -94,6 +140,15 @@ void WUInstallSurfaces(void) {
             for(UIView *tool in chatTools.allObjects) { RestoreChatButtons(tool); [tool setNeedsLayout]; }
         }];
     });
+    static dispatch_once_t previewOnce; dispatch_once(&previewOnce, ^{
+        textPreviews=NSHashTable.weakObjectsHashTable;
+        [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){
+            for(UIViewController *controller in textPreviews.allObjects) { RestoreTextPreview(controller); [controller.viewIfLoaded setNeedsLayout]; }
+        }];
+    });
+    Class preview=NSClassFromString(@"TextFloatViewController");
+    if(preview && [preview isSubclassOfClass:UIViewController.class] && WUHook(@"TextFloatViewController",@"viewDidDisappear:",NO,"v",@[@"B"],(IMP)TextPreviewDisappear,&textPreviewDisappear))
+        WUHook(@"TextFloatViewController",@"viewDidLayoutSubviews",NO,"v",@[],(IMP)TextPreviewLayout,&textPreviewLayout);
     Class toolClass=NSClassFromString(@"MMInputToolView");
     if(toolClass && [toolClass isSubclassOfClass:UIView.class] && WUHook(@"MMInputToolView",@"didMoveToWindow",NO,"v",@[],(IMP)ChatToolWindow,&chatToolWindow))
         WUHook(@"MMInputToolView",@"layoutSubviews",NO,"v",@[],(IMP)ChatToolLayout,&chatToolLayout);

@@ -116,24 +116,30 @@ static dispatch_queue_t Queue(void) { static dispatch_queue_t q; static dispatch
     [self presentViewController:a animated:YES completion:nil];
 }
 - (void)createGroup { [self input:@"新建本地表情分组" value:nil completion:^(NSString *name){ [self write:^BOOL(BOOL (^valid)(void),NSError **error){ return [self.store createGroup:name current:valid error:error]; }]; }]; }
-- (void)saveSelected {
+- (void)saveSelectedGIFOnly:(BOOL)GIFOnly {
     NSDictionary *capture=self.binding.capture?self.binding.capture():nil;
-    if(!capture) { [self notice:@"请先在当前聊天多选一个就绪表情，再打开本地库；不使用未选择消息、缩略图或相册替代。"]; return; }
-    [self input:@"复制所选原表情到本账号库" value:@"所选表情" completion:^(NSString *name){
+    if(!capture) { [self notice:@"请先在当前聊天多选一个就绪表情（47类），再打开本地库；普通图片消息、未选择消息、缩略图或相册不作替代。"]; return; }
+    [self input:GIFOnly?@"保存所选GIF到本账号本地库（非官方心形）":@"复制所选原表情到本账号库" value:GIFOnly?@"所选GIF":@"所选表情" completion:^(NSString *name){
         if(!self.binding.selectionCurrent || !self.binding.selectionCurrent(capture)) { [self notice:@"所选消息已经变化，未读取文件"]; return; }
         NSString *group=self.filter?:@"";
         [self write:^BOOL(BOOL (^valid)(void),NSError **error){
-            // Media read is deferred until explicit confirmation, and every commit rechecks generation.
-            NSData *original=WUEmoticonRead(capture[@"path"]);
-            if(![WUEmoticonDigest(original) isEqual:capture[@"md5"]]) { if(error) *error=[NSError errorWithDomain:@"WUEmoticonLibrary" code:2 userInfo:@{NSLocalizedDescriptionKey:@"原缓存字节与所选表情MD5不符或尚未解封装；未导入、未转换"}]; return NO; }
-            return [self.store importData:original name:name group:group current:valid error:error];
+            BOOL (^selectedCurrent)(void)=^BOOL {
+                if(!valid()) return NO;
+                __block BOOL selected=NO;
+                // Host selection and UIKit access stay on main; the UI never waits for Queue().
+                void (^check)(void)=^{ selected=[self current] && self.binding.selectionCurrent && self.binding.selectionCurrent(capture); };
+                if(NSThread.isMainThread) check(); else dispatch_sync(dispatch_get_main_queue(),check);
+                return selected && valid();
+            };
+            return [self.store importSelectedPath:capture[@"path"] md5:capture[@"md5"] GIFOnly:GIFOnly name:name group:group current:selectedCurrent error:error];
         }];
     }];
 }
 - (void)importMenu {
     if(self.busy || ![self current] || self.presentedViewController) return;
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"导入到本账号库" message:@"复制原始字节；原路径/消息不删除。文件格式以内容校验，不按后缀猜测。" preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"复制聊天所选原表情" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ [self dismissViewControllerAnimated:NO completion:^{ [self saveSelected]; }]; }]];
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"导入到本账号库" message:@"仅保存本账号隔离的本地副本，不是微信官方心形表情入库。复制原始字节并保留GIF动画；不删除原消息，不上传、不自动发送。" preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"保存聊天所选GIF（仅本地库）" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ [self dismissViewControllerAnimated:NO completion:^{ [self saveSelectedGIFOnly:YES]; }]; }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"复制聊天所选原表情" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ [self dismissViewControllerAnimated:NO completion:^{ [self saveSelectedGIFOnly:NO]; }]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"选择一个本地GIF/PNG/JPEG文件" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ [self dismissViewControllerAnimated:NO completion:^{
         if(![self current]) return;
         UIDocumentPickerViewController *p=[[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeData] asCopy:YES]; p.delegate=self; p.allowsMultipleSelection=NO; self.picker=p; self.busy=YES; [self presentViewController:p animated:YES completion:nil];
@@ -145,8 +151,10 @@ static dispatch_queue_t Queue(void) { static dispatch_queue_t q; static dispatch
     if(controller!=self.picker) return; self.picker=nil; self.busy=NO;
     if(![self current] || urls.count!=1) return;
     NSURL *url=urls.firstObject; NSString *name=url.lastPathComponent.stringByDeletingPathExtension; if(name.length>80) name=[name substringToIndex:80];
-    NSString *group=self.filter?:@""; BOOL scoped=[url startAccessingSecurityScopedResource];
+    NSString *group=self.filter?:@"";
     [self write:^BOOL(BOOL (^valid)(void),NSError **error){
+        if(!valid()) return NO;
+        BOOL scoped=[url startAccessingSecurityScopedResource];
         @try { return [self.store importFile:url name:name group:group current:valid error:error]; }
         @finally { if(scoped) [url stopAccessingSecurityScopedResource]; }
     }];

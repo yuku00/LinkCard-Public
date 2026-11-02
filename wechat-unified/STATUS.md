@@ -1,5 +1,13 @@
 # WeChat Unified — 当前完成状态
 
+> 2026-11-02 引用与弹窗样式增量：保留原 `referSurface` 对所有现有匹配引用视图的共享行为，新增默认关闭的文本消息引用独立覆盖；仅当祖先为 `TextMessageCellView` 且经签名检查的 `msgReplyView` / `getMsgReplyView` 返回同一视图时使用，关闭覆盖则回退共享样式。新增默认关闭的聊天文本预览底部工具栏样式，仅在 `TextFloatViewController` 的文本消息 cell 委托、`MMTextFloatBottomToolView` 类型及控制器视图后代均匹配时应用，首次观察到合格浮层后可开启；只影响该底部工具栏，不影响系统/支付弹窗或操作派发。二者均复用逐属性所有权恢复、配置通知刷新和离开生命周期恢复；可调圆角、颜色等，配置保留。依据第三方公开 8.0.55 头文件 [TextMessageCellView](https://github.com/Huangbai233/WeChatHeaders/blob/014c32f794165acf9006cf0f6bbac0bae34dd8b2/8.0.55/TextMessageCellView.h)、[MMInputMsgReferView](https://github.com/Huangbai233/WeChatHeaders/blob/014c32f794165acf9006cf0f6bbac0bae34dd8b2/8.0.55/MMInputMsgReferView.h)、[TextFloatViewController](https://github.com/Huangbai233/WeChatHeaders/blob/014c32f794165acf9006cf0f6bbac0bae34dd8b2/8.0.55/TextFloatViewController.h)、[MMTextFloatBottomToolView](https://github.com/Huangbai233/WeChatHeaders/blob/014c32f794165acf9006cf0f6bbac0bae34dd8b2/8.0.55/MMTextFloatBottomToolView.h)；目标版委托、层级及可见性尚未验证，匹配不到即不生效。定向静态测试与既有源码测试共34项通过；Foundation配置测试已增加断言但本地未运行，本轮未编译或模拟器/真机验证。全树 `git diff --check` 检出既有 `Sources/Groups.m:267` 行尾空格，本轮未改该行。其他弹窗与引用类型仍未齐。
+
+> 2026-11-02 增量：统计对已经确认相同消息的副本，仅以缺失的发送者、正文、时间为目标补入已知值，已有值不因另一来源冲突被覆盖；新增 XCTest，原有扫描上限和资料覆盖未变。插件收纳的手动登记新增确认后移除，保留名称/分组/隐藏/排序偏好，不卸载插件或移除其原入口，自注册入口仍可显示。逐项美化重置增加确认；表情库 Files 导入安全域访问移至实际执行的工作块并以 finally 释放。静态定向测试 3+6+2+2 项及既有源码检查29项通过。隔离 Apple run 41422422137 的 iOS arm64 全 Sources 语法编译通过；统计 XCTest 首次因新增测试的宏参数逗号未括号化而编译失败，现已修正，统计专项复验 run 41422762898 已提交但仍在队列、尚无结果；该次未链接 dylib、未运行真机。原图库入官方心形、任意外部音频发送仍未接通，宿主接口证据边界不变。
+
+> 2026-11-02 聊天工具栏增量（未构建通过）：沿用原“工具”入口和已有账号动作列表，新增按账号选择原菜单或 2/3/4 列本地网格；选择、长按排序与两种显示共享，网格关闭后复用原动作派发和账号/会话/代次校验，弹出自身网格时不误失效；不修改键盘 Dock。默认保持原菜单。定向静态测试 2+2 项及现有源码检查 29 项通过。Apple 定向 CI 41416398623 在 iOS 编译时报 UIButton.contentEdgeInsets 弃用错误，随后本地已移除该属性，但按本轮只做一次 Apple 检查的限制未重跑，Foundation 账号布局测试因此未执行；不能称新代码编译通过，未进行模拟器或真实微信测试。隔离构建分支 wu-toolbar-20261102 的提交 ea3559cb75a93cdc75e4b32a3b9fef8c5c665b8b 是修复前快照，不是最终源码。尚未完整覆盖全部动作/宿主入口或验证网格交互。
+
+> 最新交接 2026-11-02：Apple CI 41414081470，提交 80a1cfc33ed3a243c69006c512bef94cba9a423d，arm64 构建及编译步骤回归、4 项 UIKit 表面测试和 8 项文章 UIKit 测试通过，云端产物上传成功；未在目标微信真机验证，不能视为功能完整。文章测试此前的不可用初始化和导航动画竞态已修正。聊天工具菜单增加按账号长按已选动作前移/后移、显示顺序；仅菜单排序，不是完整可配置工具栏布局。排除朋友圈防删与红包提醒，本轮不处理。所有既有工作树改动保留。
+
 > 2026-11-02 本轮交接：下方历史内容若与本段冲突，以本段和 `REMAINING.md` 为准。已移除半屏朋友圈草稿入口与热更新设置入口；生产不再安装热更新专属 Hook，保留旧数据和共享存储。朋友圈发表按钮已取消。修复语音 `Duration` 命名冲突、语音 NaN 测试装箱、消息 mock 的运行时声明，并修复表情库原子提交对 Darwin `/var -> /private/var` 系统别名误拒的问题。Apple CI 41409052052（提交 41ce9791c1b92c7878601e18f64893666636d674）的 iOS arm64 编译和既有编译步骤内回归已通过，四项 UIKit 表面测试通过；八项文章 UIKit 测试因测试替身调用 UIKit 标为不可用的 `new` 而编译失败，工作流最终失败且未上传产物；已在本地改用专用初始化方法并补齐 noescape 标注，尚未重新运行验证。未经目标微信真机验证。表情库安全检查保留子路径不跟随符号链接约束；旧数据未删除。其余统计、美化、工具栏、语音/表情、消息仓库的缺口仍见 `REMAINING.md`，不可称全部完成。工作树仍有大量原有及本轮未提交改动，远端发布只使用白名单自主工程、许可依赖与合成测试，未上传原样本。
 
 > 最新用户范围覆盖：草稿箱取消，不再计入需求；已有入口/专属代码尚待停用移除，不删除用户数据。每日只处理一个具体问题，额度明确很少才增加一个；暂停无预算并行和重复无收益核验。去重的剩余清单以 `REMAINING.md` 为准，下方是先前构建状态，不代表最新未编译工作树已经通过。
@@ -74,3 +82,14 @@
 - 公开依据仅限第三方 8.0.55 头文件：[MMInputToolView.h](https://github.com/Huangbai233/WeChatHeaders/blob/014c32f794165acf9006cf0f6bbac0bae34dd8b2/8.0.55/MMInputToolView.h#L101-L103)；不等于 8.0.70 的实机验证。签名、类或所有权不匹配时跳过。
 - 本次定向验证：`tests/test_chat_surface.py` 2 项静态接线测试通过，`tests/test_source.py` 29 项通过；编译并执行生产 `ThemePrimitives.h` 对应 C 测试通过。已增加 `tests/theme_catalog.m` 对两项样式和 12 项容量的 Foundation 生产测试，但本环境无 xcrun，未执行该测试，也未编译 UIKit/Objective-C 或运行模拟器、注入和真实微信。未运行全量 CI 或重复哈希。
 - 朋友圈发表按钮没有足够具体的宿主接口证据，未猜测、未接线；真实目标版本仍须核验按钮、生命周期、样式及交互与复用恢复。
+
+## 2026-11-02 本地联系人候选扩展及统计复验
+- 依据第三方公开 [微信 8.0.55 CContactMgr 头文件](https://github.com/Huangbai233/WeChatHeaders/blob/014c32f794165acf9006cf0f6bbac0bae34dd8b2/8.0.55/CContactMgr.h) 中 `getAllContactUserName` 的无参对象返回声明，尝试读取用户名数组；运行时严格签名/类型检查，异常回退，合并已加载私聊候选并去重，过滤本人和群，每批最多读取8条资料、最多2000候选、3秒时间预算；输入数组最多20000项。输出分别标示来源、非好友/未知、截断及异常，未验证名册完整性，不视作好友总数；无接口时维持500会话候选上限。同步名册接口的耗时以及目标版本语义/兼容性未经实测；共同群、历史消息覆盖仍受原限制。
+- 已排队的 [统计 XCTest 41422762898](https://github.com/yuku00/LinkCard-Public/actions/runs/41422762898) 完成成功：51项、零失败，未重跑；它测试此前快照，不包含此轮名册修改。
+- 此轮 [联系人适配定向 CI 41424114432](https://github.com/yuku00/LinkCard-Public/actions/runs/41424114432) 成功：macOS Foundation 生产适配器mock 608次断言及6项历史事件契约测试；包括非会话好友、去重、错误条目、回退、已有取消逻辑。非目标微信实机验证；此前其他模块脏修改未覆盖到此轮定向CI。
+
+
+## 2026-11-02 外部音频 Apple 定向验证
+- `tests/voice_pack_logic.m` 使用自制单声道 PCM WAV，macOS 测试中通过系统 `afconvert` 生成 M4A；两者经生产 AudioToolbox→SILK 路径及语音包导入测试，导入项保持未配对、不可匹配目标版本；没有真实账号媒体。
+- [Apple 定向验证 41428892111](https://github.com/yuku00/LinkCard-Public/actions/runs/41428892111) 成功：macOS、iPhoneOS 各编译 187 codec 单元；语音包 1672 次断言，SILK 合成编码与取消/非法输入通过；全部 Objective-C 源码与 iOS arm64 codec 链接为 iOS 16.6 Mach-O dylib，`otool` 确认 AudioToolbox 依赖。测试限 macOS 实际执行、iOS 实际交叉编译链接；未在 iPhone 运行、注入或发送，未产出签名发布包。
+- 首次 [41428571094](https://github.com/yuku00/LinkCard-Public/actions/runs/41428571094) macOS 音频通过但 iOS 构建发现 `ChatGrid.inc` 缺失；已加入 `tools/release.py` 严格白名单后非强推修复验证分支，重跑成功。SILK 二维预测系数数组复制修复与 BSD 许可保留；不因此宣称专利许可。没有重跑全量模拟器。

@@ -40,6 +40,21 @@ NSArray<NSDictionary *> *WUHubRows(NSArray<NSDictionary *> *registry, NSDictiona
     }];
     return [out copy];
 }
+NSArray<NSDictionary *> *WUHubFilterRows(NSArray<NSDictionary *> *rows, NSString *query) {
+    if(![rows isKindOfClass:NSArray.class]) return @[];
+    if(![query isKindOfClass:NSString.class]) return [rows copy];
+    query=[query stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if(!query.length) return [rows copy];
+    NSMutableArray *result=[NSMutableArray array];
+    for(id row in rows) {
+        if(![row isKindOfClass:NSDictionary.class]) continue;
+        for(NSString *key in @[@"title",@"group",@"controller"]) {
+            id text=row[key];
+            if([text isKindOfClass:NSString.class] && [text rangeOfString:query options:NSCaseInsensitiveSearch|NSDiacriticInsensitiveSearch].location!=NSNotFound) { [result addObject:row]; break; }
+        }
+    }
+    return [result copy];
+}
 NSDictionary *WUHubSetEntry(NSDictionary *o, NSString *identifier, NSString *name, NSString *group, BOOL hidden) {
     if(!WUHubValidOptions(o) || !WUHubValidControllerName(identifier) || !Text(name,80) || !Text(group,40)) return nil;
     name=[name stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
@@ -55,7 +70,12 @@ NSDictionary *WUHubMove(NSDictionary *o, NSArray<NSDictionary *> *registry, NSSt
     NSArray *rows=WUHubRows(registry,o,YES); NSMutableArray *ids=[[rows valueForKey:@"controller"] mutableCopy];
     NSUInteger at=[ids indexOfObject:identifier];
     if(at==NSNotFound || (delta<0 && !at) || (delta>0 && at+1>=ids.count)) return nil;
-    [ids exchangeObjectAtIndex:at withObjectAtIndex:(NSUInteger)((NSInteger)at+delta)];
-    NSMutableDictionary *out=[o mutableCopy]; out[@"order"]=ids;
+    // Keep positions for temporarily unavailable controllers instead of erasing their order.
+    NSMutableArray *order=[o[@"order"] mutableCopy];
+    for(NSString *name in ids) if(![order containsObject:name]) [order addObject:name];
+    NSUInteger other=(NSUInteger)((NSInteger)at+delta);
+    NSUInteger first=[order indexOfObject:ids[at]], second=[order indexOfObject:ids[other]];
+    [order exchangeObjectAtIndex:first withObjectAtIndex:second];
+    NSMutableDictionary *out=[o mutableCopy]; out[@"order"]=order;
     return WUHubValidOptions(out)?[out copy]:nil;
 }

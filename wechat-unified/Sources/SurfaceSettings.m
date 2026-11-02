@@ -1,6 +1,6 @@
 #import "WU.h"
 #import "ThemeCatalog.h"
-static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入框",@"noticeBorder":@"聊天系统通知",@"searchSurface":@"搜索栏",@"referSurface":@"输入区引用卡片",@"plusSurface":@"首页右上加号菜单",@"toastSurface":@"宿主Toast",@"timeSurface":@"聊天时间标签",@"swipeSurface":@"首页左滑菜单",@"fileSurface":@"文件消息背景",@"emoticonSurface":@"表情消息背景",@"chatSendSurface":@"聊天发送按钮",@"chatAttachmentSurface":@"聊天附件按钮"}; }
+static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入框",@"noticeBorder":@"聊天系统通知",@"searchSurface":@"搜索栏",@"referSurface":@"引用卡片（原共享样式）",@"referMessageSurface":@"文本消息内引用卡片覆盖",@"textPreviewSurface":@"聊天文本预览底部工具栏",@"plusSurface":@"首页右上加号菜单",@"toastSurface":@"宿主Toast",@"timeSurface":@"聊天时间标签",@"swipeSurface":@"首页左滑菜单",@"fileSurface":@"文件消息背景",@"emoticonSurface":@"表情消息背景",@"chatSendSurface":@"聊天发送按钮",@"chatAttachmentSurface":@"聊天附件按钮"}; }
 @interface WUSurfaceEditor : UITableViewController
 @property(nonatomic,copy) NSString *role;
 @property(nonatomic,strong) NSArray *fields;
@@ -25,7 +25,13 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
     [self.tableView reloadData]; return YES;
 }
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p {
-    [t deselectRowAtIndexPath:p animated:YES]; if(p.section==0) return; if(p.section==2) { [self saveStyle:@{}]; return; }
+    [t deselectRowAtIndexPath:p animated:YES]; if(p.section==0) return;
+    if(p.section==2) {
+        UIAlertController *confirm=[UIAlertController alertControllerWithTitle:@"重置本项样式？" message:@"只清除当前项目的颜色、圆角和字体等样式；不修改开关或其他项目。" preferredStyle:UIAlertControllerStyleAlert];
+        [confirm addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+        [confirm addAction:[UIAlertAction actionWithTitle:@"重置" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x){ [self saveStyle:@{}]; }]];
+        [self presentViewController:confirm animated:YES completion:nil]; return;
+    }
     NSArray *field=self.fields[p.row]; NSString *key=field[0]; BOOL numeric=[@[@"radius",@"borderWidth",@"opacity",@"fontSize",@"fontWeight"] containsObject:key];
     UIAlertController *a=[UIAlertController alertControllerWithTitle:field[1] message:@"留空恢复默认值" preferredStyle:UIAlertControllerStyleAlert];
     [a addTextFieldWithConfigurationHandler:^(UITextField *f){ f.text=[WUSurfaceStyle(self.role)[key] description]; f.autocorrectionType=UITextAutocorrectionTypeNo; f.autocapitalizationType=UITextAutocapitalizationTypeNone; f.placeholder=numeric?@"点值 / 数值":@"#RRGGBBAA"; }];

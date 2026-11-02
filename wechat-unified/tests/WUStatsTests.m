@@ -27,6 +27,18 @@ static NSDictionary *R(NSString *sid,NSString *sender,int64_t time,NSString *typ
     WUStatsAccumulator *a=[self acc:NO]; [a addRecords:@[R(@"42",@"a",1,@"other")]]; [a addRecords:@[R(@"42",@"a",1,@"redpacket")]];
     NSDictionary *r=a.result; XCTAssertEqualObjects(r[@"total"],@1); XCTAssertEqualObjects(r[@"types"],(@{@"redpacket":@1})); XCTAssertEqualObjects(r[@"duplicates"],@1);
 }
+- (void)testDuplicateFillsOnlyMissingFields {
+    WUStatsAccumulator *a=[self acc:NO];
+    NSDictionary *empty=@{@"sid":@"42",@"source":@"normal",@"sender":@"",@"time":@0,@"type":@"text",@"text":@""};
+    NSDictionary *full=@{@"sid":@"42",@"source":@"app",@"sender":@"alice",@"time":@100,@"type":@"text",@"text":@"hello world"};
+    NSDictionary *conflict=@{@"sid":@"42",@"source":@"app",@"sender":@"bob",@"time":@200,@"type":@"text",@"text":@"other words"};
+    XCTAssertTrue(([a addRecords:@[empty,full,conflict]]));
+    NSDictionary *r=a.result;
+    XCTAssertEqualObjects(r[@"total"],@1); XCTAssertEqualObjects(r[@"duplicates"],@2);
+    XCTAssertEqualObjects(r[@"unknownTime"],@0); XCTAssertEqualObjects(r[@"unknownSender"],@0);
+    XCTAssertEqualObjects(r[@"speakers"][0][@"id"],@"alice");
+    XCTAssertEqualObjects(r[@"words"][0][@"id"],@"hello");
+}
 - (void)testLocalIDsRequireSource {
     WUStatsAccumulator *a=[self acc:NO]; NSMutableDictionary *r=[R(@"",@"a",1,@"text") mutableCopy]; r[@"lid"]=@"8";
     NSMutableDictionary *other=[r mutableCopy]; other[@"source"]=@"app";
