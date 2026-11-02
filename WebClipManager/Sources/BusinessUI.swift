@@ -287,6 +287,12 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         super.viewDidLoad()
         tableView.accessibilityIdentifier = mode == .clips ? "webclipsList" : "notesList"
         navigationController?.navigationBar.prefersLargeTitles = true
+        let navAppearance = UINavigationBarAppearance()
+        navAppearance.configureWithOpaqueBackground()
+        navAppearance.backgroundColor = .systemBackground
+        navigationController?.navigationBar.standardAppearance = navAppearance
+        navigationController?.navigationBar.scrollEdgeAppearance = navAppearance
+        navigationController?.navigationBar.compactAppearance = navAppearance
         tableView.backgroundColor = .clear
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 72

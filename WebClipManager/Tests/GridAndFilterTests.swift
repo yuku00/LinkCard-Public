@@ -19,6 +19,9 @@ import UIKit
         defer { window.isHidden = true; window.rootViewController = nil }
         list.loadViewIfNeeded(); window.setNeedsLayout(); window.layoutIfNeeded()
         await list.loadItems(); window.layoutIfNeeded(); list.view.layoutIfNeeded()
+        let appearance = try XCTUnwrap(list.navigationController?.navigationBar.standardAppearance)
+        XCTAssertEqual(appearance.backgroundColor, UIColor.systemBackground)
+        XCTAssertEqual(list.navigationController?.navigationBar.scrollEdgeAppearance?.backgroundColor, UIColor.systemBackground)
         XCTAssertEqual(list.visibleClips.count, 130)
         XCTAssertEqual(list.tableView.numberOfRows(inSection: 1), 65)
         let first = try XCTUnwrap(list.tableView.cellForRow(at: IndexPath(row: 0, section: 1)) as? ClipGridRow)
