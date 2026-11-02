@@ -65,6 +65,17 @@ NSDictionary *WUHubSetEntry(NSDictionary *o, NSString *identifier, NSString *nam
     names[identifier]=name; groups[identifier]=group; out[@"names"]=names; out[@"groups"]=groups; out[@"hidden"]=h;
     return WUHubValidOptions(out)?[out copy]:nil;
 }
+NSDictionary *WUHubResetEntry(NSDictionary *o, NSString *identifier) {
+    if(!WUHubValidOptions(o) || !WUHubValidControllerName(identifier)) return nil;
+    NSMutableDictionary *out=[o mutableCopy];
+    for(NSString *key in @[@"names",@"groups"]) {
+        NSMutableDictionary *values=[o[key] mutableCopy]; [values removeObjectForKey:identifier]; out[key]=values;
+    }
+    for(NSString *key in @[@"hidden",@"order"]) {
+        NSMutableArray *values=[o[key] mutableCopy]; [values removeObject:identifier]; out[key]=values;
+    }
+    return WUHubValidOptions(out)?[out copy]:nil;
+}
 NSDictionary *WUHubMove(NSDictionary *o, NSArray<NSDictionary *> *registry, NSString *identifier, NSInteger delta) {
     if(!WUHubValidOptions(o) || (delta!=1 && delta!=-1)) return nil;
     NSArray *rows=WUHubRows(registry,o,YES); NSMutableArray *ids=[[rows valueForKey:@"controller"] mutableCopy];

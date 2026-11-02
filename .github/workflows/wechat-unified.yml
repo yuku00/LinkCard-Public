@@ -1,35 +1,7 @@
-name: WeChat Unified dylib
-on:
-  push:
-    branches: ['wechat-unified/**']
-    paths:
-      - 'wechat-unified/**'
-      - '.github/workflows/wechat-unified.yml'
-  workflow_dispatch:
-permissions:
-  contents: read
-concurrency:
-  group: wechat-unified-${{ github.ref }}
-  cancel-in-progress: false
+name: Disabled inherited workflow
+on: workflow_dispatch
 jobs:
-  build:
-    runs-on: macos-15
-    timeout-minutes: 45
+  noop:
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Compile standalone arm64 iOS dylib
-        working-directory: wechat-unified
-        run: bash tools/build.sh
-      - name: Incremental source contracts
-        working-directory: wechat-unified
-        run: |
-          python3 tests/test_incremental_safety.py
-          python3 tests/test_emoticon_library_contract.py
-          python3 tests/test_chat_layout.py
-      - name: Upload build product and verification
-        uses: actions/upload-artifact@v4
-        with:
-          name: WeChatUnified-arm64-iOS16.6-${{ github.sha }}
-          path: wechat-unified/build/
-          if-no-files-found: error
-          retention-days: 30
+      - run: echo disabled

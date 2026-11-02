@@ -190,6 +190,19 @@ static NSArray *Registry(void) {
         if(next) [v save:next]; else dispatch_async(dispatch_get_main_queue(),^{ [v notice:@"名称/分组为空、超长或条目数超限，原设置保留。"]; });
     }]]; [self presentViewController:a animated:YES completion:nil];
 }
+- (void)resetEntry:(NSString *)identifier {
+    if(self.presentedViewController) return;
+    NSUInteger generation=WUContextGeneration();
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"恢复此入口的收纳默认值？" message:@"只清除此入口的自定义名称、分组、隐藏和排序；手动登记、其他入口和插件自身设置保留。" preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __weak WUHubController *weak=self;
+    [a addAction:[UIAlertAction actionWithTitle:@"恢复默认" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){
+        WUHubController *v=weak;
+        if(!v.viewIfLoaded.window || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || generation!=WUContextGeneration()) return;
+        [v save:WUHubResetEntry(Options(),identifier)];
+    }]];
+    [self presentViewController:a animated:YES completion:nil];
+}
 - (void)removeManualEntry:(NSString *)identifier {
     if(self.presentedViewController || !Options()[@"custom"][identifier]) return;
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"移除手动添加的入口？" message:@"只移除此手动登记；名称、分组、隐藏和排序偏好保留。插件自身及原入口不会被删除；如果插件自行注册，该入口仍可能显示。" preferredStyle:UIAlertControllerStyleAlert];
@@ -218,6 +231,7 @@ static NSArray *Registry(void) {
             NSDictionary *next=WUHubMove(Options(),Registry(),identifier,delta.integerValue); if(next) [weak save:next];
             else [weak notice:@"无法移动：已到边界、入口不可用或排序存储已满；原排序保留。"];
         }]];
+        [actions addObject:[UIAction actionWithTitle:@"恢复此入口默认值…" image:nil identifier:nil handler:^(UIAction *a){ if(weak.viewIfLoaded.window) [weak resetEntry:identifier]; }]];
         if(Options()[@"custom"][identifier]) {
             UIAction *remove=[UIAction actionWithTitle:@"移除手动登记…" image:nil identifier:nil handler:^(UIAction *a){ if(weak.viewIfLoaded.window) [weak removeManualEntry:identifier]; }];
             remove.attributes=UIMenuElementAttributesDestructive; [actions addObject:remove];

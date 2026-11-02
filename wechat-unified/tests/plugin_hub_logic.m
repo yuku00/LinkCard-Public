@@ -46,6 +46,16 @@ int main(void) { @autoreleasepool {
     assert(WUHubRows(registry,bad,NO).count==0);
     NSMutableArray *many=[NSMutableArray array]; for(unsigned i=0;i<101;i++) [many addObject:[NSString stringWithFormat:@"VC%u",i]];
     bad=[o mutableCopy]; bad[@"order"]=many; assert(!WUHubValidOptions(bad));
+    NSMutableDictionary *resetInput=[edited mutableCopy];
+    resetInput[@"order"]=@[@"OfflineSettings",@"ASettings",@"BSettings"]; resetInput[@"custom"]=@{@"ASettings":@"手动名称"};
+    resetInput[@"names"]=@{@"ASettings":@"自定义",@"BSettings":@"保留"};
+    NSDictionary *reset=WUHubResetEntry(resetInput,@"ASettings");
+    assert(WUHubValidOptions(reset)); assert(!reset[@"names"][@"ASettings"] && [reset[@"names"][@"BSettings"] isEqual:@"保留"]);
+    assert(!reset[@"groups"][@"ASettings"] && ![reset[@"hidden"] containsObject:@"ASettings"]);
+    assert([reset[@"order"] isEqual:(@[@"OfflineSettings",@"BSettings"])] && [reset[@"custom"] isEqual:resetInput[@"custom"]]);
+    assert([resetInput[@"hidden"] containsObject:@"ASettings"] && [resetInput[@"order"] count]==3);
+    assert([WUHubResetEntry(reset,@"ASettings") isEqual:reset]); assert(!WUHubResetEntry(reset,@"../bad"));
+    assert(!WUHubResetEntry(@{},@"ASettings"));
     NSDictionary *same=WUHubSetEntry(edited,@"ASettings",@"我的设置",@"美化",YES); assert([same[@"hidden"] count]==1);
     puts("PluginHub production model: configuration validation, identity, dedup, group/name, hidden, stable order and limits PASS");
 } return 0; }
