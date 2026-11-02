@@ -82,8 +82,14 @@ enum RecycleStore {
         guard store >= 0 else { throw ClipError.invalid("回收目录不可访问") }
         defer { close(store) }
         try checkedDir(store, privateStore: true)
-        guard WCMRecycleCopy(source, store, clip.id, UUID().uuidString, nil, nil) == 0 else {
+        let transaction = UUID().uuidString
+        guard WCMRecycleCopy(source, store, clip.id, transaction, nil, nil) == 0 else {
             throw ClipError.invalid("备份未完成（错误码 \(errno)）；原目录未修改")
+        }
+        var identifier = [CChar](repeating: 0, count: 201)
+        guard WCMRecycleInspect(store, ".incomplete-" + transaction, &identifier, UInt(identifier.count)) == 0,
+              String(cString: identifier) == clip.id else {
+            throw ClipError.invalid("备份清单无效或标识不匹配；未删除源")
         }
     }
 }

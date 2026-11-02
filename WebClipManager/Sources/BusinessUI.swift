@@ -434,6 +434,9 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
             actions.append(UIAction(title: "测试书签：仅备份（不删除）", attributes: busy || selected.count != 1 ? .disabled : []) { [weak self] _ in
                 self?.confirmTestBackup()
             })
+            actions.append(UIAction(title: "实验性：删除单个测试书签…", attributes: busy || selected.count != 1 ? .disabled : []) { [weak self] _ in
+                self?.confirmExperimentalDelete()
+            })
             actions.append(UIAction(title: "回收站", attributes: disabled) { [weak self] _ in self?.showRecycle() })
             actions.append(UIAction(title: "精确重复 URL", attributes: disabled, state: duplicatesOnly ? .on : .off) { [weak self] _ in
                 guard let self = self else { return }; self.duplicatesOnly.toggle(); self.update()
@@ -515,6 +518,35 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         })
         present(alert, animated: true)
     }
+    private func confirmExperimentalDelete() {
+        guard !busy, selected.count == 1, let id = selected.first,
+              let clip = clips.first(where: { $0.id == id }), clip.title == "WCM-DELETE-TEST" else {
+            recycleMessage("仅限测试书签", "请新建标题精确为 WCM-DELETE-TEST 的可丢弃书签，重新读取并只选择该项。"); return
+        }
+        let warning = "实验性功能，仅供可丢弃测试对象。将尝试系统删除，回收站副本保护有限，不能作为唯一备份；恢复不保证图标或元数据。不会清理 Safari。"
+        let first = UIAlertController(title: "实验删除测试书签？", message: warning, preferredStyle: .alert)
+        first.addAction(UIAlertAction(title: "取消", style: .cancel))
+        first.addAction(UIAlertAction(title: "继续", style: .destructive) { [weak self] _ in
+            guard let self = self, !self.busy, self.selected == Set([id]) else { return }
+            let second = UIAlertController(title: "再次确认单项实验删除？", message: "仅对 \(id) 先备份、再核验并最多调用一次系统删除。\n" + warning, preferredStyle: .alert)
+            second.addAction(UIAlertAction(title: "取消", style: .cancel))
+            second.addAction(UIAlertAction(title: "备份并尝试删除", style: .destructive) { [weak self] _ in
+                guard let self = self, !self.busy, self.selected == Set([id]) else { return }
+                self.busy = true; self.status = "正在备份和核验测试书签…"; self.update()
+                Task { [weak self] in
+                    let result = await Task.detached { Result { try ExperimentalDelete.run(clip, firstConfirmed: true, secondConfirmed: true) } }.value
+                    guard let self = self else { return }; self.busy = false
+                    switch result {
+                    case .success(let message): self.status = message
+                    case .failure(let error): self.status = "未调用删除：\(error.localizedDescription)"
+                    }
+                    self.update()
+                }
+            })
+            self.present(second, animated: true)
+        })
+        present(first, animated: true)
+    }
     private func confirmClearMemory() {
         let alert = UIAlertController(title: "清除读取结果？", message: "仅清除当前内存中的读取结果和选择，不修改系统书签或备忘录。", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
@@ -562,7 +594,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
                 let scan = try await repository.scan()
                 clips = scan.clips; selected = []
                 readState = scan.issues.isEmpty ? "loaded" : "partial"
-                status = "读取 \(clips.count) 项 · 跳过/异常 \(scan.issues.count) 项。删除尚未启用。"
+                status = "读取 \(clips.count) 项 · 跳过/异常 \(scan.issues.count) 项。普通批量删除禁用；仅提供可丢弃测试书签实验入口。"
                 if let failure = scan.firstFailure { status += "\n" + failure.summary }
             } else {
                 let loader = notesLoader

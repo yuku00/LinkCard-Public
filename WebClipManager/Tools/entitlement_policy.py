@@ -1,6 +1,6 @@
 """Build9: explicit noncontainer profile, without HOME rebinding or extra storage rights."""
 BUNDLE_ID = 'org.example.WebClipManager'
-BUILD = '18'
+BUILD = '19'
 ALLOWED_ENTITLEMENTS = {
     'platform-application': True,
     'application-identifier': BUNDLE_ID,

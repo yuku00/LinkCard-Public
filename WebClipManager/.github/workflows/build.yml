@@ -1,4 +1,4 @@
-name: WebClipManager build18 recycle candidate (manual)
+name: WebClipManager build19 experimental delete (manual)
 on:
   workflow_dispatch:
     inputs:

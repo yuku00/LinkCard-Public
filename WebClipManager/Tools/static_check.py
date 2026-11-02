@@ -34,6 +34,15 @@ assert 'class_getInstanceMethod' in interface and 'class_getClassMethod' in inte
 for swift in (root / 'Sources').glob('*.swift'):
     if swift.name != 'Interface.swift':
         assert 'NSSelectorFromString' not in swift.read_text()
+# Only the reviewed experimental Objective-C bridge may resolve the private delete selector.
+bridge = root / 'Sources/ExperimentalDelete.m'
+assert bridge.read_text().count('NSSelectorFromString(@"removeFromDisk")') == 1
+assert bridge.read_text().count('boolGet(object,removeSel)') == 1
+for path in (root / 'Sources').glob('*'):
+    if path.is_file() and path != bridge:
+        text = path.read_text()
+        for forbidden in ('NSSelectorFromString(@"removeFromDisk")', 'sel_registerName("removeFromDisk")', '@selector(removeFromDisk)', 'objc_msgSend'):
+            assert forbidden not in text, (path.name, forbidden)
 store = (root / 'Sources/AppleNotesStore.swift').read_text()
 body = (root / 'Sources/AppleNoteBody.swift').read_text()
 assert 'SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX' in store
