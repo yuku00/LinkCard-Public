@@ -1,4 +1,4 @@
-name: WebClipManager build20 device-only experimental delete (manual)
+name: WebClipManager build21 device-only experimental delete (manual)
 on:
   workflow_dispatch:
     inputs:
@@ -29,6 +29,9 @@ jobs:
           python3 Tools/test_helper_transport.py
           python3 Tools/test_recycle_copy.py
           python3 Tools/test_recycle_operations.py
+          python3 Tools/test_delete_path.py
+          clang -fobjc-arc -framework Foundation Tools/foundation_path_probe.m -o /tmp/wcm-foundation-path-probe
+          /tmp/wcm-foundation-path-probe
       - name: Generate project
         run: xcodegen generate
       - name: Build unsigned device app

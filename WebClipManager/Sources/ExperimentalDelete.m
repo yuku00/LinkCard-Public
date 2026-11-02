@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include "DeletePath.h"
 
 static NSDictionary *refuse(NSString *reason) { return @{ @"called": @NO, @"reason": reason }; }
 static BOOL signature(Class cls, SEL sel, BOOL meta, const char *ret, unsigned count, const char *arg) {
@@ -24,17 +25,14 @@ static BOOL validID(NSString *s) {
     NSCharacterSet *bad = [[NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ ."] invertedSet];
     return [s rangeOfCharacterFromSet:bad].location == NSNotFound && [s rangeOfString:@" "].location == NSNotFound;
 }
-// Walk every component without following symlinks, including the target directory.
-static int openDirectory(NSString *path) {
-    if (![path hasPrefix:@"/"] || ![path isEqualToString:path.stringByStandardizingPath]) return -1;
-    int fd = open("/", O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
-    if (fd < 0) return -1;
-    for (NSString *part in path.pathComponents) {
-        if ([part isEqualToString:@"/"]) continue;
-        int next = openat(fd, part.fileSystemRepresentation, O_RDONLY|O_DIRECTORY|O_NOFOLLOW|O_CLOEXEC);
-        close(fd); if (next < 0) return -1; fd = next;
-    }
-    return fd;
+// Diagnostics contain only fixed stages and errno, never path components.
+static NSDictionary *pathRefusal(const char *stage, int error) {
+    return refuse([NSString stringWithFormat:@"未调用删除；路径检查失败（阶段 %s，errno %d）", stage, error]);
+}
+static const char *safeUTF8(NSString *s) {
+    if (![s isKindOfClass:NSString.class]) return NULL;
+    const char *p = s.UTF8String;
+    return p && strlen(p) == [s lengthOfBytesUsingEncoding:NSUTF8StringEncoding] ? p : NULL;
 }
 static NSString *checkPlist(int dir) {
     int fd = openat(dir, "Info.plist", O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
@@ -53,9 +51,15 @@ static NSString *checkPlist(int dir) {
     return nil;
 }
 static NSDictionary *performDelete(NSString *identifier, NSString *root, Class cls) {
-    if (!validID(identifier)) return refuse(@"标识符无效");
-    NSString *expected = [root stringByAppendingPathComponent:identifier];
-    int dir = openDirectory(expected); if (dir < 0) return refuse(@"源目录不可访问或路径包含符号链接");
+    if (!validID(identifier)) return pathRefusal("pathValidation", 0);
+    const char *r = safeUTF8(root), *leaf = safeUTF8(identifier);
+    if (!r || !leaf || !wcm_path_valid(r)) return pathRefusal("pathValidation", 0);
+    // Only this exact system alias is mapped; never resolve arbitrary symlinks.
+    if ([root hasPrefix:@"/var/"]) root = [@"/private" stringByAppendingString:root];
+    NSString *expected = [NSString stringWithFormat:@"%@/%@", root, identifier];
+    const char *stage; int error;
+    int dir = wcm_open_directory(safeUTF8(root), leaf, &stage, &error);
+    if (dir < 0) return pathRefusal(stage, error);
     NSString *err = checkPlist(dir); if (err) { close(dir); return refuse(err); }
     SEL factory = NSSelectorFromString(@"webClipWithIdentifier:");
     SEL pathSel = NSSelectorFromString(@"pathForWebClipWithIdentifier:");
@@ -66,10 +70,8 @@ static NSDictionary *performDelete(NSString *identifier, NSString *root, Class c
     BOOL (*boolGet)(id, SEL) = (void *)objc_msgSend;
     id path = classArg(cls,pathSel,identifier);
     if (![path isKindOfClass:NSString.class]) { close(dir); return refuse(@"运行时路径不是字符串"); }
-    // /var is the system alias of /private/var; never resolve arbitrary symlinks.
-    NSString *runtimePath = path;
-    if ([runtimePath hasPrefix:@"/var/"]) runtimePath = [@"/private" stringByAppendingString:runtimePath];
-    if (![runtimePath isEqualToString:expected] || ![[runtimePath stringByStandardizingPath] isEqualToString:expected]) { close(dir); return refuse(@"运行时路径与选中目录不一致或未规范化"); }
+    const char *runtimePath = safeUTF8(path);
+    if (!runtimePath || !wcm_path_equal_alias(runtimePath, safeUTF8(expected))) { close(dir); return pathRefusal("pathValidation", 0); }
     id object = classArg(cls,factory,identifier);
     if (!object || ![object isKindOfClass:cls]) { close(dir); return refuse(@"无法取得匹配的 UIWebClip 实例"); }
     // A subclass may override methods: check the actual dispatch class as well.
@@ -79,13 +81,15 @@ static NSDictionary *performDelete(NSString *identifier, NSString *root, Class c
     if (![actualID isKindOfClass:NSString.class] || ![actualID isEqualToString:identifier]) { close(dir); return refuse(@"实例 identifier 不匹配"); }
     if (boolGet(object,managedSel)) { close(dir); return refuse(@"运行时禁止移除"); }
     // Reopen to reject swapped directory; re-read policy immediately before the one call.
-    int again = openDirectory(expected); struct stat a,b;
-    if (again < 0 || fstat(dir,&a) || fstat(again,&b) || a.st_dev != b.st_dev || a.st_ino != b.st_ino) { if (again >= 0) close(again); close(dir); return refuse(@"源目录在检查期间发生变化"); }
+    int again = wcm_open_directory(safeUTF8(root), leaf, &stage, &error); struct stat a,b;
+    if (again < 0) { close(dir); return pathRefusal("recheck", error); }
+    if (fstat(dir,&a) || fstat(again,&b)) { int e = errno; close(again); close(dir); return pathRefusal("fstat", e); }
+    if (a.st_dev != b.st_dev || a.st_ino != b.st_ino) { close(again); close(dir); return pathRefusal("identityChanged", 0); }
     err = checkPlist(again); close(again); close(dir); if (err) return refuse(err);
     BOOL result = boolGet(object,removeSel); // exactly one invocation
-    struct stat post; int parent = openDirectory(root);
-    NSString *state = @"未知（无法检查）";
-    if (parent >= 0) { if (fstatat(parent, identifier.fileSystemRepresentation, &post, AT_SYMLINK_NOFOLLOW) == 0) state = @"仍存在"; else if (errno == ENOENT) state = @"不存在"; close(parent); }
+    struct stat post; int parent = wcm_open_directory(safeUTF8(root), NULL, &stage, &error);
+    NSString *state = [NSString stringWithFormat:@"未知（调用后检查失败；阶段 %s，errno %d）", stage, error];
+    if (parent >= 0) { if (fstatat(parent, identifier.fileSystemRepresentation, &post, AT_SYMLINK_NOFOLLOW) == 0) state = @"仍存在"; else if (errno == ENOENT) state = @"不存在"; else { int e = errno; state = [NSString stringWithFormat:@"未知（调用后检查失败；阶段 fstat，errno %d）", e]; } close(parent); }
     return @{ @"called": @YES, @"returned": @(result), @"source": state, @"reason": @"系统返回值和目录状态不证明桌面图标已清理" };
 }
 NSDictionary *WCMExperimentalDelete(NSString *identifier) { return performDelete(identifier, @"/private/var/mobile/Library/WebClips", NSClassFromString(@"UIWebClip")); }
