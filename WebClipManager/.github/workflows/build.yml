@@ -1,4 +1,4 @@
-name: WebClipManager build28 (manual)
+name: WebClipManager build29 (manual)
 on:
   workflow_dispatch:
     inputs:
@@ -30,6 +30,9 @@ jobs:
           /tmp/wcm-build28-test
           swiftc Sources/BackgroundStore.swift Sources/ExportStaging.swift Tools/test_export_staging.swift -o /tmp/wcm-export-test
           /tmp/wcm-export-test
+          swiftc Sources/ObsidianExport.swift Tools/test_obsidian_export.swift -o /tmp/wcm-obsidian-test
+          /tmp/wcm-obsidian-test
+          python3 Tools/test_build29_policy.py
           python3 Tools/test_helper_spawn_failure.py
           python3 Tools/test_helper_transport.py
           python3 Tools/test_recycle_copy.py

@@ -18,9 +18,7 @@ enum NoteFiles {
         return text.hasPrefix("\u{FEFF}") ? String(text.dropFirst()) : text
     }
     static func filename(_ title: String, index: Int, markdown: Bool) -> String {
-        let invalid = CharacterSet.controlCharacters.union(CharacterSet(charactersIn: "/\\:*?\"<>|"))
-        let clean = title.components(separatedBy: invalid).joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
-        return String(format: "%03d-", index + 1) + String((clean.isEmpty ? "备忘录" : clean).prefix(60)) + (markdown ? ".md" : ".txt")
+        return ObsidianExport.filename(title, index: index, markdown: markdown)
     }
     static func read(_ url: URL) throws -> ImportedNote {
         let access = url.startAccessingSecurityScopedResource()
@@ -108,7 +106,7 @@ struct NotesContent: View {
     let clearDocuments: () -> Void
     @State private var confirmExport = false
     @State private var confirmRead = false
-    @State private var markdown = false
+    @State private var markdown = true
     @State private var query = ""
     private var visible: [ImportedNote] {
         model.notes.filter { query.isEmpty || $0.title.localizedCaseInsensitiveContains(query) || $0.text.localizedCaseInsensitiveContains(query) }

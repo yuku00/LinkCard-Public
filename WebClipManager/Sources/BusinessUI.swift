@@ -759,10 +759,10 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     }
     @objc func confirmExport() {
         guard !busy, staging == nil, !selected.isEmpty else { return }
-        let alert = UIAlertController(title: "导出所选 \(selected.count) 项？", message: "共 \(selected.count) 项，含隐藏已选 \(hiddenSelectionCount) 项。文件可能包含私人内容；选择云盘可能由系统同步。备忘录仅导出正文，不是完整富文本/附件备份。", preferredStyle: .alert)
+        let alert = UIAlertController(title: "导出所选 \(selected.count) 项？", message: "共 \(selected.count) 项，含隐藏已选 \(hiddenSelectionCount) 项。文件可能包含私人内容；选择云盘可能由系统同步。选择文件夹保存到 Vault。备忘录保留原文，Obsidian 会按 Markdown 渲染；附件和富文本未导出。书签原文件备份不保证恢复桌面位置或登录。", preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "取消", style: .cancel))
-        for markdown in (mode == .notes ? [false, true] : [false]) {
-            let title = mode == .clips ? "备份所选书签" : (markdown ? "Markdown 原文" : "TXT 原文")
+        for markdown in ([true, false]) {
+            let title = mode == .clips ? (markdown ? "导出 Obsidian Markdown" : "备份 WebClip 原文件") : (markdown ? "导出 Markdown 原文" : "导出 TXT 原文")
             alert.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
                 Task { await self?.exportSelected(markdown: markdown) }
             })
@@ -772,7 +772,11 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
     // Shared by the real picker path and integration tests; creates only owned files.
     func prepareExport(markdown: Bool) async throws -> ExportStaging {
         let stage = try ExportStaging()
-        if mode == .clips {
+        if mode == .clips && markdown {
+            let targets = clips.filter { selected.contains($0.id) }
+            guard !selected.isEmpty, targets.count == selected.count else { throw ClipError.invalid("所选书签不完整，未导出。") }
+            _ = try stage.write(Data(ObsidianExport.bookmarks(targets.map { (title: $0.title, url: $0.url) }).utf8), name: "WebClips.md")
+        } else if mode == .clips {
             let backup = try await repository.backup(ids: Array(selected))
             guard !selected.isEmpty, backup.results.count == selected.count,
                   backup.results.allSatisfy({ $0.message == "已读取完整目录；需完成系统导出才保存到目标位置" }) else {
@@ -780,7 +784,9 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
             }
             _ = try stage.write(backup.data, name: "WebClips.webclipbackup")
         } else {
-            for (index, note) in notes.filter({ selected.contains($0.id.uuidString) }).enumerated() {
+            let targets = notes.filter { selected.contains($0.id.uuidString) }
+            guard !selected.isEmpty, targets.count == selected.count else { throw ClipError.invalid("所选备忘录不完整，未导出。") }
+            for (index, note) in targets.enumerated() {
                 _ = try stage.write(Data(note.text.utf8), name: NoteFiles.filename(note.title, index: index, markdown: markdown))
             }
         }
@@ -818,7 +824,7 @@ final class BusinessList: UITableViewController, UISearchResultsUpdating, UIDocu
         guard controller === exportPicker else { return }
         exportPicker = nil
         staging = nil
-        status = "系统保存操作完成；请在所选位置核对文件。源数据未修改。"
+        status = urls.isEmpty ? "系统未返回保存位置；请核对，源数据未修改。" : "系统保存操作完成；请在所选位置核对文件。源数据未修改。"
         update()
     }
 }
