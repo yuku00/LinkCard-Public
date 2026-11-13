@@ -200,10 +200,10 @@ static NSDictionary *R(NSString *sid,NSString *sender,int64_t time,NSString *typ
 - (void)testOverviewEnumeratesAdditionalCandidatesAndMarksCoverageUnknown {
     WUStatsBinding *base=[WUStatsBinding new]; base.stillCurrent=^BOOL{return YES;};
     base.sessions=@[@{@"username":@"a",@"kind":@"private"}];
-    __weak WUStatsBinding *weakBase=base;
     base.readSessions=^(BOOL (^current)(void), void (^done)(NSArray *,BOOL)) {
         NSArray *extra=@[@{@"username":@"b",@"kind":@"chatroom"},@{@"username":@"a",@"kind":@"private"}];
-        dispatch_async(dispatch_get_main_queue(),^{ if(current()) { weakBase.sessions=[weakBase.sessions arrayByAddingObjectsFromArray:extra]; done(extra,NO); } });
+        // Callback does not mutate the original binding. The overview consumes rows itself.
+        dispatch_async(dispatch_get_main_queue(),^{ if(current()) done(extra,NO); });
     };
     base.bindingForSession=^WUStatsBinding *(NSString *session){ CMessageMgr *mgr=[CMessageMgr new]; mgr.pages=@[@[]]; WUStatsBinding *b=[self binding:mgr]; b.session=session; return b; };
     WUStatsOverviewJob *job=[[WUStatsOverviewJob alloc] initWithBinding:base]; XCTestExpectation *done=[self expectationWithDescription:@"extended candidates"];

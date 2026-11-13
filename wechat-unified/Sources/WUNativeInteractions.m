@@ -1,4 +1,17 @@
 #import "WUNativeAction.h"
+
+@interface WUKeyboardPlaybackLease : NSObject
+@property(nonatomic,weak) UIViewController *owner;
+@property(nonatomic,weak) UIView *tool, *editor, *cell;
+@property(nonatomic,weak) id model, message;
+@property(nonatomic,copy) NSString *account, *session;
+@property(nonatomic,copy) NSDictionary *identity;
+@property(nonatomic) NSUInteger generation;
+@end
+@implementation WUKeyboardPlaybackLease
+@end
+static WUKeyboardPlaybackLease *playbackLease;
+static BOOL PatIdentity(NSDictionary *f, NSString *account, NSString *session);
 static IMP touchesOriginal, hideOriginal, toolHideOriginal, resignOriginal, patOriginal;
 static BOOL keyboardReady, patReady;
 static __weak UIViewController *scopeOwner;
@@ -32,16 +45,37 @@ static BOOL Preserve(id object, BOOL owner) {
 static void Hide(id x,SEL s) { if(!Preserve(x,YES)) ((void(*)(id,SEL))hideOriginal)(x,s); }
 static void ToolHide(id x,SEL s,BOOL animated) { if(!Preserve(x,NO)) ((void(*)(id,SEL,BOOL))toolHideOriginal)(x,s,animated); }
 static BOOL Resign(id x,SEL s) { return Preserve(x,NO)?NO:((BOOL(*)(id,SEL))resignOriginal)(x,s); }
+// Only the host's own setIsPlaying: invocation is scoped; queued hides outside
+// that call cannot be attributed and are deliberately left untouched.
+void WUNativePlaybackCall(id model, BOOL playing, void (^original)(void)) {
+    WUKeyboardPlaybackLease *lease=NSThread.isMainThread && playing ? playbackLease : nil;
+    if(lease && model==lease.model) playbackLease=nil;
+    UIViewController *owner=lease.owner; UIView *tool=lease.tool, *editor=lease.editor, *cell=lease.cell;
+    BOOL valid=lease && !scopeDepth && model==lease.model && lease.message &&
+        WUNativeEnabled(@"keepKeyboard") && UIApplication.sharedApplication.applicationState==UIApplicationStateActive &&
+        owner.isViewLoaded && owner.view.window && !owner.presentedViewController && cell.window &&
+        [cell isDescendantOfView:owner.view] && [tool isDescendantOfView:owner.view] &&
+        [editor isDescendantOfView:tool] && editor.isFirstResponder && editor.window &&
+        Get(cell,@"viewModel")==model && Get(model,@"messageWrap")==lease.message &&
+        [WUNativeMessageIdentity(lease.message) isEqual:lease.identity] &&
+        [lease.account isEqual:WUCurrentAccount()] && [lease.session isEqual:WUChatSession(owner)] &&
+        lease.generation==WUContextGenerationSnapshot();
+    if(!valid) { original(); return; }
+    scopeOwner=owner; scopeTool=tool; scopeEditor=editor; scopeGeneration=lease.generation; scopeDepth=1;
+    @try { original(); }
+    @finally { scopeDepth=0; scopeOwner=nil; scopeTool=nil; scopeEditor=nil; }
+}
 static void Touches(UIViewController *owner,SEL cmd,id table,id touches,id event) {
     BOOL qualify=NSThread.isMainThread && WUNativeEnabled(@"keepKeyboard") && !scopeDepth &&
         [table isKindOfClass:UITableView.class] && [touches isKindOfClass:NSSet.class] &&
         [touches count]==1 && owner.isViewLoaded && owner.view.window && !owner.presentedViewController;
-    UIView *editor=nil,*tool=nil;
+    if(NSThread.isMainThread) playbackLease=nil;
+    UIView *editor=nil,*tool=nil,*voice=nil;
     if(qualify) {
         UITouch *touch=[touches anyObject];
         if(![touch isKindOfClass:UITouch.class] || touch.phase!=UITouchPhaseBegan) qualify=NO;
         UIView *hit=qualify?[table hitTest:[touch locationInView:table] withEvent:event]:nil;
-        UIView *voice=hit;
+        voice=hit;
         Class voiceClass=NSClassFromString(@"VoiceMessageCellView");
         for(unsigned i=0;voice && i<64 && ![voice isKindOfClass:voiceClass];i++) voice=voice.superview;
         id bubble=nil;
@@ -54,9 +88,24 @@ static void Touches(UIViewController *owner,SEL cmd,id table,id touches,id event
         qualify=qualify && toolClass && [tool isKindOfClass:toolClass] && [tool isDescendantOfView:owner.view];
     }
     if(!qualify) { ((void(*)(id,SEL,id,id,id))touchesOriginal)(owner,cmd,table,touches,event); return; }
+    id model=Get(voice,@"viewModel"), message=Get(model,@"messageWrap");
+    NSDictionary *identity=WUNativeMessageIdentity(message);
+    NSString *account=[WUCurrentAccount() copy], *session=[WUChatSession(owner) copy];
+    WUKeyboardPlaybackLease *lease=nil;
+    if(model && message && [identity[@"m_uiMessageType"] unsignedIntegerValue]==34 && PatIdentity(identity,account,session) && account.length && session.length) {
+        lease=[WUKeyboardPlaybackLease new]; lease.owner=owner; lease.tool=tool; lease.editor=editor;
+        lease.cell=voice; lease.model=model; lease.message=message; lease.identity=identity;
+        lease.account=account; lease.session=session; lease.generation=WUContextGeneration();
+        playbackLease=lease;
+    }
     scopeOwner=owner; scopeTool=tool; scopeEditor=editor; scopeGeneration=WUContextGeneration(); scopeDepth=1;
-    @try { ((void(*)(id,SEL,id,id,id))touchesOriginal)(owner,cmd,table,touches,event); }
-    @finally { scopeDepth=0; scopeOwner=nil; scopeTool=nil; scopeEditor=nil; }
+    __block BOOL finished=NO;
+    @try { ((void(*)(id,SEL,id,id,id))touchesOriginal)(owner,cmd,table,touches,event); finished=YES; }
+    @finally {
+        scopeDepth=0; scopeOwner=nil; scopeTool=nil; scopeEditor=nil;
+        if(!finished && playbackLease==lease) playbackLease=nil;
+        if(lease && finished) dispatch_async(dispatch_get_main_queue(), ^{ if(playbackLease==lease) playbackLease=nil; });
+    }
     // No delayed becomeFirstResponder and no global resign hook; explicit user dismiss always wins.
 }
 static BOOL PatIdentity(NSDictionary *f, NSString *account, NSString *session) {

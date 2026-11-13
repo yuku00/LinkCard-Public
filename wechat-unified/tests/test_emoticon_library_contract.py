@@ -6,6 +6,19 @@ ROOT = Path(__file__).resolve().parents[1]
 def source(name):
     return (ROOT / 'Sources' / name).read_text()
 class LibraryWiring(unittest.TestCase):
+    def test_library_export_uses_checked_original_and_existing_picker(self):
+        ui=source('EmoticonLibrary.m'); entry=source('MessageEntries.m')
+        export=ui.split('- (void)exportRow:')[1].split('- (void)assign:')[0]
+        self.assertIn('resource:row[@"id"]',export)
+        self.assertIn('WUExportEmoticonData(self,held[@"data"]',export)
+        self.assertIn('[weak current]',export)
+        self.assertIn('导出原文件到文件App',ui)
+        self.assertIn('发送后可在聊天中长按',ui)
+        self.assertIn('此按钮本身不向官方表情库入库',ui)
+        self.assertIn('bytes?:WUEmoticonRead(path)',entry)
+        self.assertIn('NSString *type=WUEmoticonType(data)',entry)
+        self.assertIn('initForExportingURLs:@[file] asCopy:YES',entry)
+        self.assertIn('ExportEmoticon(owner,nil,[data copy],current)',entry)
     def test_host_selection_not_file_demo(self):
         binding = source('EmoticonLibraryBindings.inc')
         for item in ('getSelectedMsgs', '[selected count]!=1', '!=47', 'InSession(identity,account,target)', 'pathOfEmoticonForMd5:needUpdateTime:ignoreWxAM:', 'md5,NO,NO', 'selectionCurrent', '[Info(wrap) isEqual:capture[@"identity"]]'):

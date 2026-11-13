@@ -4,6 +4,7 @@
 #import "VoiceDisplay.h"
 #import <QuartzCore/QuartzCore.h>
 #include <math.h>
+extern void WUNativePlaybackCall(id model, BOOL playing, void (^original)(void));
 static BOOL installed;
 static IMP layoutOriginal, playingOriginal, windowOriginal;
 static char bindingKey;
@@ -295,7 +296,7 @@ static void Window(id cell, SEL cmd) {
     } else Bind(cell);
 }
 static void SetPlaying(id vm, SEL cmd, BOOL value) {
-    ((void(*)(id,SEL,BOOL))playingOriginal)(vm,cmd,value);
+    WUNativePlaybackCall(vm,value,^{ ((void(*)(id,SEL,BOOL))playingOriginal)(vm,cmd,value); });
     if(!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(),^{ [clockOwner stop]; }); return; }
     if(!value) { if(clockOwner.model==vm) [clockOwner stop]; }
     else {

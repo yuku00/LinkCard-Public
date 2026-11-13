@@ -1,6 +1,8 @@
 #import "EmoticonLibrary.h"
 #import "EmoticonLibraryLogic.h"
 #import "EmoticonLogic.h"
+#import "EmoticonSubmission.h"
+#import "MessageEntries.h"
 #import "WU.h"
 #import <ImageIO/ImageIO.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
@@ -135,9 +137,34 @@ static dispatch_queue_t Queue(void) { static dispatch_queue_t q; static dispatch
         }];
     }];
 }
+- (void)prepareSelectedOfficialGIF {
+    if(![self current] || self.busy || self.presentedViewController) return;
+    NSDictionary *capture=self.binding.capture?self.binding.capture():nil;
+    if(!capture || !self.binding.selectionCurrent || !self.binding.selectionCurrent(capture)) { [self notice:@"请先在当前聊天选择一个已就绪的GIF表情；未读取或提交。"]; return; }
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"检查所选GIF的微信添加条件？" message:@"仅检查当前所选表情的原始字节和微信包装字段；数据交付及回调契约尚未核实，本操作不会提交或添加到微信官方表情。" preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    __block BOOL used=NO;
+    [a addAction:[UIAlertAction actionWithTitle:@"检查" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        if(used) return; used=YES;
+        if(![self current] || !self.binding.selectionCurrent(capture)) return;
+        self.busy=YES; NSUInteger gen=self.binding.generation;
+        dispatch_async(Queue(),^{
+            NSData *data=gen==WUContextGenerationSnapshot()?WUEmoticonRead(capture[@"path"]):nil;
+            dispatch_async(dispatch_get_main_queue(),^{
+                self.busy=NO;
+                BOOL (^valid)(void)=^BOOL { return [self current] && self.binding.selectionCurrent && self.binding.selectionCurrent(capture); };
+                if(!valid()) return;
+                NSString *result=WUPrepareOfficialGIF(data,capture[@"md5"],valid);
+                if(valid()) [self notice:result];
+            });
+        });
+    }]];
+    [self presentViewController:a animated:YES completion:nil];
+}
 - (void)importMenu {
     if(self.busy || ![self current] || self.presentedViewController) return;
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"导入到本账号库" message:@"仅保存本账号隔离的本地副本，不是微信官方心形表情入库。复制原始字节并保留GIF动画；不删除原消息，不上传、不自动发送。" preferredStyle:UIAlertControllerStyleAlert];
+    [a addAction:[UIAlertAction actionWithTitle:@"检查所选GIF的微信添加条件（暂不提交）" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ [self dismissViewControllerAnimated:NO completion:^{ [self prepareSelectedOfficialGIF]; }]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"保存聊天所选GIF（仅本地库）" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ [self dismissViewControllerAnimated:NO completion:^{ [self saveSelectedGIFOnly:YES]; }]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"复制聊天所选原表情" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ [self dismissViewControllerAnimated:NO completion:^{ [self saveSelectedGIFOnly:NO]; }]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"选择一个本地GIF/PNG/JPEG文件" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ [self dismissViewControllerAnimated:NO completion:^{
@@ -169,7 +196,8 @@ static dispatch_queue_t Queue(void) { static dispatch_queue_t q; static dispatch
             if(!sending) {
                 WUEmoticonPreview *p=[WUEmoticonPreview new]; p.title=held[@"name"]; p.data=held[@"data"]; __weak typeof(self) weak=self; p.current=^BOOL{ return [weak current]; }; [self.navigationController pushViewController:p animated:YES]; return;
             }
-            UIAlertController *a=[UIAlertController alertControllerWithTitle:@"手动发送这一个原表情？" message:[NSString stringWithFormat:@"名称：%@\n账号：%@\n当前会话收件人：%@\n只提交一次，不批量、不后台发送。",held[@"name"],self.binding.account,self.binding.target] preferredStyle:UIAlertControllerStyleAlert];
+            NSString *hint=[held[@"uti"] isEqual:@"com.compuserve.gif"]?@"\n如微信支持该表情，发送后可在聊天中长按它并选择微信原生的添加表情；是否可添加及结果以微信页面为准。此按钮本身不向官方表情库入库。":@"";
+            UIAlertController *a=[UIAlertController alertControllerWithTitle:@"手动发送这一个原表情？" message:[NSString stringWithFormat:@"名称：%@\n账号：%@\n当前会话收件人：%@\n只提交一次，不批量、不后台发送。%@",held[@"name"],self.binding.account,self.binding.target,hint] preferredStyle:UIAlertControllerStyleAlert];
             [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
             __block BOOL used=NO;
             [a addAction:[UIAlertAction actionWithTitle:@"确认发送" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){
@@ -177,6 +205,17 @@ static dispatch_queue_t Queue(void) { static dispatch_queue_t q; static dispatch
                 NSString *result=self.binding.submit?self.binding.submit(held[@"data"]):@"当前没有已核对发送接口；未发送";
                 [self dismissViewControllerAnimated:NO completion:^{ if([self current]) [self notice:result]; }];
             }]]; [self presentViewController:a animated:YES completion:nil];
+        });
+    });
+}
+- (void)exportRow:(NSDictionary *)row {
+    if(self.busy || ![self current] || self.presentedViewController) return;
+    self.busy=YES;
+    dispatch_async(Queue(),^{ NSError *error=nil; NSDictionary *held=[self.store resource:row[@"id"] error:&error];
+        dispatch_async(dispatch_get_main_queue(),^{ self.busy=NO; if(![self current]) return;
+            if(!held) { [self notice:error.localizedDescription?:@"资源不可用，未导出"]; return; }
+            __weak typeof(self) weak=self;
+            WUExportEmoticonData(self,held[@"data"],^BOOL{ return weak && [weak current]; });
         });
     });
 }
@@ -192,6 +231,7 @@ static dispatch_queue_t Queue(void) { static dispatch_queue_t q; static dispatch
     UIAlertController *a=[UIAlertController alertControllerWithTitle:row[@"name"] message:group?@"只改本地库分组；删组保留全部资源。":@"只操作本账号自有副本，不改微信原表情。" preferredStyle:UIAlertControllerStyleAlert];
     if(!group) {
         [a addAction:[UIAlertAction actionWithTitle:@"预览原图/动画" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ [self dismissViewControllerAnimated:NO completion:^{ [self use:row sending:NO]; }]; }]];
+        [a addAction:[UIAlertAction actionWithTitle:@"导出原文件到文件App" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ [self dismissViewControllerAnimated:NO completion:^{ [self exportRow:row]; }]; }]];
         if(self.binding.canSubmit && self.binding.canSubmit()) [a addAction:[UIAlertAction actionWithTitle:@"确认后发送到当前会话" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ [self dismissViewControllerAnimated:NO completion:^{ [self use:row sending:YES]; }]; }]];
         [a addAction:[UIAlertAction actionWithTitle:@"移动到分组" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ [self dismissViewControllerAnimated:NO completion:^{ [self assign:row]; }]; }]];
     }

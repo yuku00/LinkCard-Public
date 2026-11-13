@@ -101,18 +101,25 @@ int main(void) { @autoreleasepool {
     assert(table.layouts==1 && table.reloads==1 && [First(table).cells isEqual:filtered]);
     [(Row *)First(table).cells[1] activate]; assert(actions==1);
     [table layoutSubviews]; [table layoutSubviews]; assert(table.reloads==1); // no reload/layout cycle
-    assert(WUNativeSave(@"homeFinder",NO)); assert([First(table).cells isEqual:all]);
+    unsigned beforeRestore=table.reloads;
+    assert(WUNativeSave(@"homeFinder",NO)); assert([First(table).cells isEqual:all] && table.reloads==beforeRestore+1);
+    [table layoutSubviews]; assert(table.reloads==beforeRestore+1); // restored model is already displayed
     [(Row *)First(table).cells[1] activate]; assert(actions==2); // original row/action object restored
     assert(WUNativeSave(@"homeFinder",YES)); [table layoutSubviews]; testMaster=NO;
+    beforeRestore=table.reloads; [table layoutSubviews];
+    assert([First(table).cells isEqual:all] && table.reloads==beforeRestore+1); testMaster=YES;
+    [table layoutSubviews]; testMaster=NO;
     [NSNotificationCenter.defaultCenter postNotificationName:WUChanged object:nil]; assert([First(table).cells isEqual:all]); testMaster=YES;
     MMTableView *other=Table(OtherManager.class,all,finder,@"视频号"); [other layoutSubviews]; assert([First(other).cells isEqual:all]);
     MMTableView *notInModel=Table(WCTableViewManager.class,all,[Row new],@"视频号"); [notInModel layoutSubviews]; assert([First(notInModel).cells isEqual:all]);
     MMTableView *unrelated=Table(WCTableViewManager.class,all,finder,@"发现页其它入口"); [unrelated layoutSubviews]; assert([First(unrelated).cells isEqual:all]);
     missingLanguage=YES; [table layoutSubviews]; assert([First(table).cells isEqual:all]); missingLanguage=NO;
     disableDuringLanguage=YES; [table layoutSubviews]; assert([First(table).cells isEqual:all]);
-    assert(WUNativeSave(@"homeFinder",YES)); disableDuringReload=YES; [table layoutSubviews]; assert([First(table).cells isEqual:all]);
+    assert(WUNativeSave(@"homeFinder",YES)); disableDuringReload=YES; beforeRestore=table.reloads; [table layoutSubviews];
+    assert([First(table).cells isEqual:all] && table.reloads==beforeRestore+2);
     assert(WUNativeSave(@"homeFinder",YES)); [table layoutSubviews];
-    Row *fresh=[Row new]; First(table).cells=[@[fresh] mutableCopy]; assert(WUNativeSave(@"homeFinder",NO)); assert([First(table).cells isEqual:@[fresh]]);
+    Row *fresh=[Row new]; First(table).cells=[@[fresh] mutableCopy]; beforeRestore=table.reloads;
+    assert(WUNativeSave(@"homeFinder",NO)); assert([First(table).cells isEqual:@[fresh]] && table.reloads==beforeRestore);
     table.throws=YES; @try { [table layoutSubviews]; assert(0); } @catch(NSException *e) { assert([e.name isEqual:@"layout"]); } table.throws=NO;
     // Brand localization uses the same identity-scoped row filter; ordinary UILabel is never consulted.
     assert(WUNativeSave(@"homeFinder",YES)); MMTableView *brand=Table(WCTableViewManager.class,all,finder,@"Channels and live");

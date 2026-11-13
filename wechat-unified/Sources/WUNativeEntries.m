@@ -65,6 +65,7 @@ static BOOL RestoreFinder(UIView *table) {
            !cells || Get(r.section,@"cells")!=cells || !SameRows(cells,r.after)) continue;
         [cells setArray:r.before]; changed=YES;
     }
+    if(changed && Matches(table,@"reloadData","v",@[])) ((void(*)(id,SEL))objc_msgSend)(table,NSSelectorFromString(@"reloadData"));
     return changed;
 }
 static void FilterFinder(UIView *table) {
@@ -115,8 +116,7 @@ static void FinderLayout(UIView *table,SEL s) {
         } @catch(NSException *e) { @try { RestoreFinder(table); } @catch(NSException *ignored) {} }
     } @finally {
         @try {
-            if(!WUNativeEnabled(@"homeFinder") && RestoreFinder(table) && Matches(table,@"reloadData","v",@[]))
-                ((void(*)(id,SEL))objc_msgSend)(table,NSSelectorFromString(@"reloadData"));
+            if(!WUNativeEnabled(@"homeFinder")) RestoreFinder(table);
         } @catch(NSException *e) {}
         objc_setAssociatedObject(table,&finderBusyKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
@@ -131,7 +131,7 @@ void WUInstallNativeEntries(void) {
             for(UIView *table in finderTables.allObjects) {
                 if([objc_getAssociatedObject(table,&finderBusyKey) boolValue]) continue;
                 @try {
-                    if(RestoreFinder(table) && Matches(table,@"reloadData","v",@[])) ((void(*)(id,SEL))objc_msgSend)(table,NSSelectorFromString(@"reloadData"));
+                    RestoreFinder(table);
                     if(Matches(table,@"setNeedsLayout","v",@[])) ((void(*)(id,SEL))objc_msgSend)(table,NSSelectorFromString(@"setNeedsLayout"));
                 } @catch(NSException *e) {}
             }

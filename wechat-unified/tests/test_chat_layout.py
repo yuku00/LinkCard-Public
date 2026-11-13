@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import unittest
 R = Path(__file__).resolve().parents[1]
 
@@ -23,5 +24,28 @@ class ChatLayoutContract(unittest.TestCase):
         self.assertIn('dismissViewControllerAnimated:YES completion:^{ if(run) run(); }', panel)
         self.assertNotIn('MMInputToolView', panel)
         self.assertNotIn('inputAccessoryView', panel)
+
+    def test_all_registered_actions_have_selection_and_dispatch(self):
+        groups = (R/'Sources/Groups.m').read_text()
+        logic = (R/'Sources/GroupLogic.m').read_text()
+        messages = (R/'Sources/Messages.m').read_text()
+        keys = lambda text: re.findall(r'@"([A-Za-z]+)"', text)
+        choices = keys(re.search(r'WUChatToolKeys\(void\)\s*\{(.*?)\}', groups, re.S).group(1))
+        allowed = keys(re.search(r'for\(id a in value\) if\(\[@\[(.*?)\] containsObject:a\]', logic, re.S).group(1))
+        self.assertEqual(choices, allowed)
+        self.assertEqual(len(choices), len(set(choices)))
+        self.assertIn('WUChatToolKeys().count', groups)
+        self.assertEqual(groups.count('WUChatToolKeys()[p.row]'), 2)
+        self.assertIn('WUChatToolKeys()[path.row]', groups)
+        labels = re.search(r'cell.textLabel.text=@\[([^\[\]]*)\]\[p.row\]; if\(\[WUToolbarActions', groups).group(1)
+        self.assertEqual(len(re.findall(r'@"[^"]*"', labels)), len(choices))
+        dispatch = messages.split('NSArray *selected=WUToolbarActions', 1)[1].split('if(menu.count)', 1)[0]
+        titles = re.search(r'NSString \*title=@\{(.*?)\}\[key\]', dispatch, re.S).group(1)
+        title_keys = re.findall(r'@"([A-Za-z]+)":', titles)
+        branches = re.findall(r'\[key isEqual:@"([A-Za-z]+)"\]', dispatch.split('void (^run)(void)=^{', 1)[1])
+        self.assertCountEqual(choices, title_keys)
+        self.assertCountEqual(choices, branches)
+        self.assertIn('for(NSString *key in selected)', dispatch)
+        self.assertLess(dispatch.index('[grid addObject:'), dispatch.index('[menu addObject:'))
 
 if __name__ == '__main__': unittest.main()

@@ -70,8 +70,10 @@ static void Notice(UIViewController *v, NSString *text) {
     [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]]; [v presentViewController:a animated:YES completion:nil];
 }
 static NSHashTable *pendingAlerts;
+static void RedCancel(void);
 static void CancelPending(void) {
     generation++;
+    RedCancel();
     WUNativeCancelActions();
     WUCancelMessageEntries();
     WUCancelImageEntries();
@@ -384,7 +386,7 @@ static void CellWindow(UIView *cell, SEL s) { WURestoreMessageSurface(cell); ((v
 static void CellLayout(UIView *cell, SEL s) {
     WURestoreMessageSurface(cell);
     WUCellActions *a=objc_getAssociatedObject(cell,&cellKey); [a restore]; ((void(*)(id,SEL))cellLayoutOriginal)(cell,s);
-    @try { if(cellModelOriginal && cellWindowOriginal && cellReuseOriginal && Chat(cell)) { id wrap=Wrap(cell); WURefreshMessageSurface(cell,WUCardRole((NSUInteger)Num(wrap,@"m_uiMessageType"),Str(wrap,@"m_nsContent"))); } } @catch(NSException *e) { WURestoreMessageSurface(cell); }
+    @try { if(cellModelOriginal && cellWindowOriginal && cellReuseOriginal && Chat(cell)) { id wrap=Wrap(cell); NSUInteger type=(NSUInteger)Num(wrap,@"m_uiMessageType"); WURefreshMessageSurface(cell,type==1?@"textBubbleSurface":WUCardRole(type,Str(wrap,@"m_nsContent"))); } } @catch(NSException *e) { WURestoreMessageSurface(cell); }
     @try { if(!a) { a=[WUCellActions new]; a.cell=cell; objc_setAssociatedObject(cell,&cellKey,a,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [cellActions addObject:a]; } [a update]; } @catch(NSException *e) { [a restore]; [a.repeat removeFromSuperview]; a.repeat=nil; }
 }
 static void CellReuse(UIView *cell, SEL s) {
@@ -405,36 +407,53 @@ static UIViewController *ForegroundOwner(void) {
     return nil;
 }
 static IMP arrivalOriginal;
+// Main-thread only; never retain message wraps, payment URLs or message content.
 static NSMutableOrderedSet *redSeen;
+static NSMutableArray<NSDictionary *> *redQueue;
 static NSString *redAccount;
-static void Arrival(id self, SEL cmd, id sessionArg, id wrap) {
-    ((void(*)(id,SEL,id,id))arrivalOriginal)(self,cmd,sessionArg,wrap);
+static UIAlertController *redActive;
+static BOOL redScheduled;
+static void RedPump(void);
+static void RedSchedule(void) {
+    if(redScheduled) return;
+    redScheduled=YES;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.5*NSEC_PER_SEC)),dispatch_get_main_queue(),^{ redScheduled=NO; RedPump(); });
+}
+static void RedCancel(void) {
+    [redQueue removeAllObjects];
+    [redSeen removeAllObjects];
+    redAccount=nil;
+    UIAlertController *active=redActive;
+    redActive=nil;
+    if(active.presentingViewController) [active dismissViewControllerAnimated:NO completion:nil];
+}
+static void RedPump(void) {
     @try {
-        if(!WUEnabled(@"redReminder") || Num(wrap,@"m_uiMessageType")!=49 || ![sessionArg isKindOfClass:NSString.class]) return;
-        NSString *url=Str(Obj(wrap,@"m_oWCPayInfoItem"),@"m_c2cNativeUrl");
-        if(![url hasPrefix:@"wxpay://c2cbizmessagehandler/hongbao/receivehongbao?"]) return;
-        NSDictionary *m=Info(wrap); NSString *session=[sessionArg copy], *account=Account(); NSUInteger g=generation;
-        double age=NSDate.date.timeIntervalSince1970-[m[@"time"] doubleValue];
-        if(!account.length || ![m[@"id"] unsignedLongLongValue] || age<0 || age>60 || !InSession(m,account,session) || WUOwnMessage(account,session,m[@"from"],m[@"real"])) return;
-        dispatch_async(dispatch_get_main_queue(),^{
-            @try {
-                if(!WUEnabled(@"redReminder") || ![account isEqual:Account()] || g!=generation || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
-                if(![redAccount isEqual:account]) { [redSeen removeAllObjects]; redAccount=account; }
-                NSString *key=[NSString stringWithFormat:@"%@:%@",session,m[@"id"]]; if([redSeen containsObject:key]) return;
-                UIViewController *owner=nil;
-                for(WUChatActions *a in chatActions.allObjects) if(a.owner.viewIfLoaded.window && !a.owner.presentedViewController) { owner=a.owner; break; }
-                if(!owner) owner=ForegroundOwner();
-                if(!owner || owner.presentedViewController) return;
+        NSString *current=Account();
+        if(!WUEnabled(@"redReminder") || !current.length || ![redAccount isEqual:current] || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) { RedCancel(); return; }
+        if(redActive) {
+            if(redActive.presentingViewController || redActive.isBeingPresented || redActive.isBeingDismissed) { RedSchedule(); return; }
+            redActive=nil;
+        }
+        while(redQueue.count) {
+            NSDictionary *item=redQueue.firstObject;
+            double age=NSDate.date.timeIntervalSince1970-[item[@"time"] doubleValue];
+            if(age<0 || age>60 || [item[@"generation"] unsignedIntegerValue]!=generation) { [redQueue removeObjectAtIndex:0]; continue; }
+            UIViewController *owner=ForegroundOwner();
+            if(!owner || !owner.viewIfLoaded.window || owner.presentedViewController || owner.isBeingDismissed || owner.isBeingPresented || owner.transitionCoordinator) { RedSchedule(); return; }
+            NSString *session=item[@"session"], *account=item[@"account"];
+            NSDictionary *m=@{@"id":item[@"id"]}; NSUInteger g=[item[@"generation"] unsignedIntegerValue];
+            NSArray *key=@[account,session,m[@"id"]];
                 NSString *chatName=@"一个会话"; id contacts=Service(@"CContactMgr");
                 if(Has(contacts,@"getContactByName:","@",@[@"@"])) { id contact=((id(*)(id,SEL,id))objc_msgSend)(contacts,NSSelectorFromString(@"getContactByName:"),session); NSString *name=Str(contact,@"m_nsRemark"); if(!name.length) name=Str(contact,@"m_nsNickName"); if(name.length) chatName=name; }
-                [redSeen addObject:key]; if(redSeen.count>512) [redSeen removeObjectAtIndex:0];
                 UIAlertController *alert=[UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"「%@」红包消息提醒",chatName] message:@"收到新的红包消息。仅提醒，不自动领取、不查询金额或人数。" preferredStyle:UIAlertControllerStyleAlert];
-                [alert addAction:[UIAlertAction actionWithTitle:@"稍后" style:UIAlertActionStyleCancel handler:nil]];
+                [alert addAction:[UIAlertAction actionWithTitle:@"稍后" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action){ RedSchedule(); }]];
                 // Only offer positioning when the actual message cell is already available.
                 __weak UIView *target=nil;
                 for(WUCellActions *a in cellActions.allObjects) if(a.cell.window && [Session(Chat(a.cell)) isEqual:session] && Num(Wrap(a.cell),@"m_n64MesSvrID")==[m[@"id"] unsignedLongLongValue]) { target=a.cell; break; }
                 if(target) {
                     [alert addAction:[UIAlertAction actionWithTitle:@"定位当前红包消息" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){
+                        RedSchedule();
                         @try {
                             UIView *cell=target;
                             BOOL valid=WUEnabled(@"redReminder") && [account isEqual:Account()] && g==generation && UIApplication.sharedApplication.applicationState==UIApplicationStateActive && cell.window && [Session(Chat(cell)) isEqual:session] && Num(Wrap(cell),@"m_n64MesSvrID")==[m[@"id"] unsignedLongLongValue];
@@ -446,7 +465,43 @@ static void Arrival(id self, SEL cmd, id sessionArg, id wrap) {
                         });
                     }]];
                 } else alert.message=@"收到新的红包消息，请在会话列表打开对应聊天。本宿主跨会话定位接口尚未适配；不会自动领取。";
-                [pendingAlerts addObject:alert]; [owner presentViewController:alert animated:YES completion:nil];
+            redActive=alert;
+            [pendingAlerts addObject:alert];
+            [owner presentViewController:alert animated:YES completion:^{
+                if(redActive!=alert) return;
+                [redQueue removeObjectIdenticalTo:item];
+                [redSeen addObject:key]; if(redSeen.count>512) [redSeen removeObjectAtIndex:0];
+                RedSchedule();
+            }];
+            RedSchedule();
+            return;
+        }
+    } @catch(NSException *e) { redActive=nil; if(redQueue.count) RedSchedule(); }
+}
+static void Arrival(id self, SEL cmd, id sessionArg, id wrap) {
+    ((void(*)(id,SEL,id,id))arrivalOriginal)(self,cmd,sessionArg,wrap);
+    @try {
+        if(!WUEnabled(@"redReminder") || Num(wrap,@"m_uiMessageType")!=49 || ![sessionArg isKindOfClass:NSString.class]) return;
+        NSString *url=Str(Obj(wrap,@"m_oWCPayInfoItem"),@"m_c2cNativeUrl");
+        if(![url hasPrefix:@"wxpay://c2cbizmessagehandler/hongbao/receivehongbao?"]) return;
+        NSDictionary *m=Info(wrap); NSString *session=[sessionArg copy], *account=Account(); NSUInteger g=generation;
+        double age=NSDate.date.timeIntervalSince1970-[m[@"time"] doubleValue];
+        if(!account.length || ![m[@"id"] unsignedLongLongValue] || age<0 || age>60 || !InSession(m,account,session) || WUOwnMessage(account,session,m[@"from"],m[@"real"])) return;
+        NSNumber *messageID=m[@"id"], *time=m[@"time"];
+        dispatch_async(dispatch_get_main_queue(),^{
+            @try {
+                if(!WUEnabled(@"redReminder") || ![account isEqual:Account()] || g!=generation || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
+                if(![redAccount isEqual:account]) { RedCancel(); redAccount=account; }
+                NSArray *key=@[account,session,messageID];
+                if([redSeen containsObject:key]) return;
+                for(NSDictionary *item in [redQueue copy]) {
+                    double queuedAge=NSDate.date.timeIntervalSince1970-[item[@"time"] doubleValue];
+                    if(queuedAge<0 || queuedAge>60 || [item[@"generation"] unsignedIntegerValue]!=generation) [redQueue removeObjectIdenticalTo:item];
+                    else if([item[@"key"] isEqual:key]) return;
+                }
+                if(redQueue.count>=64) return;
+                [redQueue addObject:@{@"account":account,@"session":session,@"id":messageID,@"time":time,@"generation":@(g),@"key":key}];
+                RedPump();
             } @catch(NSException *e) {}
         });
     } @catch(NSException *e) {}
@@ -470,10 +525,10 @@ void WUInstallMessages(void) {
     WUInstallMoments();
     static dispatch_once_t once;
     dispatch_once(&once,^{
-        chatActions=[NSHashTable weakObjectsHashTable]; cellActions=[NSHashTable weakObjectsHashTable]; pendingAlerts=[NSHashTable weakObjectsHashTable]; redSeen=[NSMutableOrderedSet orderedSet];
+        chatActions=[NSHashTable weakObjectsHashTable]; cellActions=[NSHashTable weakObjectsHashTable]; pendingAlerts=[NSHashTable weakObjectsHashTable]; redSeen=[NSMutableOrderedSet orderedSet]; redQueue=[NSMutableArray array];
         [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){
             CancelPending(); for(WUChatActions *a in chatActions.allObjects) { @try { [a refresh]; } @catch(NSException *e) {} }
-            for(WUCellActions *a in cellActions.allObjects) { [a restore]; if(!WUEnabled(@"repeatEmoticon")) { [a.repeat removeFromSuperview]; a.repeat=nil; } [a.cell setNeedsLayout]; }
+            for(WUCellActions *a in cellActions.allObjects) { WURestoreMessageSurface(a.cell); [a restore]; if(!WUEnabled(@"repeatEmoticon")) { [a.repeat removeFromSuperview]; a.repeat=nil; } [a.cell setNeedsLayout]; }
         }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(WUChatActions *a in chatActions.allObjects) { @try { [a refresh]; } @catch(NSException *e) {} } }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIKeyboardDidShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(WUChatActions *a in chatActions.allObjects) WURefreshMomentsInput(a.owner); }];

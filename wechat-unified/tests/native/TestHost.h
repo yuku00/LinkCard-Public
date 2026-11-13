@@ -1,5 +1,6 @@
 #import "WUNativeAction.h"
 #include <assert.h>
+extern void WUNativePlaybackCall(id model, BOOL playing, void (^original)(void));
 extern NSDictionary *testOptions;
 extern BOOL testMaster, testWriteOK, testThrowCopy, testBadMD5, testSwitchOnEnvelope;
 extern NSString *testAccount;
@@ -58,6 +59,7 @@ typedef long long TestID;
 - (void)hideToolView:(BOOL)animated;
 @end
 @interface VoiceMessageCellView : UIView
+@property(nonatomic,strong) Model *viewModel;
 @property(nonatomic,strong) UIView *m_bgImageView;
 @end
 @interface CMessageMgr : NSObject

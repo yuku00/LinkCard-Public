@@ -44,7 +44,7 @@
             WUStatsOverviewJob *job=weak; if(!job || ![job current]) return;
             // List semantics and coverage are not proven by the public declaration.
             job.partial=YES;
-            if(rows) [job setCandidates:job.binding.sessions];
+            if([rows isKindOfClass:NSArray.class]) [job setCandidates:[job.sessions arrayByAddingObjectsFromArray:rows]];
             [job step];
         });
     } @catch(__unused NSException *e) { self.partial=YES; [self step]; }

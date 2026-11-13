@@ -85,6 +85,8 @@ NSString *WUChatSession(UIViewController *v) { return [v isKindOfClass:BaseMsgCo
     w.m_nsToUsr=@"account-A"; w.m_nsRealChatUsr=@""; w.m_uiMesLocalID=4; w.m_n64MesSvrID=5000000001LL; w.m_uiCreateTime=100; w.m_uiGameType=1; w.m_uiGameContent=3; w.m_nsEmoticonMD5=@"original"; _cell.viewModel.messageWrap=w;
     _manager=[CMessageMgr new]; _table=[UITableView new]; [_chat.view addSubview:_table];
     _voice=[VoiceMessageCellView new]; [_table addSubview:_voice]; _voice.m_bgImageView=[UIView new]; [_voice addSubview:_voice.m_bgImageView]; _table.hitResult=_voice.m_bgImageView;
+    _voice.viewModel=[Model new]; CMessageWrap *voice=[[CMessageWrap alloc] initWithMsgType:34 nsFromUsr:@"chat-A"];
+    voice.m_nsToUsr=@"account-A"; voice.m_nsRealChatUsr=@""; voice.m_uiMesLocalID=5; voice.m_n64MesSvrID=8; voice.m_uiCreateTime=100; _voice.viewModel.messageWrap=voice;
     _tool=[MMInputToolView new]; [_chat.view addSubview:_tool]; _tool.editor=[UITextView new]; [_tool addSubview:_tool.editor]; _tool.editor.firstResponder=YES; _chat.tool=_tool;
 } return self; }
 @end

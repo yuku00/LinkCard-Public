@@ -23,6 +23,7 @@ rm build/dictation-logic-tests
 python3 tests/test_dictation_native.py
 WU_REQUIRE_APPLE_TESTS=1 python3 tests/test_voice_display.py | tee build/voice-display-tests.txt
 python3 tests/test_image_entry_contract.py
+python3 tests/test_official_gif.py
 python3 tests/test_image_entry_native.py
 python3 tests/test_article_image.py
 python3 tests/test_article_image_native.py

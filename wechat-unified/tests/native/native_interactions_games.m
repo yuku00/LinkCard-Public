@@ -54,7 +54,35 @@ static void KeyboardTests(void) {
         if(kind==3) TestConfig(@{@"keepKeyboard":@NO});
         Touch(f); assert(f.chat.touches==1 && f.chat.hides==1 && f.tool.hides==1 && f.tool.resigns==1);
     }
-    f=[TestScene new]; TestConfig(@{@"keepKeyboard":@YES}); f.chat.throwTouch=YES;
+    // A queued playback callback may suppress only hides inside its own invocation.
+    f=[TestScene new]; Touch(f); id model=f.voice.viewModel;
+    WUNativePlaybackCall(model,YES,^{ [f.chat hideInputToolView]; [f.tool hideToolView:YES]; [f.tool resignFirstResponder]; });
+    assert(!f.chat.hides && !f.tool.hides && !f.tool.resigns);
+    WUNativePlaybackCall(model,YES,^{ [f.chat hideInputToolView]; }); assert(f.chat.hides==1);
+    for(NSUInteger mutation=0;mutation<10;mutation++) {
+        f=[TestScene new]; TestConfig(@{@"keepKeyboard":@YES}); Touch(f); model=f.voice.viewModel;
+        switch(mutation) {
+            case 0:testAccount=@"other"; break;
+            case 1:f.chat.session=@"other"; break;
+            case 2:testGeneration++; break;
+            case 3:f.voice.viewModel=[Model new]; break;
+            case 4:f.voice.viewModel.messageWrap.m_uiMesLocalID++; break;
+            case 5:TestConfig(@{@"keepKeyboard":@NO}); break;
+            case 6:f.tool.editor.firstResponder=NO; break;
+            case 7:[f.voice removeFromSuperview]; break;
+            case 8:TestDrainAsync(); break;
+            case 9:UIApplication.sharedApplication.applicationState=UIApplicationStateBackground; break;
+        }
+        WUNativePlaybackCall(model,YES,^{ [f.chat hideInputToolView]; }); assert(f.chat.hides==1);
+    }
+    f=[TestScene new]; TestConfig(@{@"keepKeyboard":@YES}); Touch(f);
+    WUNativePlaybackCall(f.voice.viewModel,NO,^{ [f.chat hideInputToolView]; }); assert(f.chat.hides==1);
+    f=[TestScene new]; Touch(f); [f.tool resignFirstResponder];
+    WUNativePlaybackCall(f.voice.viewModel,YES,^{ [f.chat hideInputToolView]; }); assert(f.tool.resigns==1 && f.chat.hides==1);
+    f=[TestScene new]; Touch(f);
+    @try { WUNativePlaybackCall(f.voice.viewModel,YES,^{ @throw [NSException exceptionWithName:@"play" reason:nil userInfo:nil]; }); assert(0); } @catch(NSException *e) {}
+    [f.chat hideInputToolView]; assert(f.chat.hides==1);
+    f=[TestScene new]; f.chat.throwTouch=YES;
     @try { Touch(f); assert(0); } @catch(NSException *e) {}
     [f.chat hideInputToolView]; assert(f.chat.hides==1); // finally cleared the production scope
 }

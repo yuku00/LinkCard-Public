@@ -1,6 +1,8 @@
 # WeChat Unified — 当前完成状态
 
-> 2026-11-02 当前变更：已取消外部插件收纳及入口与专属 Hook；下文旧记录仅为历史，不代表当前功能。旧 pluginHub 配置以不校验的未知字段保留，普通设置保存时随配置保留，不允许单独写入；不触碰旧配置文件。未在本地编译 Apple 目标，兼容性原生测试待 Apple 环境执行。
+> 2026-11-02 聊天气泡样式：当前本地工作树已增加 `textBubbleSurface`，在现有 `TextMessageCellView` 布局路径定位容器后应用可逆样式。iOS arm64 定向编译及气泡源码契约测试在 [CI 41454838623](https://github.com/yuku00/LinkCard-Public/actions/runs/41454838623) 通过；隔离分支编译时补齐了与当前 Messages.m 匹配的 WUStats.h。未链接完整 dylib，未执行 UIKit/微信真机验收，不代表全部美化完成。
+
+> 2026-11-02 当前变更：已取消外部插件收纳及入口与专属 Hook；下文旧记录仅为历史，不代表当前功能。旧 pluginHub 配置以不校验的未知字段保留，普通设置保存时随配置保留，不允许单独写入；不触碰旧配置文件。定向 Apple CI [41443686584](https://github.com/yuku00/LinkCard-Public/actions/runs/41443686584)，提交 `b246f5d4e008a7c50f8fa20f5867edce882d9fff`：当前白名单源码 iOS arm64 完整编译链接成功；macOS Foundation 生产配置切片测试 117 项、0 失败，覆盖旧 pluginHub 字段经普通保存/重读保留。源码静态测试 29 项通过，其中含账户工具栏约束；未在真机验证设置界面或账号工具栏。此定向 CI 不代表其他全部需求完成，未运行全量模拟器、签名或制品发布。
 
 
 > 2026-11-02 会话扫描增量（未完成全量）：依据第三方公开固定版 [MMNewSessionMgr 8.0.55](https://github.com/Huangbai233/WeChatHeaders/blob/014c32f794165acf9006cf0f6bbac0bae34dd8b2/8.0.55/MMNewSessionMgr.h) 的 `GetUserNamesOnSessionList` / `GetSessionByUserName:`，尝试获取宿主会话用户名、逐项取 MMSessionInfo 分类，合并已加载候选后复用既有消息分页、预算、取消、去重；联系人全名册未当消息会话。枚举16项一批、上限20000、1.5秒软时限，同步宿主取列表本身不可抢占；接口缺失或异常回退已加载，覆盖始终标未知。列表是否覆盖目标 8.0.70 的未加载/删除历史及实际收益均未验证。Apple CI [41442631670](https://github.com/yuku00/LinkCard-Public/actions/runs/41442631670)，提交 `dacecb2c4999e79e7a5d2408fa8996633799a229`：4个生产 Objective-C 文件 iOS arm64 编译通过，macOS Foundation XCTest 53项通过（含新增候选合并与枚举取消），源码回归30项通过；编译后仅调整一条提示文案。未完整链接、未使用模拟器/真机，尚缺真实宿主适配与覆盖验收。未上传原插件或私人数据。
@@ -102,3 +104,5 @@
 - `tests/voice_pack_logic.m` 使用自制单声道 PCM WAV，macOS 测试中通过系统 `afconvert` 生成 M4A；两者经生产 AudioToolbox→SILK 路径及语音包导入测试，导入项保持未配对、不可匹配目标版本；没有真实账号媒体。
 - [Apple 定向验证 41428892111](https://github.com/yuku00/LinkCard-Public/actions/runs/41428892111) 成功：macOS、iPhoneOS 各编译 187 codec 单元；语音包 1672 次断言，SILK 合成编码与取消/非法输入通过；全部 Objective-C 源码与 iOS arm64 codec 链接为 iOS 16.6 Mach-O dylib，`otool` 确认 AudioToolbox 依赖。测试限 macOS 实际执行、iOS 实际交叉编译链接；未在 iPhone 运行、注入或发送，未产出签名发布包。
 - 首次 [41428571094](https://github.com/yuku00/LinkCard-Public/actions/runs/41428571094) macOS 音频通过但 iOS 构建发现 `ChatGrid.inc` 缺失；已加入 `tools/release.py` 严格白名单后非强推修复验证分支，重跑成功。SILK 二维预测系数数组复制修复与 BSD 许可保留；不因此宣称专利许可。没有重跑全量模拟器。
+
+> 2026-11-02 本轮引用背景增量：按固定 8.0.55 `MMInputMsgReferView` 的 `containerView` 声明，经过 getter 对象签名、UIView 类型和同一引用视图真后代检查后，优先将既有引用样式应用到容器；否则保持原根视图回退。原文本消息独立开关及共享开关优先级保留；布局前、离窗与配置变化继续恢复并刷新，没有新增 Hook。此举解决容器背景可能盖住根视图样式的问题，但无法据声明确认目标版可见性。引用/快速回复/普通提示/聊天按钮定向静态测试共 10 项和既有源码测试 29 项通过，变更文件 diff whitespace 通过；单次 [Apple 定向 CI 41447040932](https://github.com/yuku00/LinkCard-Public/actions/runs/41447040932)，提交 `0f6c2e8ea3a60e760f883d6f2bf7f4c09241eba4`，对应任务已成功：iOS arm64 六个生产对象编译、配置持久化与主题 Foundation 测试、定向源码契约均通过；未做完整链接、模拟器或目标微信验收。表情声明及证据限制增补至 `IMAGE-TO-EMOTICON-GAP.md`，未接入 GIF 官方库。保留所有已有脏工作树，无 reset、无全树覆盖、无用户数据上传。
