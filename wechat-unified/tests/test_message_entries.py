@@ -10,10 +10,13 @@ class MessageEntries(unittest.TestCase):
             self.assertIn(token,bindings)
         self.assertIn('OpenSelectedLinks(owner)',messages)
         self.assertIn('@"messageLinks"',source('GroupLogic.m'))
-        action_arrays=re.findall(r'key=@\[(.*?)\]\[p.row\]',source('Groups.m'))
-        self.assertEqual(len(action_arrays),2)
-        self.assertEqual(action_arrays[0],action_arrays[1])
-        self.assertTrue(all('@"messageLinks"' in actions for actions in action_arrays))
+        groups=source('Groups.m')
+        keys=re.search(r'static NSArray<NSString \*> \*WUChatToolKeys\(void\)\s*\{\s*return @\[(.*?)\];\s*\}',groups,re.S)
+        self.assertIsNotNone(keys)
+        self.assertIn('@"messageLinks"',keys.group(1))
+        for method in ['cellForRowAtIndexPath:', 'didSelectRowAtIndexPath:']:
+            body=groups.split(method,1)[1].split('\n- (',1)[0]
+            self.assertIn('key=WUChatToolKeys()[p.row]',body)
     def test_cancel_does_not_replace_native_context(self):
         messages=source('Messages.m'); ui=source('MessageEntries.m')
         for token in ['WUNativeCancelActions();','WUCancelMessageEntries();','!WUNativeOwnsController(presented)','!WUMessageEntriesOwnsController(presented)']:
