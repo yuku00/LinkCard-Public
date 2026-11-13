@@ -1,5 +1,5 @@
-#!/bin/sh
-set -eu
+#!/bin/bash
+set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p test-results
 cc -std=c11 -Wall -Wextra -Werror -ISources tests/theme_primitives.c -lm -o /tmp/wu-theme-primitives

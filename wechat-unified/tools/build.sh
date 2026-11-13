@@ -15,7 +15,7 @@ rm -r build/miniads
 bash tools/test_message_entries.sh
 sh tools/test_emoticon_library.sh
 python3 tests/make_theme_fixtures.py > build/theme-fixtures.json
-sh tests/run_ui_tests.sh
+bash tests/run_ui_tests.sh
 cp test-results/theme-primitives.txt test-results/theme-catalog.txt build/
 xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/dictation_logic.c -o build/dictation-logic-tests
 build/dictation-logic-tests | tee build/dictation-logic-tests.txt
