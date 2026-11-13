@@ -55,7 +55,7 @@ static void KeyboardTests(void) {
         Touch(f); assert(f.chat.touches==1 && f.chat.hides==1 && f.tool.hides==1 && f.tool.resigns==1);
     }
     // A queued playback callback may suppress only hides inside its own invocation.
-    f=[TestScene new]; Touch(f); id model=f.voice.viewModel;
+    f=[TestScene new]; TestConfig(@{ @"keepKeyboard":@YES }); Touch(f); id model=f.voice.viewModel;
     WUNativePlaybackCall(model,YES,^{ [f.chat hideInputToolView]; [f.tool hideToolView:YES]; [f.tool resignFirstResponder]; });
     assert(!f.chat.hides && !f.tool.hides && !f.tool.resigns);
     WUNativePlaybackCall(model,YES,^{ [f.chat hideInputToolView]; }); assert(f.chat.hides==1);
