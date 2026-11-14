@@ -35,12 +35,12 @@ if '--config-only' in sys.argv:
         (BUILD/name).unlink()
     sys.exit(0)
 messages=(ROOT/'Sources/Messages.m').read_text()
-gate='#include <string.h>\n#include <stdlib.h>\n'
+gate='#include <string.h>\n#include <stdlib.h>\n#import "WUVerifiedServiceProxy.h"\n'
 gate+=between(core,'static const char *Unqualified','BOOL WUHook(')
 submission=(ROOT/'Sources/EmoticonSubmission.m').read_text()
 gate+=between(submission,'static BOOL Has(','static id Object(')
 gate+=between(submission,'static char NumericEncoding(','static BOOL SetNumber(')
-gate+=between(submission,'BOOL WUEmoticonSourceReady(','NSString *WUSubmitEmoticonCopy(')
+gate+=between(submission,'static BOOL SendReady(', 'NSString *WUSubmitEmoticonCopy(')
 gate+=between(messages,'static BOOL RepeatReady','@interface WUCellActions')
 (BUILD/'p0_repeat_gate.inc').write_text(gate)
 if not (BUILD/'codec-macosx/libWUOffline.a').exists():
