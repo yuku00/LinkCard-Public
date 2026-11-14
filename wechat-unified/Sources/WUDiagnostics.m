@@ -1,8 +1,10 @@
+#import "WUNeoSettings.h"
 #import "WUDiagnostics.h"
 #import "WUHostService.h"
 #import "WU.h"
 #import <objc/runtime.h>
 #import <stdlib.h>
+#import <string.h>
 #import "WUCandidateManifest.inc"
 
 @interface WUDiagnosticsLock : NSObject @end
@@ -31,6 +33,43 @@ static NSArray<NSString *> *WUEventSnapshot(void) {
     return [out copy];
 }
 
+static NSString *WUWrapperString(const char *raw) {
+    if(!raw) return @"（不可用）";
+    if(strnlen(raw,4097)>4096) return @"（单项超限，已省略）";
+    return [NSString stringWithUTF8String:raw] ?: @"（非 UTF-8，已省略）";
+}
+
+static NSString *WUWrapperReport(NSString *provider) {
+    NSMutableString *report=[NSMutableString stringWithFormat:@"MMServiceWrapper 只读运行时元数据\n已有 provider 路径记录：%@（历史快照，非实时验证）\n仅列各层本类声明；子类继承上层声明，未推断覆盖、动态解析或转发。方法元数据不能证明语义、实现或功能。未读取服务对象、属性值或 ivar，未主动联网。类名、方法名和类型可能包含敏感内部信息，分享前请检查。\n每层每种列表最多 300 项、层级最多 32、单项最多 4096 字节、报告约 250000 字符；超限会注明。\n",provider];
+    Class cls=NSClassFromString(@"MMServiceWrapper");
+    if(!cls) { [report appendString:@"类当前未加载；不代表永久不存在。\n"]; return report; }
+    unsigned depth=0;
+    for(;cls && depth<32;cls=class_getSuperclass(cls),depth++) {
+        [report appendFormat:@"\n第 %u 层：%@（%@）\n",depth,WUWrapperString(class_getName(cls)),depth?@"父类声明，供子类继承":@"目标类自身声明"];
+        for(int meta=0;meta<2;meta++) {
+            unsigned count=0; Method *list=class_copyMethodList(meta?object_getClass(cls):cls,&count);
+            [report appendFormat:@"%@声明：%u 项\n",meta?@"类方法":@"实例方法",count];
+            unsigned i=0;
+            for(;i<MIN(count,300u) && report.length<250000;i++)
+                [report appendFormat:@"%@ %@ | encoding: %@\n",meta?@"+":@"-",WUWrapperString(sel_getName(method_getName(list[i]))),WUWrapperString(method_getTypeEncoding(list[i]))];
+            if(i<count) [report appendFormat:@"方法列表截断：省略 %u 项\n",count-i];
+            free(list);
+        }
+        for(int meta=0;meta<2;meta++) {
+            unsigned count=0; objc_property_t *properties=class_copyPropertyList(meta?object_getClass(cls):cls,&count);
+            [report appendFormat:@"%@属性声明：%u 项\n",meta?@"类":@"实例",count];
+            unsigned i=0;
+            for(;i<MIN(count,300u) && report.length<250000;i++)
+                [report appendFormat:@"%@ | attributes: %@\n",WUWrapperString(property_getName(properties[i])),WUWrapperString(property_getAttributes(properties[i]))];
+            if(i<count) [report appendFormat:@"属性列表截断：省略 %u 项\n",count-i];
+            free(properties);
+        }
+        if(report.length>=250000) { [report appendString:@"报告总长度超限；剩余列表和父类已截断。\n"]; cls=Nil; break; }
+    }
+    if(cls) [report appendString:@"类层级截断：超过 32 层。\n"];
+    return report;
+}
+
 @interface WUDiagnostics : UITableViewController <UISearchResultsUpdating>
 @property(nonatomic,strong) NSArray<NSString *> *hooks;
 @property(nonatomic,strong) NSArray<NSString *> *events;
@@ -43,6 +82,8 @@ static NSArray<NSString *> *WUEventSnapshot(void) {
 @property(nonatomic,assign) BOOL collecting;
 @property(atomic,assign) NSUInteger collectGeneration;
 @property(nonatomic,copy) NSString *candidateReport;
+@property(nonatomic,assign) BOOL wrapperCollecting;
+@property(nonatomic,copy) NSString *wrapperReport;
 @end
 
 static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
@@ -54,6 +95,43 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
 }
 
 @implementation WUDiagnostics
+- (void)collectWrapper {
+    if(self.wrapperCollecting) return;
+    self.wrapperCollecting=YES;
+    NSString *snapshot=WUAccountServiceDiagnosticSnapshot();
+    NSString *provider=@"未知（没有已有路径记录）";
+    if([snapshot hasSuffix:@"provider：activeUserContext"]) provider=@"activeUserContext";
+    else if([snapshot hasSuffix:@"provider：currentContext"]) provider=@"currentContext";
+    else if([snapshot hasSuffix:@"provider：defaultCenter"]) provider=@"defaultCenter";
+    __weak WUDiagnostics *weakSelf=self;
+    dispatch_async(self.queue, ^{
+        @autoreleasepool {
+            NSString *report=WUWrapperReport(provider);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                WUDiagnostics *owner=weakSelf; if(!owner) return;
+                owner.wrapperCollecting=NO; owner.wrapperReport=report;
+                UIViewController *preview=[UIViewController new]; preview.title=@"服务元数据预览";
+                UITextView *text=[[UITextView alloc] initWithFrame:UIScreen.mainScreen.bounds];
+                text.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
+                text.editable=NO; text.text=report; preview.view=text;
+                preview.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"分享" style:UIBarButtonItemStylePlain target:owner action:@selector(shareWrapper:)];
+                [owner.navigationController pushViewController:preview animated:YES];
+            });
+        }
+    });
+}
+- (void)shareWrapper:(UIBarButtonItem *)sender {
+    NSString *report=[self.wrapperReport copy]; if(!report) return;
+    UIViewController *preview=self.navigationController.topViewController;
+    UIAlertController *warning=[UIAlertController alertControllerWithTitle:@"手动分享服务元数据？" message:@"报告含内部类名、方法名、属性和完整类型编码，可能敏感。请先检查预览，仅在明确选择分享方式后发送；不会自动上传。" preferredStyle:UIAlertControllerStyleAlert];
+    [warning addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [warning addAction:[UIAlertAction actionWithTitle:@"选择分享方式" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        UIActivityViewController *sheet=[[UIActivityViewController alloc] initWithActivityItems:@[report] applicationActivities:nil];
+        sheet.popoverPresentationController.barButtonItem=sender;
+        [preview presentViewController:sheet animated:YES completion:nil];
+    }]];
+    [preview presentViewController:warning animated:YES completion:nil];
+}
 - (void)collectCandidates {
     if(self.collecting) return;
     UIAlertController *notice=[UIAlertController alertControllerWithTitle:@"批量采集候选接口" message:@"仅检查项目源码、既有逆向和缺口证据中的已知类与方法，包含暂缓功能的只读诊断，绝不启用这些功能。记录类名、方法名、方法类型编码、来源与现有安装记录；类名可能暴露其他插件。不读取对象实例、账号、消息、网址或凭证，不调用宿主业务，不自动分享。缺失不代表永久不可用。" preferredStyle:UIAlertControllerStyleAlert];
@@ -131,7 +209,7 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
 }
 - (void)viewWillAppear:(BOOL)animated { [super viewWillAppear:animated]; self.events=WUEventSnapshot(); [self.tableView reloadData]; }
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"本地接口与诊断";
+    [super viewDidLoad]; WUNeoPrepareTable(self); self.title=@"本地接口与诊断";
     self.hooks=WUHookStatus(); self.visibleHooks=self.hooks; self.events=WUEventSnapshot(); self.results=@[];
     self.queue=dispatch_queue_create("org.wechatunified.diagnostics", DISPATCH_QUEUE_SERIAL);
     self.search=[[UISearchController alloc] initWithSearchResultsController:nil];
@@ -201,7 +279,7 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
 }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 5; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if(section==0) return 1;
+    if(section==0) return 2;
     if(section==1) return self.visibleHooks.count?:1;
     if(section==2) return self.events.count?:1;
     if(section==3) return self.results.count?:1;
@@ -221,15 +299,17 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
     cell.textLabel.numberOfLines=0; cell.textLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
     cell.textLabel.adjustsFontForContentSizeCategory=YES; cell.selectionStyle=UITableViewCellSelectionStyleNone;
-    if(indexPath.section==0) cell.textLabel.text=[self environment];
+    if(indexPath.section==0 && indexPath.row==1) { cell.textLabel.text=self.wrapperCollecting?@"后台采集中…":@"一键诊断 MMServiceWrapper（只读预览）"; cell.selectionStyle=UITableViewCellSelectionStyleDefault; }
+    else if(indexPath.section==0) cell.textLabel.text=[self environment];
     else if(indexPath.section==1) cell.textLabel.text=self.visibleHooks.count?self.visibleHooks[indexPath.row]:@"无匹配记录";
     else if(indexPath.section==2) cell.textLabel.text=self.events.count?self.events[indexPath.row]:@"无事件";
     else if(indexPath.section==3) { cell.textLabel.text=self.results.count?self.results[indexPath.row]:@"输入关键词；无结果不代表接口不存在"; if(self.results.count) cell.selectionStyle=UITableViewCellSelectionStyleDefault; }
     else cell.textLabel.text=self.candidateResults.count?self.candidateResults[indexPath.row]:(self.collecting?@"后台分批采集中…":@"点击批量采集，查看候选及缺失");
-    return cell;
+    return WUNeoCell(cell,nil);
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if(indexPath.section==0 && indexPath.row==1) { [self collectWrapper]; return; }
     if(indexPath.section!=3 || (NSUInteger)indexPath.row>=self.results.count) return;
     NSString *selected=[self.results[indexPath.row] copy];
     UIAlertController *warning=[UIAlertController alertControllerWithTitle:@"分享此条接口结果？" message:@"类名和方法名可能包含敏感的应用内部信息；仅分享你选择的这一条，结果本身可能包含搜索词。" preferredStyle:UIAlertControllerStyleAlert];

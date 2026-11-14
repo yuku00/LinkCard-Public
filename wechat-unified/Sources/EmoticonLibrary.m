@@ -1,3 +1,4 @@
+#import "WUNeoSettings.h"
 #import "EmoticonLibrary.h"
 #import "EmoticonLibraryLogic.h"
 #import "EmoticonLogic.h"
@@ -20,7 +21,7 @@ static dispatch_queue_t Queue(void) { static dispatch_queue_t q; static dispatch
 @end
 @implementation WUEmoticonPreview
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.view.backgroundColor=UIColor.systemBackgroundColor;
+    [super viewDidLoad]; WUNeoPreparePage(self);
     self.imageView=[[UIImageView alloc] initWithFrame:self.view.bounds]; self.imageView.contentMode=UIViewContentModeScaleAspectFit; self.imageView.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight; [self.view addSubview:self.imageView];
     self.imageView.accessibilityLabel=@"原表情预览；GIF按原帧时长播放，不改保存字节";
     _source=CGImageSourceCreateWithData((__bridge CFDataRef)self.data,(__bridge CFDictionaryRef)@{(id)kCGImageSourceShouldCache:@NO});
@@ -71,7 +72,7 @@ static dispatch_queue_t Queue(void) { static dispatch_queue_t q; static dispatch
     [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]]; [self presentViewController:a animated:YES completion:nil];
 }
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"本地表情分组"; self.cancel=[NSProgress progressWithTotalUnitCount:1]; self.submitted=[NSMutableSet set];
+    [super viewDidLoad]; WUNeoPrepareTable(self); self.title=@"本地表情分组"; self.cancel=[NSProgress progressWithTotalUnitCount:1]; self.submitted=[NSMutableSet set];
     self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain target:self action:@selector(close)];
     self.navigationItem.rightBarButtonItems=@[[[UIBarButtonItem alloc] initWithTitle:@"导入" style:UIBarButtonItemStylePlain target:self action:@selector(importMenu)],[[UIBarButtonItem alloc] initWithTitle:@"新分组" style:UIBarButtonItemStylePlain target:self action:@selector(createGroup)]];
     __weak typeof(self) weak=self;
@@ -107,7 +108,7 @@ static dispatch_queue_t Queue(void) { static dispatch_queue_t q; static dispatch
         c.textLabel.text=p.row==0?@"全部":(p.row==1?@"未分组":self.state[@"groups"][p.row-2][@"name"]);
         if((!gid&&!self.filter)||[gid isEqual:self.filter]) c.accessoryType=UITableViewCellAccessoryCheckmark;
     } else { NSDictionary *r=self.rows[p.row]; c.textLabel.text=r[@"name"]; c.detailTextLabel.text=[NSString stringWithFormat:@"%@ · %lu字节",[r[@"uti"] isEqual:@"com.compuserve.gif"]?@"GIF（原动画）":r[@"uti"],(unsigned long)[r[@"data"] length]]; }
-    return c;
+    return WUNeoCell(c,@"face.smiling");
 }
 - (void)input:(NSString *)title value:(NSString *)value completion:(void (^)(NSString *))completion {
     if(![self current] || self.busy || self.presentedViewController) return;

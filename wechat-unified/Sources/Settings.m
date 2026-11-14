@@ -1,3 +1,4 @@
+#import "WUNeoSettings.h"
 #import "WU.h"
 #import "WUMiniAds.h"
 #import "WUDiagnostics.h"
@@ -10,8 +11,8 @@
 @end
 @implementation WUWords
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"朋友圈屏蔽词"; self.view.backgroundColor=UIColor.systemBackgroundColor;
-    self.editor=[UITextView new]; self.editor.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; self.editor.adjustsFontForContentSizeCategory=YES;
+    [super viewDidLoad]; self.title=@"朋友圈屏蔽词"; WUNeoPreparePage(self);
+    self.editor=[UITextView new]; self.editor.backgroundColor=UIColor.secondarySystemGroupedBackgroundColor; self.editor.layer.cornerRadius=18; self.editor.textContainerInset=UIEdgeInsetsMake(18,16,18,16); self.editor.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; self.editor.adjustsFontForContentSizeCategory=YES;
     self.editor.text=WUValue(@"words") ?: @""; self.editor.accessibilityLabel=@"每行一个字面屏蔽词";
     UILabel *hint=[UILabel new]; hint.numberOfLines=0; hint.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote]; hint.text=@"每行一个字面词（不是正则），单词最多128字符，总计2048字符。设备级词表，不保存朋友圈内容。";
     hint.adjustsFontForContentSizeCategory=YES; hint.textColor=UIColor.secondaryLabelColor;
@@ -32,6 +33,9 @@
 @interface WUSettings : UITableViewController <UISearchResultsUpdating>
 @property(nonatomic,strong) NSArray<NSArray<NSString *> *> *rows;
 @property(nonatomic,strong) NSArray<NSArray<NSIndexPath *> *> *searchRows;
+@property(nonatomic,strong) UIStackView *overview;
+@property(nonatomic,strong) UILabel *statusLabel;
+@property(nonatomic,strong) UISegmentedControl *categories;
 @end
 @implementation WUSettings
 - (void)viewDidLoad {
@@ -48,13 +52,34 @@
     self.tableView.estimatedRowHeight=64;
     self.tableView.cellLayoutMarginsFollowReadableWidth=YES;
     self.tableView.separatorInset=UIEdgeInsetsMake(0,16,0,16);
+    self.tableView.tintColor=UIColor.systemGreenColor;
+    [self buildOverview];
     self.edgesForExtendedLayout=UIRectEdgeNone;
     self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:WUChanged object:nil];
 }
+- (void)buildOverview {
+    UILabel *title=[UILabel new]; title.text=@"微信整合"; title.font=[UIFont preferredFontForTextStyle:UIFontTextStyleTitle2]; title.adjustsFontForContentSizeCategory=YES;
+    self.statusLabel=[UILabel new]; self.statusLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleSubheadline]; self.statusLabel.adjustsFontForContentSizeCategory=YES; self.statusLabel.numberOfLines=0; self.statusLabel.textColor=UIColor.secondaryLabelColor;
+    UILabel *hint=[UILabel new]; hint.text=@"按分类浏览或搜索功能；不可用的项目会说明原因。"; hint.numberOfLines=0; hint.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote]; hint.adjustsFontForContentSizeCategory=YES; hint.textColor=UIColor.secondaryLabelColor;
+    UIStackView *card=[[UIStackView alloc] initWithArrangedSubviews:@[title,self.statusLabel,hint]]; card.axis=UILayoutConstraintAxisVertical; card.spacing=8; card.layoutMargins=UIEdgeInsetsMake(18,18,18,18); card.layoutMarginsRelativeArrangement=YES; card.backgroundColor=UIColor.secondarySystemGroupedBackgroundColor; card.layer.cornerRadius=18; card.clipsToBounds=YES;
+    self.categories=[[UISegmentedControl alloc] initWithItems:@[@"全部",@"功能",@"外观",@"工具"]]; self.categories.selectedSegmentIndex=0; self.categories.selectedSegmentTintColor=UIColor.systemGreenColor; self.categories.accessibilityLabel=@"设置分类"; [self.categories addTarget:self action:@selector(categoryChanged:) forControlEvents:UIControlEventValueChanged];
+    self.overview=[[UIStackView alloc] initWithArrangedSubviews:@[card,self.categories]]; self.overview.axis=UILayoutConstraintAxisVertical; self.overview.spacing=14; self.overview.layoutMargins=UIEdgeInsetsMake(12,20,8,20); self.overview.layoutMarginsRelativeArrangement=YES;
+    self.tableView.tableHeaderView=self.overview; [self updateOverview];
+}
+- (void)updateOverview { self.statusLabel.text=[WUValue(@"enabled") boolValue]?@"已启用 · 各功能仍可单独设置":@"已暂停 · 配置保留，可在常用中启用"; }
+- (void)categoryChanged:(UISegmentedControl *)sender { [self.tableView reloadData]; }
+- (BOOL)showsSection:(NSInteger)section {
+    NSInteger category=self.categories.selectedSegmentIndex;
+    return category==0 || (category==1 && (section==0 || section==1 || section==2 || section==3 || section==5)) || (category==2 && (section==4 || section==6)) || (category==3 && section>=7);
+}
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
-- (void)viewDidLayoutSubviews { [super viewDidLayoutSubviews]; WUStyleSettingSwitches(self); }
-- (void)refresh { [self.tableView reloadData]; [self.view setNeedsLayout]; }
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews]; WUStyleSettingSwitches(self);
+    CGFloat width=CGRectGetWidth(self.tableView.bounds);
+    if(width>0) { CGSize size=[self.overview systemLayoutSizeFittingSize:CGSizeMake(width,UILayoutFittingCompressedSize.height) withHorizontalFittingPriority:UILayoutPriorityRequired verticalFittingPriority:UILayoutPriorityFittingSizeLevel]; CGRect frame=self.overview.frame; if(fabs(frame.size.width-width)>0.5 || fabs(frame.size.height-size.height)>0.5) { frame.size=CGSizeMake(width,size.height); self.overview.frame=frame; self.tableView.tableHeaderView=self.overview; } }
+}
+- (void)refresh { [self updateOverview]; [self.tableView reloadData]; [self.view setNeedsLayout]; }
 - (void)done { [self dismissViewControllerAnimated:YES completion:nil]; }
 // Ranges follow the existing row order so keys, defaults and handlers remain unchanged.
 - (NSRange)featureRangeForSection:(NSInteger)section {
@@ -63,7 +88,7 @@
 }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 9; }
 - (NSInteger)originalRowCountForSection:(NSInteger)s { return s<7?[self featureRangeForSection:s].length:(s==7?7:1); }
-- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return self.searchRows ? self.searchRows[s].count : [self originalRowCountForSection:s]; }
+- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { if(![self showsSection:s]) return 0; return self.searchRows ? self.searchRows[s].count : [self originalRowCountForSection:s]; }
 - (NSIndexPath *)originalPath:(NSIndexPath *)path { return self.searchRows ? self.searchRows[path.section][path.row] : path; }
 - (NSString *)titleForOriginalPath:(NSIndexPath *)p {
     if(p.section<7) return self.rows[[self featureRangeForSection:p.section].location+p.row][1];
@@ -73,6 +98,7 @@
 - (void)updateSearchResultsForSearchController:(UISearchController *)searchController {
     NSString *query=[searchController.searchBar.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if(!query.length) { self.searchRows=nil; [self.tableView reloadData]; return; }
+    self.categories.selectedSegmentIndex=0;
     NSMutableArray *sections=[NSMutableArray array];
     for(NSInteger section=0;section<9;section++) {
         NSMutableArray *matches=[NSMutableArray array];
@@ -84,9 +110,9 @@
     }
     self.searchRows=sections; [self.tableView reloadData];
 }
-- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { if(self.searchRows && !self.searchRows[s].count) return nil; return @[@"常用",@"语音播放",@"内容过滤",@"输入与转述",@"消息与首页外观",@"聊天功能",@"主题与界面细节",@"本地工具",@"宿主适配状态"][s]; }
+- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { if(![self showsSection:s] || (self.searchRows && !self.searchRows[s].count)) return nil; return @[@"常用",@"语音播放",@"内容过滤",@"输入与转述",@"消息与首页外观",@"聊天功能",@"主题与界面细节",@"本地工具",@"宿主适配状态"][s]; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
-    if(self.searchRows) return nil;
+    if(self.searchRows || ![self showsSection:s]) return nil;
     if(s==6) return @"只显示有执行路径的开关；灰色表示当前宿主缺接口/签名。消息动作在聊天页，执行前确认并重验上下文。头像双击的拍一拍前确认见宿主行为页，不拦截同步发送返回值。复读图标/长按文件下载见本地工具；宿主长按菜单复读、文件复读及红包跨会话定位尚未完成。链接只接手动所选消息，不自动改写气泡。";
     if(s==7) return @"不采集历史、不扫描聊天数据库、不发送消息。链接可选内置Safari组件或系统默认浏览器；不承诺强制外部Safari或绕过封禁。";
     if(s==8) return @"目标 iOS 16.6 / 微信暂按 8.0.70。签名匹配≠功能已验收。尚无真机验证，完整未完成清单见源码 STATUS.md。无 AI、无 ActionBar、无系统 Dock 修改、无奖励伪报。";
@@ -121,6 +147,11 @@
     cell.detailTextLabel.adjustsFontForContentSizeCategory=YES;
     cell.detailTextLabel.textColor=UIColor.secondaryLabelColor;
     cell.backgroundColor=UIColor.secondarySystemGroupedBackgroundColor;
+    if(p.section<7) {
+        NSArray<NSString *> *sectionSymbols=@[@"switch.2",@"waveform",@"line.3.horizontal.decrease.circle",@"keyboard",@"rectangle.and.pencil.and.ellipsis",@"bubble.left.and.bubble.right",@"paintpalette"];
+        cell.imageView.image=[UIImage systemImageNamed:sectionSymbols[p.section]];
+        cell.imageView.tintColor=UIColor.systemGreenColor;
+    }
     if(p.section<7) {
         NSUInteger row=[self featureRangeForSection:p.section].location+p.row;
         NSString *key=self.rows[row][0]; cell.textLabel.text=[self titleForOriginalPath:p];

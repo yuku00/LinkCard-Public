@@ -1,3 +1,4 @@
+#import "WUNeoSettings.h"
 #import "MessageEntries.h"
 #import "RepeatOptions.h"
 @interface WURepeatSettings : UITableViewController
@@ -5,7 +6,7 @@
 @end
 @implementation WURepeatSettings
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"复读标签 · 图标与下载"; self.account=WUCurrentAccount();
+    [super viewDidLoad]; WUNeoPrepareTable(self); self.title=@"复读标签 · 图标与下载"; self.account=WUCurrentAccount();
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:WUChanged object:nil];
 }
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
@@ -31,7 +32,7 @@
         if(p.row<2) { cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; cell.detailTextLabel.text=[options[@"userIcon"] length]?@"已配置用户图标；主题开关开启时主题优先。":@"未配置用户图标"; }
         else { cell.selectionStyle=UITableViewCellSelectionStyleNone; cell.textLabel.textColor=UIColor.secondaryLabelColor; }
     }
-    return cell;
+    return WUNeoCell(cell,@"repeat");
 }
 - (void)failed {
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"未保存" message:@"账号变化或配置写盘失败，原配置保留。" preferredStyle:UIAlertControllerStyleAlert];

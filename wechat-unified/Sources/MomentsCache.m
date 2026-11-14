@@ -1,3 +1,4 @@
+#import "WUNeoSettings.h"
 #import "WU.h"
 #import "MomentsCacheComments.h"
 #import "MomentsCacheLogic.h"
@@ -216,7 +217,7 @@ static char videoStatusKey;
 }
 - (void)viewDidDisappear:(BOOL)animated { [super viewDidDisappear:animated]; if(self.isMovingFromParentViewController || !self.navigationController) { NSString *token=self.lease; self.lease=nil; if(token) dispatch_async(IO(),^{ [leases removeObjectForKey:token]; }); } }
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"曾见内容 · 非服务器当前内容"; self.view.backgroundColor=UIColor.systemBackgroundColor;
+    [super viewDidLoad]; self.title=@"曾见内容 · 非服务器当前内容"; WUNeoPreparePage(self);
     if(![self.browser current]) return;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(stopVideo) name:UIApplicationWillResignActiveNotification object:nil];
     UIScrollView *scroll=[UIScrollView new]; scroll.frame=self.view.bounds; scroll.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight; [self.view addSubview:scroll];
@@ -274,7 +275,7 @@ static char videoStatusKey;
 @implementation WUMCacheBrowser
 - (BOOL)current { return Current(self.account,self.generation); }
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"朋友圈本地缓存";
+    [super viewDidLoad]; WUNeoPrepareTable(self); self.title=@"朋友圈本地缓存";
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"配置" style:UIBarButtonItemStylePlain target:self action:@selector(configure)];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(hide) name:UIApplicationWillResignActiveNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(reload) name:WUChanged object:nil];
@@ -298,7 +299,7 @@ static char videoStatusKey;
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; c.textLabel.numberOfLines=2; c.detailTextLabel.numberOfLines=2;
     if(p.section==0) { c.textLabel.text=@"按保留天数安全清理（保留收藏）"; NSDictionary *o=Options(self.account); c.detailTextLabel.text=[NSString stringWithFormat:@"缓存%@ · 监控%lu人 · 保留%@天",[o[@"enabled"] boolValue]?@"开启":@"关闭",(unsigned long)[o[@"monitor"] count],o[@"days"]]; }
     else { NSDictionary *r=self.rows[p.row]; c.textLabel.text=[NSString stringWithFormat:@"%@%@",[r[@"favorite"] boolValue]?@"★ ":@"",r[@"username"]]; c.detailTextLabel.text=[@"曾见内容 · " stringByAppendingString:r[@"text"]]; c.accessoryType=UITableViewCellAccessoryDisclosureIndicator; } if(p.section==0 && !Available()) c.detailTextLabel.text=[c.detailTextLabel.text stringByAppendingString:@" · 宿主接口不可用"];
-    return c;
+    return WUNeoCell(c,@"photo.on.rectangle");
 }
 - (void)configure {
     if(![self current]) return; NSDictionary *o=Options(self.account);

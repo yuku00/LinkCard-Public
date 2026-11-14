@@ -1,3 +1,4 @@
+#import "WUNeoSettings.h"
 #import "WU.h"
 #import "HomeLogic.h"
 #import "WUHostService.h"
@@ -275,7 +276,7 @@ static void ReloadHost(void) {
 @property(nonatomic,copy) NSArray *users;
 @end
 @implementation WUHomeGroupsController
-- (void)viewDidLoad { [super viewDidLoad]; self.title=@"首页电报分组"; self.account=WUCurrentAccount(); [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:WUChanged object:nil]; [self refresh]; }
+- (void)viewDidLoad { [super viewDidLoad]; WUNeoPrepareTable(self); self.title=@"首页电报分组"; self.account=WUCurrentAccount(); [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:WUChanged object:nil]; [self refresh]; }
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
 - (BOOL)current { return self.account.length && [self.account isEqual:WUCurrentAccount()]; }
 - (void)refresh { NSMutableOrderedSet *users=[NSMutableOrderedSet orderedSet]; if([self current]) for(WUHomeSnapshot *s in managers.allObjects) if([s current]) for(id array in s.source) if([array isKindOfClass:NSArray.class]) for(id native in array) { NSDictionary *r=Row(native); if(r) [users addObject:r[@"username"]]; } self.users=users.array; [self.tableView reloadData]; }
@@ -289,7 +290,7 @@ static void ReloadHost(void) {
     if(p.section==1) { c.textLabel.text=self.users[p.row]; c.detailTextLabel.text=@"未分组"; for(NSDictionary *g in s[@"groups"]) if([g[@"id"] isEqual:s[@"membership"][self.users[p.row]]]) c.detailTextLabel.text=g[@"name"]; }
     else if(p.row==0) { c.textLabel.text=@"启用首页电报分组"; UISwitch *sw=[UISwitch new]; sw.enabled=ready; sw.on=[s[@"enabled"] boolValue]; [sw addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventValueChanged]; c.accessoryView=sw; }
     else if(p.row==1) c.textLabel.text=@"＋ 创建自定义组";
-    else { NSDictionary *g=Tabs(s)[p.row-2]; c.textLabel.text=g[@"name"]; if([s[@"selected"] isEqual:g[@"id"]]) c.accessoryType=UITableViewCellAccessoryCheckmark; } return c;
+    else { NSDictionary *g=Tabs(s)[p.row-2]; c.textLabel.text=g[@"name"]; if([s[@"selected"] isEqual:g[@"id"]]) c.accessoryType=UITableViewCellAccessoryCheckmark; } return WUNeoCell(c,@"person.2");
 }
 - (void)toggle:(UISwitch *)sw { NSMutableDictionary *s=[State(self.account) mutableCopy]; s[@"enabled"]=@(sw.on); if(![self save:s]) sw.on=!sw.on; }
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p {

@@ -1,3 +1,4 @@
+#import "WUNeoSettings.h"
 #import "WUStats.h"
 #import "WUStatsHostProfile.h"
 #import "WUHostRead.h"
@@ -453,7 +454,7 @@ static char WUStatsOwnerKey;
 @implementation WUStatsController
 - (BOOL)scanning { return (self.job && !self.job.cancelled) || (self.overviewJob && !self.overviewJob.cancelled); }
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"本地消息统计"; self.status=@"尚未扫描"; self.sections=@[];
+    [super viewDidLoad]; WUNeoPrepareTable(self); self.title=@"本地消息统计"; self.status=@"尚未扫描"; self.sections=@[];
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"扫描" style:UIBarButtonItemStylePlain target:self action:@selector(scan)];
     self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain target:self action:@selector(close)];
     self.tableView.rowHeight=UITableViewAutomaticDimension; self.tableView.estimatedRowHeight=48;
@@ -636,7 +637,7 @@ static char WUStatsOwnerKey;
     UITableViewCell *cell=[tableView dequeueReusableCellWithIdentifier:@"stat"];
     if(!cell) cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"stat"];
     cell.textLabel.numberOfLines=0; cell.textLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; cell.textLabel.adjustsFontForContentSizeCategory=YES;
-    cell.textLabel.text=self.sections[path.section][@"rows"][path.row]; cell.selectionStyle=path.section==0?UITableViewCellSelectionStyleDefault:UITableViewCellSelectionStyleNone; cell.accessoryType=path.section==0?UITableViewCellAccessoryDisclosureIndicator:UITableViewCellAccessoryNone; return cell;
+    cell.textLabel.text=self.sections[path.section][@"rows"][path.row]; cell.selectionStyle=path.section==0?UITableViewCellSelectionStyleDefault:UITableViewCellSelectionStyleNone; cell.accessoryType=path.section==0?UITableViewCellAccessoryDisclosureIndicator:UITableViewCellAccessoryNone; return WUNeoCell(cell,nil);
 }
 @end
 void WUStatsBindOwner(UIViewController *owner,WUStatsBinding *binding) {

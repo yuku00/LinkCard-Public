@@ -1,3 +1,4 @@
+#import "WUNeoSettings.h"
 #import "WUNative.h"
 @interface WUNativeSettings : UITableViewController @end
 @implementation WUNativeSettings
@@ -12,7 +13,7 @@
  @[@"homeFinder",@"禁用首页的视频号 · 原开关",@"按原设置移除WXProfile（我／个人主页表格）的视频号行；不是发现页总开关。只改精确匹配的行数据，关闭恢复；宿主重建的数据不回填旧行。"],
  @[@"rewardFast",@"快速观看激励广告 · 本地实验",@"在小程序看广告获取资源场景，仅将原MBAD motivating两项布尔实验置YES；关闭透传原值。播放与奖励依赖宿主和服务端，不伪造完成、不自动领取，也不是通用播放器加速。"]]; }
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"宿主行为 / 版本控制";
+    [super viewDidLoad]; WUNeoPrepareTable(self); self.title=@"宿主行为 / 版本控制";
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"启动保护复位" style:UIBarButtonItemStylePlain target:self action:@selector(resetGuard)];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:WUChanged object:nil];
 }
@@ -31,7 +32,7 @@
     id options=WUValue(@"native"); sw.on=WUNativeValidOptions(options) && [options[key] boolValue];
     sw.enabled=WUNativeAvailable(key) || sw.on;
     [sw addTarget:self action:@selector(change:) forControlEvents:UIControlEventValueChanged];
-    cell.accessoryView=sw; cell.selectionStyle=UITableViewCellSelectionStyleNone; return cell;
+    cell.accessoryView=sw; cell.selectionStyle=UITableViewCellSelectionStyleNone; return WUNeoCell(cell,@"gearshape");
 }
 - (void)resetGuard {
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"关闭整合并复位启动保护？" message:WUNativeGuardStatus() preferredStyle:UIAlertControllerStyleAlert];

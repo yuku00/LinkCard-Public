@@ -1,3 +1,4 @@
+#import "WUNeoSettings.h"
 #import "Repository.h"
 @implementation WURepositoryBinding
 @end
@@ -21,7 +22,7 @@
     [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]]; [self presentViewController:a animated:YES completion:nil];
 }
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"账号消息仓库";
+    [super viewDidLoad]; WUNeoPrepareTable(self); self.title=@"账号消息仓库";
     self.selected=[NSMutableOrderedSet orderedSet]; self.results=[NSMutableDictionary dictionary]; self.submitted=[NSMutableSet set];
     self.directory=[[NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject URLByAppendingPathComponent:@"WeChatUnified/Repository" isDirectory:YES];
     NSError *error=nil; self.items=WURepositoryLoad(self.directory,self.binding.account,&error); self.loaded=self.items!=nil;
@@ -72,7 +73,7 @@
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     NSDictionary *item=self.items[p.row]; UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
     c.textLabel.text=item[@"name"]; c.detailTextLabel.numberOfLines=0; c.detailTextLabel.text=self.results[item[@"id"]]?:[NSString stringWithFormat:@"%lu项 · %@",(unsigned long)[item[@"parts"] count],[item[@"parts"][0][@"kind"] isEqual:@"text"]?@"独立文本":@"原消息引用，非备份"];
-    c.accessoryType=[self.selected containsObject:item[@"id"]]?UITableViewCellAccessoryCheckmark:UITableViewCellAccessoryNone; return c;
+    c.accessoryType=[self.selected containsObject:item[@"id"]]?UITableViewCellAccessoryCheckmark:UITableViewCellAccessoryNone; return WUNeoCell(c,@"tray.full");
 }
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p {
     [t deselectRowAtIndexPath:p animated:YES]; if(self.busy || ![self current]) return;

@@ -1,3 +1,4 @@
+#import "WUNeoSettings.h"
 #import "WU.h"
 #import "ThemeCatalog.h"
 #import "ThemePrimitives.h"
@@ -15,7 +16,7 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
 - (void)refreshPreview;
 @end
 @implementation WUSurfaceEditor
-- (void)viewDidLoad { [super viewDidLoad]; self.title=RoleTitles()[self.role]; self.fields=@[@[@"radius",@"圆角 (0–80pt)"],@[@"borderWidth",@"描边尺寸 (0–8pt)"],@[@"opacity",@"背景视图透明度 (0–1)"],@[@"fontSize",@"字体尺寸 (8–48pt)"],@[@"fontWeight",@"系统字体粗细 (-1–1)"],@[@"fontName",@"已安装字体 PostScript 名"],@[@"background",@"浅色背景"],@[@"backgroundDark",@"深色背景"],@[@"text",@"浅色文字"],@[@"textDark",@"深色文字"],@[@"tint",@"浅色图标"],@[@"tintDark",@"深色图标"],@[@"border",@"浅色描边"],@[@"borderDark",@"深色描边"]]; [self installPreview]; }
+- (void)viewDidLoad { [super viewDidLoad]; WUNeoPrepareTable(self); self.title=RoleTitles()[self.role]; self.fields=@[@[@"radius",@"圆角 (0–80pt)"],@[@"borderWidth",@"描边尺寸 (0–8pt)"],@[@"opacity",@"背景视图透明度 (0–1)"],@[@"fontSize",@"字体尺寸 (8–48pt)"],@[@"fontWeight",@"系统字体粗细 (-1–1)"],@[@"fontName",@"已安装字体 PostScript 名"],@[@"background",@"浅色背景"],@[@"backgroundDark",@"深色背景"],@[@"text",@"浅色文字"],@[@"textDark",@"深色文字"],@[@"tint",@"浅色图标"],@[@"tintDark",@"深色图标"],@[@"border",@"浅色描边"],@[@"borderDark",@"深色描边"]]; [self installPreview]; }
 - (void)installPreview {
     UIView *header=[[UIView alloc] initWithFrame:CGRectMake(0,0,320,160)];
     UIStackView *stack=[UIStackView new]; stack.axis=UILayoutConstraintAxisHorizontal; stack.spacing=12; stack.distribution=UIStackViewDistributionFillEqually; stack.translatesAutoresizingMaskIntoConstraints=NO;
@@ -54,7 +55,7 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
     else if(p.section==2) c.textLabel.text=@"重置本项样式";
     else { NSArray *field=self.fields[p.row]; NSString *key=field[0]; c.textLabel.text=field[1]; c.detailTextLabel.text=[WUSurfaceStyle(self.role)[key] description]?:@"默认";
         if(![@[@"radius",@"borderWidth",@"opacity",@"fontSize",@"fontWeight",@"fontName"] containsObject:key]) { UIButton *button=[UIButton buttonWithType:UIButtonTypeSystem]; [button setTitle:@"选色" forState:UIControlStateNormal]; button.frame=CGRectMake(0,0,52,44); button.tag=p.row; button.accessibilityLabel=[field[1] stringByAppendingString:@"选色"]; [button addTarget:self action:@selector(colorButton:) forControlEvents:UIControlEventTouchUpInside]; c.accessoryView=button; }
-    } return c;
+    } return WUNeoCell(c,@"slider.horizontal.3");
 }
 - (void)error:(NSString *)text { UIAlertController *a=[UIAlertController alertControllerWithTitle:@"未保存" message:text preferredStyle:UIAlertControllerStyleAlert]; [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]]; [self presentViewController:a animated:YES completion:nil]; }
 - (void)toggle:(UISwitch *)s { if([self.role isEqual:@"plusSurface"] && s.on) { s.on=NO; return; } if(!WUSave(self.role,@(s.on))) { s.on=[WUValue(self.role) boolValue]; [self error:@"业务开关保存失败"]; } else if([self.role isEqual:@"plusSurface"]) s.enabled=NO; }
@@ -105,9 +106,9 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
 @end
 @interface WUSurfaceSettings : UITableViewController @end
 @implementation WUSurfaceSettings
-- (void)viewDidLoad { [super viewDidLoad]; self.title=@"逐项界面样式"; }
+- (void)viewDidLoad { [super viewDidLoad]; WUNeoPrepareTable(self); self.title=@"逐项界面样式"; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return WUSurfaceRoles().count; }
-- (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p { UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil]; c.textLabel.text=RoleTitles()[WUSurfaceRoles()[p.row]]; c.accessoryType=UITableViewCellAccessoryDisclosureIndicator; return c; }
+- (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p { UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil]; c.textLabel.text=RoleTitles()[WUSurfaceRoles()[p.row]]; c.accessoryType=UITableViewCellAccessoryDisclosureIndicator; return WUNeoCell(c,@"paintpalette"); }
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p { [t deselectRowAtIndexPath:p animated:YES]; WUSurfaceEditor *v=[[WUSurfaceEditor alloc] initWithStyle:UITableViewStyleInsetGrouped]; v.role=WUSurfaceRoles()[p.row]; [self.navigationController pushViewController:v animated:YES]; }
 @end
 void WUShowSurfaceSettings(UIViewController *owner) { WUSurfaceSettings *v=[[WUSurfaceSettings alloc] initWithStyle:UITableViewStyleInsetGrouped]; if(owner.navigationController) [owner.navigationController pushViewController:v animated:YES]; }

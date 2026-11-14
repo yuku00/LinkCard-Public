@@ -1,3 +1,4 @@
+#import "WUNeoSettings.h"
 #import "WU.h"
 #import "DraftsLogic.h"
 #import "DraftMediaLogic.h"
@@ -44,10 +45,11 @@ static char draftIDKey, draftMediaKey;
 @end
 @implementation WUDraftsList
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"草稿与媒体备份 · 本账号";
+    [super viewDidLoad]; WUNeoPrepareTable(self); self.title=@"草稿与媒体备份 · 本账号";
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"新建" style:UIBarButtonItemStylePlain target:self action:@selector(create)];
-    UILabel *footer=[[UILabel alloc] initWithFrame:CGRectMake(0,0,300,100)]; footer.numberOfLines=0; footer.textAlignment=NSTextAlignmentCenter; footer.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
-    footer.text=@"图片仅支持真实UIImage静态正向像素；视频可用独立副本重建宿主编辑器，原剪辑轨道不恢复。\n位置/可见范围/原图元数据不保存，必须重新核对。\n删除只移除索引；资源保留保护编辑中引用，每账号上限512MiB。"; self.tableView.tableFooterView=footer;
+}
+- (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
+    return @"图片仅支持真实UIImage静态正向像素；视频可用独立副本重建宿主编辑器，原剪辑轨道不恢复。\n位置/可见范围/原图元数据不保存，必须重新核对。\n删除只移除索引；资源保留保护编辑中引用，每账号上限512MiB。";
 }
 - (void)viewWillAppear:(BOOL)animated { [super viewWillAppear:animated]; [self reloadDrafts]; }
 - (void)reloadDrafts {
@@ -60,7 +62,7 @@ static char draftIDKey, draftMediaKey;
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return self.rows.count; }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; NSDictionary *row=self.rows[path.row];
-    cell.textLabel.text=[row[@"kind"] isEqual:@"video-backup"] && [row[@"name"] isEqual:@"视频备份（不可恢复）"]?@"视频草稿":row[@"name"]; cell.textLabel.numberOfLines=2; cell.detailTextLabel.text=[row[@"kind"] isEqual:@"video-backup"]?@"视频草稿 · 从保存视频重建编辑":([row[@"kind"] isEqual:@"images"]?@"图片草稿 · 不含位置/可见范围":@"文字草稿 · 不含媒体/发布设置"); cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; return cell;
+    cell.textLabel.text=[row[@"kind"] isEqual:@"video-backup"] && [row[@"name"] isEqual:@"视频备份（不可恢复）"]?@"视频草稿":row[@"name"]; cell.textLabel.numberOfLines=2; cell.detailTextLabel.text=[row[@"kind"] isEqual:@"video-backup"]?@"视频草稿 · 从保存视频重建编辑":([row[@"kind"] isEqual:@"images"]?@"图片草稿 · 不含位置/可见范围":@"文字草稿 · 不含媒体/发布设置"); cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; return WUNeoCell(cell,@"doc.text");
 }
 - (void)openRow:(NSDictionary *)row { [self openRow:row videoURL:nil]; }
 - (void)openRow:(NSDictionary *)row videoURL:(NSURL *)videoURL {

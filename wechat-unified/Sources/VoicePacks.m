@@ -1,3 +1,4 @@
+#import "WUNeoSettings.h"
 #import "VoicePacks.h"
 #import "VoicePackLogic.h"
 #import "OfflineVoice.h"
@@ -47,7 +48,7 @@ static NSData *Wave(NSData *data) {
 }
 - (void)close { self.invalid=YES; [self.cancellation cancel]; [self stop]; [self.timer invalidate]; self.timer=nil; [self.navigationController.presentingViewController dismissViewControllerAnimated:NO completion:nil]; }
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.cancellation=[NSProgress progressWithTotalUnitCount:1]; self.title=@"本账号本地语音包"; self.submitted=[NSMutableSet set];
+    [super viewDidLoad]; WUNeoPrepareTable(self); self.cancellation=[NSProgress progressWithTotalUnitCount:1]; self.title=@"本账号本地语音包"; self.submitted=[NSMutableSet set];
     self.navigationItem.leftBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"关闭" style:UIBarButtonItemStylePlain target:self action:@selector(close)];
     self.navigationItem.rightBarButtonItems=@[[[UIBarButtonItem alloc] initWithTitle:@"保存所选" style:UIBarButtonItemStylePlain target:self action:@selector(saveSelected)],[[UIBarButtonItem alloc] initWithTitle:@"导入文件" style:UIBarButtonItemStylePlain target:self action:@selector(importFile)]];
     __weak typeof(self) weak=self;
@@ -67,7 +68,7 @@ static NSData *Wave(NSData *data) {
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; NSDictionary *r=self.rows[path.row];
     c.textLabel.text=r[@"name"]; c.detailTextLabel.numberOfLines=0;
     c.detailTextLabel.text=[r[@"source"] isEqual:@"external-encoded-silk-v1"]?[NSString stringWithFormat:@"外部音频 · 本机编码腾讯SILK · %@毫秒\n绑定版本 %@ · %@",r[@"ms"],r[@"version"],WUVoicePackMatches(r,self.binding.version)?@"可确认单次发送":@"版本不同或校验失败：仅试听"]:[r[@"pairing"] boolValue]?[NSString stringWithFormat:@"所选微信语音 · %@毫秒 · 实测format %@\n来源版本 %@ · %@",r[@"ms"],r[@"format"],r[@"version"],WUVoicePackMatches(r,self.binding.version)?@"可确认单次发送":@"版本不同：仅试听"]:[NSString stringWithFormat:@"外部导入 · %@毫秒\n旧导入：仅离线试听/导出",r[@"ms"]];
-    return c;
+    return WUNeoCell(c,@"waveform");
 }
 - (void)importFile {
     if(self.busy || ![self current] || self.presentedViewController) return;

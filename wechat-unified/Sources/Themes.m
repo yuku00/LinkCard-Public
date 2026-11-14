@@ -1,3 +1,4 @@
+#import "WUNeoSettings.h"
 #import "WU.h"
 #import "MessageEntries.h"
 #import "ThemeArchive.h"
@@ -229,12 +230,14 @@ static UIImage *PreviewImage(NSString *identifier,BOOL dark) {
 }
 @implementation WUThemePreview
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"本地资源预览"; self.view.backgroundColor=UIColor.systemBackgroundColor;
+    [super viewDidLoad]; self.title=@"本地资源预览"; WUNeoPreparePage(self);
     self.mode=[[UISegmentedControl alloc] initWithItems:@[@"浅色",@"深色"]]; self.mode.selectedSegmentIndex=0; [self.mode addTarget:self action:@selector(refresh) forControlEvents:UIControlEventValueChanged];
     self.picture=[UIImageView new]; self.picture.contentMode=UIViewContentModeScaleAspectFit; self.picture.accessibilityLabel=@"主题封面或代表气泡预览";
-    self.detail=[UILabel new]; self.detail.numberOfLines=0; self.detail.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
-    UIStackView *stack=[[UIStackView alloc] initWithArrangedSubviews:@[self.mode,self.picture,self.detail]]; stack.axis=UILayoutConstraintAxisVertical; stack.spacing=16; stack.translatesAutoresizingMaskIntoConstraints=NO; [self.view addSubview:stack];
-    [NSLayoutConstraint activateConstraints:@[[stack.leadingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.leadingAnchor constant:16],[stack.trailingAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.trailingAnchor constant:-16],[stack.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:12],[self.picture.heightAnchor constraintEqualToConstant:280]]]; [self refresh];
+    self.detail=[UILabel new]; self.detail.numberOfLines=0; self.detail.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote]; self.detail.adjustsFontForContentSizeCategory=YES;
+    UIScrollView *scroll=[UIScrollView new]; scroll.translatesAutoresizingMaskIntoConstraints=NO; [self.view addSubview:scroll];
+    UIStackView *stack=[[UIStackView alloc] initWithArrangedSubviews:@[self.mode,self.picture,self.detail]]; stack.axis=UILayoutConstraintAxisVertical; stack.spacing=16; stack.translatesAutoresizingMaskIntoConstraints=NO; [scroll addSubview:stack];
+    UILayoutGuide *safe=self.view.safeAreaLayoutGuide;
+    [NSLayoutConstraint activateConstraints:@[[scroll.topAnchor constraintEqualToAnchor:safe.topAnchor],[scroll.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor],[scroll.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor],[scroll.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor],[stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:20],[stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-20],[stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor constant:16],[stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor constant:-20],[stack.widthAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.widthAnchor constant:-40],[self.picture.heightAnchor constraintEqualToConstant:280]]]; [self refresh];
 }
 - (void)refresh {
     BOOL dark=self.mode.selectedSegmentIndex==1; NSDictionary *pack=Index(self.identifier); self.picture.backgroundColor=dark?UIColor.blackColor:UIColor.whiteColor; self.picture.image=PreviewImage(self.identifier,dark);
@@ -254,7 +257,7 @@ static UIImage *PreviewImage(NSString *identifier,BOOL dark) {
 @end
 @implementation WUThemes
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"本地主题 / 气泡";
+    [super viewDidLoad]; WUNeoPrepareTable(self); self.title=@"本地主题 / 气泡";
     self.navigationItem.rightBarButtonItems=@[[[UIBarButtonItem alloc] initWithTitle:@"导入" style:UIBarButtonItemStylePlain target:self action:@selector(pickNew)],[[UIBarButtonItem alloc] initWithTitle:@"排序" style:UIBarButtonItemStylePlain target:self action:@selector(order)]]; [self reload];
 }
 - (NSDictionary *)options { id value=WUValue(@"themeOptions"); return WUValidThemeOptions(value)?value:@{}; }
@@ -292,14 +295,14 @@ static UIImage *PreviewImage(NSString *identifier,BOOL dark) {
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?3:self.packs.count; }
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return s==0?@"独立选择 / 恢复 / 样式":@"本地资源 · 置顶优先"; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s==0?@"主题与气泡独立；气泡留空跟随主题；缺项回退主题再回宿主。关闭立即恢复已记录的图片和视图。切换或追加资源后，已显示的宿主页面可能需重新进入；不强制重载宿主。":@"目录保持原样。ZIP≤32MB / 解包≤64MB / 单文件≤8MB / ≤510资源。SVG需WCSVGImage真实解码；CAR经系统Assets.car加载；CSS/XML仅已列WeUI字面色值，实际应用到已开启的明确视图。无在线服务。"; }
-- (CGFloat)tableView:(UITableView *)t heightForRowAtIndexPath:(NSIndexPath *)p { return p.section==1&&[[self options][@"cards"] boolValue]?148:UITableViewAutomaticDimension; }
+- (CGFloat)tableView:(UITableView *)t heightForRowAtIndexPath:(NSIndexPath *)p { return p.section==1&&[[self options][@"cards"] boolValue]&&!UIContentSizeCategoryIsAccessibilityCategory(t.traitCollection.preferredContentSizeCategory)?[UIFontMetrics.defaultMetrics scaledValueForValue:148]:UITableViewAutomaticDimension; }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
-    if(p.section==0) { cell.textLabel.text=@[@"清除主题选择",@"气泡跟随主题",@"逐项圆角 / 颜色 / 字体 / 尺寸"][p.row]; return cell; }
+    if(p.section==0) { cell.textLabel.text=@[@"清除主题选择",@"气泡跟随主题",@"逐项圆角 / 颜色 / 字体 / 尺寸"][p.row]; return WUNeoCell(cell,@"paintpalette"); }
     NSDictionary *pack=self.packs[p.row]; NSString *uuid=pack[@"id"]; BOOL pin=[[self options][@"pinned"] containsObject:uuid];
     cell.textLabel.text=[NSString stringWithFormat:@"%@%@",pin?@"📌 ":@"",pack[@"name"]];
     cell.detailTextLabel.text=[NSString stringWithFormat:@"%@%@ · %@项 · %.1f MB",[WUValue(@"themePack") isEqual:uuid]?@"主题 ":@"",[WUValue(@"bubblePack") isEqual:uuid]?@"独立气泡 ":@"",pack[@"resources"]?:pack[@"png"]?:@0,[pack[@"size"] doubleValue]/1024/1024];
-    if([[self options][@"cards"] boolValue]) { cell.imageView.image=PreviewImage(uuid,self.traitCollection.userInterfaceStyle==UIUserInterfaceStyleDark); cell.imageView.contentMode=UIViewContentModeScaleAspectFit; } return cell;
+    if([[self options][@"cards"] boolValue]) { cell.imageView.image=PreviewImage(uuid,self.traitCollection.userInterfaceStyle==UIUserInterfaceStyleDark); cell.imageView.contentMode=UIViewContentModeScaleAspectFit; } return WUNeoCell(cell,@"paintpalette");
 }
 - (void)select:(NSString *)uuid key:(NSString *)key { if(!WUSave(key,uuid)) [self message:@"选择未保存，旧配置保留"]; else [self reload]; }
 - (void)exportPack:(NSDictionary *)pack {

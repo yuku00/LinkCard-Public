@@ -1,3 +1,4 @@
+#import "WUNeoSettings.h"
 #import "WU.h"
 #import "GroupLogic.h"
 NSDictionary *WUAccountOptions(NSString *account) {
@@ -134,7 +135,7 @@ static NSArray<NSString *> *WUChatToolKeys(void) {
 @end
 @implementation WUGroupsController
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.title=@"账号分组与工具栏"; self.account=WUCurrentAccount();
+    [super viewDidLoad]; WUNeoPrepareTable(self); self.title=@"账号分组与工具栏"; self.account=WUCurrentAccount();
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"完成" style:UIBarButtonItemStyleDone target:self action:@selector(done)];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:WUChanged object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:UIApplicationDidBecomeActiveNotification object:nil]; [self refresh];
@@ -171,8 +172,8 @@ static NSArray<NSString *> *WUChatToolKeys(void) {
 }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0;
-    if(p.section==4) { NSArray *modes=@[@"menu",@"grid2",@"grid3",@"grid4"]; cell.textLabel.text=@[@"原工具菜单",@"网格 · 2列",@"网格 · 3列",@"网格 · 4列"][p.row]; NSString *mode=WUAccountOptions(self.account)[@"toolbarLayout"]?:@"menu"; if([mode isEqual:modes[p.row]]) cell.accessoryType=UITableViewCellAccessoryCheckmark; return cell; }
-    if(p.section==3) { cell.textLabel.text=@"首页电报分组"; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; return cell; }
+    if(p.section==4) { NSArray *modes=@[@"menu",@"grid2",@"grid3",@"grid4"]; cell.textLabel.text=@[@"原工具菜单",@"网格 · 2列",@"网格 · 3列",@"网格 · 4列"][p.row]; NSString *mode=WUAccountOptions(self.account)[@"toolbarLayout"]?:@"menu"; if([mode isEqual:modes[p.row]]) cell.accessoryType=UITableViewCellAccessoryCheckmark; return WUNeoCell(cell,@"square.grid.2x2"); }
+    if(p.section==3) { cell.textLabel.text=@"首页电报分组"; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; return WUNeoCell(cell,@"square.grid.2x2"); }
     NSDictionary *state=EmojiState(self.account);
     if(p.section==0) {
         if(p.row==0) { cell.textLabel.text=@"启用单个表情分组"; UISwitch *sw=[UISwitch new]; sw.on=[state[@"enabled"] boolValue]; sw.enabled=emojiReady; [sw addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventValueChanged]; cell.accessoryView=sw; }
@@ -182,7 +183,7 @@ static NSArray<NSString *> *WUChatToolKeys(void) {
         NSString *md5=self.identifiers[p.row]; cell.textLabel.text=md5; NSString *gid=state[@"membership"][md5]; cell.detailTextLabel.text=@"未分组";
         for(NSDictionary *g in state[@"groups"]) if([gid isEqual:g[@"id"]]) cell.detailTextLabel.text=g[@"name"];
     } else { NSString *key=WUChatToolKeys()[p.row]; cell.textLabel.text=@[@"当前会话搜索",@"当前会话统计",@"整合设置",@"半屏朋友圈（需启用）",@"消息仓库（手动管理/发送）",@"所选原表情保存图库（先在聊天多选一个）",@"所选普通语音转发（单条、确认收件人）",@"本地语音包（所选保存/试听/确认发送）",@"所选消息链接（需开启增强识别）",@"所选图片 → 微信表情编辑（当前缓存，可能非原图）",@"本地表情分组（所选导入/预览/管理/确认发送）"][p.row]; if([WUToolbarActions(WUAccountOptions(self.account)[@"toolbar"]) containsObject:key]) { cell.accessoryType=UITableViewCellAccessoryCheckmark; NSUInteger index=[WUToolbarActions(WUAccountOptions(self.account)[@"toolbar"]) indexOfObject:key]; cell.detailTextLabel.text=[NSString stringWithFormat:@"菜单顺序 %lu · 长按调整",(unsigned long)index+1]; } }
-    return cell;
+    return WUNeoCell(cell,@"square.grid.2x2");
 }
 - (void)toggle:(UISwitch *)sw { NSMutableDictionary *s=[EmojiState(self.account) mutableCopy]; s[@"enabled"]=@(sw.on); if(![self save:s]) sw.on=!sw.on; }
 - (void)create {

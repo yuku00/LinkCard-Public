@@ -1,3 +1,4 @@
+#import "WUNeoSettings.h"
 #import "WUArticleImage.h"
 #import "WUArticleImageFetch.h"
 #import "WUImageEntry.h"
@@ -31,7 +32,7 @@
 @end
 @implementation WUArticlePreview
 - (void)viewDidLoad {
-    [super viewDidLoad]; self.view.backgroundColor=UIColor.systemBackgroundColor;
+    [super viewDidLoad]; WUNeoPreparePage(self);
     UIImageView *image=[[UIImageView alloc] initWithImage:self.image]; image.contentMode=UIViewContentModeScaleAspectFit; image.accessibilityLabel=@"所选公众号图片预览"; image.isAccessibilityElement=YES;
     UILabel *label=[UILabel new]; label.text=self.sourceText; label.numberOfLines=0; label.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; label.adjustsFontForContentSizeCategory=YES;
     UIButton *open=[UIButton buttonWithType:UIButtonTypeSystem]; [open setTitle:@"打开微信表情编辑器" forState:UIControlStateNormal]; [open addTarget:self action:@selector(openEditor) forControlEvents:UIControlEventTouchUpInside];
