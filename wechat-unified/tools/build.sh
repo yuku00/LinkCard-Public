@@ -5,6 +5,13 @@ mkdir -p build
 python3 tests/test_source.py
 python3 tests/test_github_transport.py
 python3 tests/miniads/contract.py
+python3 tests/test_settings_search.py
+python3 tests/test_diagnostics_contract.py
+python3 tests/test_link_diagnostics.py
+python3 tests/test_diagnostics_integration.py
+xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/diagnostic_ring.c -o build/diagnostic-ring-tests
+build/diagnostic-ring-tests
+rm build/diagnostic-ring-tests
 SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
 xcrun --sdk iphoneos clang -arch arm64 -isysroot "$SDK" -miphoneos-version-min=16.6 \
   -fobjc-arc -fobjc-arc-exceptions -fblocks -fsyntax-only -Wall -Wextra -Werror \

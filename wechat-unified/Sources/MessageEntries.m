@@ -1,5 +1,6 @@
 #import "MessageEntries.h"
 #import "LinkLogic.h"
+#import "WUDiagnostics.h"
 #import "EmoticonLogic.h"
 #import "RepeatOptions.h"
 #import "ThemeRendering.h"
@@ -19,6 +20,7 @@ static NSString *StoreIcon(NSData *data);
 @property(nonatomic) BOOL transitioning;
 @property(nonatomic) BOOL importIcon;
 @property(nonatomic) BOOL picked;
+@property(nonatomic) BOOL linkFlow;
 - (BOOL)valid;
 - (void)finish;
 - (void)show:(UIViewController *)controller;
@@ -60,6 +62,7 @@ static WUMessageEntryFlow *Begin(UIViewController *owner,BOOL (^current)(void)) 
 }
 - (void)finish {
     if(self.finished) return; self.finished=YES;
+    if(self.linkFlow) WURecordDiagnosticEvent(WUDiagFlowFinished);
     UIViewController *controller=self.controller; self.controller=nil;
     if(controller && self.owner.presentedViewController==controller) [controller dismissViewControllerAnimated:NO completion:nil];
     if(self.staging) [NSFileManager.defaultManager removeItemAtURL:self.staging error:NULL]; self.staging=nil;
@@ -67,20 +70,22 @@ static WUMessageEntryFlow *Begin(UIViewController *owner,BOOL (^current)(void)) 
     self.current=nil;
 }
 - (void)show:(UIViewController *)controller {
-    if(![self valid] || self.owner.presentedViewController) { [self finish]; return; }
+    if(![self valid] || self.owner.presentedViewController) { if(self.linkFlow) WURecordDiagnosticEvent(WUDiagPresentRejected); [self finish]; return; }
     self.controller=controller; self.transitioning=YES;
     __weak WUMessageEntryFlow *weak=self;
     @try { [self.owner presentViewController:controller animated:YES completion:^{ weak.transitioning=NO; controller.presentationController.delegate=weak; }]; }
-    @catch(__unused NSException *e) { [self finish]; }
+    @catch(__unused NSException *e) { if(self.linkFlow) WURecordDiagnosticEvent(WUDiagPresentException); [self finish]; }
 }
 - (void)chooseController:(UIViewController *)expected action:(void (^)(void))action {
-    if(self.transitioning || !expected || self.controller!=expected || ![self valid]) return;
+    if(self.transitioning || !expected || self.controller!=expected || ![self valid]) { if(self.linkFlow) WURecordDiagnosticEvent(WUDiagTransitionRejected); return; }
+    if(self.linkFlow) WURecordDiagnosticEvent(WUDiagTransitionStarted);
     self.transitioning=YES;
     UIViewController *controller=self.controller;
     void (^next)(void)=^{
-        if(self.finished) return;
+        if(self.finished) { if(self.linkFlow) WURecordDiagnosticEvent(WUDiagTransitionCancelled); return; }
         self.controller=nil; self.transitioning=NO;
-        if(![self valid] || self.owner.presentedViewController) { [self finish]; return; }
+        if(![self valid] || self.owner.presentedViewController) { if(self.linkFlow) WURecordDiagnosticEvent(WUDiagTransitionCancelled); [self finish]; return; }
+        if(self.linkFlow) WURecordDiagnosticEvent(WUDiagTransitionCompleted);
         action();
     };
     if(controller && self.owner.presentedViewController==controller) [controller dismissViewControllerAnimated:NO completion:next]; else next();
@@ -91,7 +96,8 @@ static WUMessageEntryFlow *Begin(UIViewController *owner,BOOL (^current)(void)) 
     [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action){ [weak finish]; }]]; [self show:a];
 }
 - (void)links:(NSArray<NSDictionary *> *)candidates {
-    if(!candidates.count) { [self notice:@"所选消息未发现可用 HTTP(S) 链接。仅识别文本和卡片 msg/appmsg/url；不读取网页、附件、缩略图或未选消息。每条≤8192字符、总计≤65536字符。 "]; return; }
+    if(!candidates.count) { WURecordDiagnosticEvent(WUDiagRejectNoCandidates); [self notice:@"所选消息未发现可用 HTTP(S) 链接。仅识别文本和卡片 msg/appmsg/url；不读取网页、附件、缩略图或未选消息。每条≤8192字符、总计≤65536字符。 "]; return; }
+    WURecordDiagnosticEvent(WUDiagCandidatesShown);
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"选择所选消息中的网址" message:@"最多列出10个；即使只有一个也需要主动选择。不会自动访问或保存历史。" preferredStyle:UIAlertControllerStyleAlert];
     __weak WUMessageEntryFlow *weak=self; __weak UIAlertController *expected=a;
     for(NSDictionary *candidate in candidates) {
@@ -103,19 +109,22 @@ static WUMessageEntryFlow *Begin(UIViewController *owner,BOOL (^current)(void)) 
 }
 - (void)destination:(NSURL *)url {
     NSDictionary *destination=WULinkDestination(url);
-    if(destination[@"error"]) { [self notice:destination[@"error"]]; return; }
+    if(destination[@"error"]) { WURecordDiagnosticEvent(WUDiagRejectDestination); [self notice:destination[@"error"]]; return; }
     NSURL *target=destination[@"url"];
     NSString *warning=[destination[@"risk"] boolValue]?@"警告：从微信风险提示地址的唯一 url 参数提取原目标。这不是安全认证，也不是解除服务器封禁。\n":@"识别网址不代表安全，不关闭微信或系统风险检查。\n";
     NSString *message=[NSString stringWithFormat:@"%@目标域名：%@\n%@\n\n内置 Safari 组件留在本应用；系统默认浏览器不一定是 Safari，也不保证排除通用链接的系统路由。",warning,target.host,target.absoluteString];
+    WURecordDiagnosticEvent(WUDiagConfirmationShown);
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"确认目标并选择打开方式" message:message preferredStyle:UIAlertControllerStyleAlert];
     __weak WUMessageEntryFlow *weak=self; __weak UIAlertController *expected=a;
     [a addAction:[UIAlertAction actionWithTitle:@"内置 Safari 组件打开" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [weak chooseController:expected action:^{
         WUMessageEntryFlow *flow=weak; if(![flow valid]) return;
+        WURecordDiagnosticEvent(WUDiagSafariRequested);
         SFSafariViewController *safari=[[SFSafariViewController alloc] initWithURL:target]; safari.delegate=flow; [flow show:safari];
     }]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"交给系统默认浏览器" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [weak chooseController:expected action:^{
         WUMessageEntryFlow *flow=weak; if(![flow valid]) return;
-        [UIApplication.sharedApplication openURL:target options:@{} completionHandler:^(BOOL ok){ dispatch_async(dispatch_get_main_queue(),^{
+        WURecordDiagnosticEvent(WUDiagSystemRequested);
+        [UIApplication.sharedApplication openURL:target options:@{} completionHandler:^(BOOL ok){ WURecordDiagnosticEvent(ok?WUDiagSystemAccepted:WUDiagSystemRejected); dispatch_async(dispatch_get_main_queue(),^{
             if(![flow valid]) { [flow finish]; return; }
             if(ok) [flow finish]; else [flow notice:@"系统未接受打开请求，未重试。外部浏览器由系统设置及通用链接路由决定。"];
         }); }];
@@ -180,7 +189,8 @@ static NSString *StoreIcon(NSData *data) {
     if(!ok) unlinkat(dir,identifier.UTF8String,0); else fsync(dir); close(dir); return ok?identifier:nil;
 }
 void WUOpenSelectedLinks(UIViewController *owner,NSArray<NSDictionary *> *frozen,BOOL (^current)(void)) {
-    WUMessageEntryFlow *flow=Begin(owner,current); if(flow) [flow links:WULinkCandidates(frozen)];
+    WUMessageEntryFlow *flow=Begin(owner,current); if(!flow) { WURecordDiagnosticEvent(WUDiagRejectBegin); return; }
+    flow.linkFlow=YES; [flow links:WULinkCandidates(frozen)];
 }
 static void ExportEmoticon(UIViewController *owner,NSString *path,NSData *bytes,BOOL (^current)(void)) {
     WUMessageEntryFlow *flow=Begin(owner,current); if(!flow) return;
@@ -218,9 +228,11 @@ void WUChooseRepeatIcon(UIViewController *owner) {
     UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeImage] asCopy:YES]; picker.allowsMultipleSelection=NO; picker.delegate=flow; [flow show:picker];
 }
 void WUOpenLinkInput(UIViewController *owner) {
-    NSString *account=WUCurrentAccount(); NSUInteger generation=WUContextGeneration(); if(!account.length) return;
+    WURecordDiagnosticEvent(WUDiagEntryManual);
+    NSString *account=WUCurrentAccount(); NSUInteger generation=WUContextGeneration(); if(!account.length) { WURecordDiagnosticEvent(WUDiagRejectNoAccount); return; }
     WUMessageEntryFlow *flow=Begin(owner,^BOOL { return [WUValue(@"enabled") boolValue] && [account isEqual:WUCurrentAccount()] && generation==WUContextGeneration(); });
-    if(!flow) return;
+    if(!flow) { WURecordDiagnosticEvent(WUDiagRejectBegin); return; }
+    flow.linkFlow=YES; WURecordDiagnosticEvent(WUDiagInputShown);
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"手动识别链接" message:@"不自动读取剪贴板；限8192字符。不保存输入或网址历史。聊天消息请使用账号工具栏中的“所选消息链接”。" preferredStyle:UIAlertControllerStyleAlert];
     [a addTextFieldWithConfigurationHandler:^(UITextField *field){ field.placeholder=@"https://example.com"; field.autocorrectionType=UITextAutocorrectionTypeNo; field.autocapitalizationType=UITextAutocapitalizationTypeNone; }];
     __weak WUMessageEntryFlow *weak=flow; __weak UIAlertController *input=a;

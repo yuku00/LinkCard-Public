@@ -1,5 +1,6 @@
 #import "WU.h"
 #import "WUMiniAds.h"
+#import "WUDiagnostics.h"
 #import "WUArticleImage.h"
 #import "WUDictation.h"
 #import "WUNative.h"
@@ -28,14 +29,20 @@
     [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]]; [self presentViewController:a animated:YES completion:nil];
 }
 @end
-@interface WUSettings : UITableViewController
+@interface WUSettings : UITableViewController <UISearchResultsUpdating>
 @property(nonatomic,strong) NSArray<NSArray<NSString *> *> *rows;
+@property(nonatomic,strong) NSArray<NSArray<NSIndexPath *> *> *searchRows;
 @end
 @implementation WUSettings
 - (void)viewDidLoad {
     [super viewDidLoad]; self.title=@"微信整合 · 0.3.1";
     self.rows=@[@[@"enabled",@"启用已实现功能"],@[@"articleImage",@"公众号单图 → 表情编辑（手动确认）"],@[@"voiceProgress",@"语音真实播放进度（本地）"],@[@"voiceRealDuration",@"语音：显示PCM实测时长"],@[@"voiceCarry",@"语音：分秒格式"],@[@"voiceCountdown",@"语音：倒数显示"],@[@"voiceWaveform",@"语音：真实PCM采样波形"],@[@"voiceAlways",@"语音：未播放常显波形"],@[@"voicePulse",@"语音：播放脉冲"],@[@"voiceSeek",@"语音：拖动松手定位"],@[@"ads",@"公众号列表去广告"],@[@"momentsAds",@"朋友圈广告有效性过滤"],@[@"miniSplashAds",@"小程序非激励开屏广告过滤"],@[@"miniBannerAds",@"WA当前JSC · Banner展示过滤"],@[@"miniInterstitialAds",@"WA当前JSC · 插屏展示过滤"],@[@"keywords",@"朋友圈字面关键词屏蔽"],@[@"inputBorder",@"输入框描边"],@[WUDictationHideKey,@"隐藏语音转述图标"],@[WUDictationGuardKey,@"语音转述防误触"],@[@"inputPulse",@"输入呼吸灯 · 仅正在编辑"],@[@"hideHomeSearch",@"隐藏首页搜索表头（已识别布局）"],@[@"textBubbleSurface",@"文本消息气泡颜色与圆角"],@[@"fileSurface",@"文件消息背景卡片美化"],@[@"emoticonSurface",@"表情消息背景卡片美化"],@[@"noticeBorder",@"聊天系统通知描边"],@[@"separators",@"首页列表隐藏分割线"],@[@"convenientMoments",@"半屏朋友圈 · 聊天输入 rp"],@[@"chatSearch",@"聊天页头当前会话搜索"],@[@"callbackConfirm",@"通话记录回拨前确认"],@[@"antiRevoke",@"保留收到的被撤回消息（无提示插入）"],@[@"multiRevoke",@"多选撤回自身消息（不删除）"],@[@"enhancedLinks",@"所选消息增强链接识别（手动工具）"],@[@"repeatEmoticon",@"表情标签 · 常规复读 / 长按文件下载"],@[@"mergeGroup",@"群聊相邻头像合并显示"],@[@"mergePrivate",@"私聊相邻头像合并显示"],@[@"mergeBottom",@"合并头像置底"],@[@"redReminder",@"红包前台提醒（部分定位）"],@[@"themes",@"本地多格式主题 / 独立气泡"],@[@"sunMoon",@"设置页日月开关外观"],@[@"searchSurface",@"搜索栏圆角柔和背景"],@[@"referSurface",@"引用卡片共享美化"],@[@"referMessageSurface",@"文本消息内引用卡片独立覆盖"],@[@"textPreviewSurface",@"聊天文本预览底部工具栏美化"],@[@"hostPopupSurface",@"微信纯文字提示背景（限定页面）"],@[@"quickReplySurface",@"微信顶部快速回复横幅美化"],@[@"plusSurface",@"首页右上角加号菜单美化"],@[@"toastSurface",@"宿主Toast圆角背景"],@[@"timeSurface",@"聊天时间标签胶囊背景"],@[@"swipeSurface",@"首页左滑菜单圆角卡片"],@[@"chatSendSurface",@"聊天发送按钮美化"],@[@"chatAttachmentSurface",@"聊天附件按钮美化"]];
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"完成" style:UIBarButtonItemStyleDone target:self action:@selector(done)];
+    UISearchController *search=[[UISearchController alloc] initWithSearchResultsController:nil];
+    search.searchResultsUpdater=self; search.obscuresBackgroundDuringPresentation=NO;
+    search.searchBar.placeholder=@"搜索插件功能和本地工具";
+    self.navigationItem.searchController=search; self.navigationItem.hidesSearchBarWhenScrolling=NO;
+    self.definesPresentationContext=YES;
     self.tableView.backgroundColor=UIColor.systemGroupedBackgroundColor;
     self.tableView.rowHeight=UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight=64;
@@ -54,9 +61,31 @@
     return ranges[section];
 }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 9; }
-- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s<7?[self featureRangeForSection:s].length:(s==7?7:1); }
-- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return @[@"常用",@"语音播放",@"内容过滤",@"输入与转述",@"消息与首页外观",@"聊天功能",@"主题与界面细节",@"本地工具",@"宿主适配状态"][s]; }
+- (NSInteger)originalRowCountForSection:(NSInteger)s { return s<7?[self featureRangeForSection:s].length:(s==7?7:1); }
+- (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return self.searchRows ? self.searchRows[s].count : [self originalRowCountForSection:s]; }
+- (NSIndexPath *)originalPath:(NSIndexPath *)path { return self.searchRows ? self.searchRows[path.section][path.row] : path; }
+- (NSString *)titleForOriginalPath:(NSIndexPath *)p {
+    if(p.section<7) return self.rows[[self featureRangeForSection:p.section].location+p.row][1];
+    if(p.section==8) return @"查看接口检测（不含聊天数据）";
+    return @[@"编辑朋友圈屏蔽词",@"识别链接 / 外部浏览器打开",@"导入和管理本地主题 / 气泡",@"账号表情分组 / 聊天工具栏",@"朋友圈缓存 / 收藏 / 安全清理",@"宿主行为 / 版本控制",@"复读标签 / 主题及用户图标 / 文件下载"][p.row];
+}
+- (void)updateSearchResultsForSearchController:(UISearchController *)searchController {
+    NSString *query=[searchController.searchBar.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if(!query.length) { self.searchRows=nil; [self.tableView reloadData]; return; }
+    NSMutableArray *sections=[NSMutableArray array];
+    for(NSInteger section=0;section<9;section++) {
+        NSMutableArray *matches=[NSMutableArray array];
+        for(NSInteger row=0;row<[self originalRowCountForSection:section];row++) {
+            NSIndexPath *path=[NSIndexPath indexPathForRow:row inSection:section];
+            if([[self titleForOriginalPath:path] localizedCaseInsensitiveContainsString:query]) [matches addObject:path];
+        }
+        [sections addObject:matches];
+    }
+    self.searchRows=sections; [self.tableView reloadData];
+}
+- (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { if(self.searchRows && !self.searchRows[s].count) return nil; return @[@"常用",@"语音播放",@"内容过滤",@"输入与转述",@"消息与首页外观",@"聊天功能",@"主题与界面细节",@"本地工具",@"宿主适配状态"][s]; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
+    if(self.searchRows) return nil;
     if(s==6) return @"只显示有执行路径的开关；灰色表示当前宿主缺接口/签名。消息动作在聊天页，执行前确认并重验上下文。头像双击的拍一拍前确认见宿主行为页，不拦截同步发送返回值。复读图标/长按文件下载见本地工具；宿主长按菜单复读、文件复读及红包跨会话定位尚未完成。链接只接手动所选消息，不自动改写气泡。";
     if(s==7) return @"不采集历史、不扫描聊天数据库、不发送消息。链接可选内置Safari组件或系统默认浏览器；不承诺强制外部Safari或绕过封禁。";
     if(s==8) return @"目标 iOS 16.6 / 微信暂按 8.0.70。签名匹配≠功能已验收。尚无真机验证，完整未完成清单见源码 STATUS.md。无 AI、无 ActionBar、无系统 Dock 修改、无奖励伪报。";
@@ -81,6 +110,7 @@
     return NO;
 }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
+    p=[self originalPath:p];
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
     cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0;
     cell.textLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];
@@ -91,7 +121,7 @@
     cell.backgroundColor=UIColor.secondarySystemGroupedBackgroundColor;
     if(p.section<7) {
         NSUInteger row=[self featureRangeForSection:p.section].location+p.row;
-        NSString *key=self.rows[row][0]; cell.textLabel.text=self.rows[row][1];
+        NSString *key=self.rows[row][0]; cell.textLabel.text=[self titleForOriginalPath:p];
         UISwitch *sw=[UISwitch new]; sw.accessibilityIdentifier=key; sw.accessibilityLabel=cell.textLabel.text;
         sw.on=WUValue(key)?[WUValue(key) boolValue]:([key hasPrefix:@"voice"] && ![@[@"voiceProgress",@"voiceCountdown"] containsObject:key]); sw.enabled=[self available:key] || sw.on;
         if([key hasPrefix:@"voice"]) cell.detailTextLabel.text=@"主功能默认关，倒数默认关。已接本地SILK、腾讯SILK、AMR-NB及系统可解码容器的真实PCM；不支持的格式明确拒绝。只在播放和接口匹配时定位，不修改原语音消息。";
@@ -110,10 +140,7 @@
         if([@[@"miniBannerAds",@"miniInterstitialAds"] containsObject:key]) cell.detailTextLabel.text=[@"默认关；仅匹配协议的当前WA JSC对象。展示被禁用时Promise以本地错误拒绝，不伪报奖励。创建/加载仍可能联网；不覆盖WebView、其他引擎或全部小程序。关闭后下次show立即原路，无需下一次native事件；自有属性惰性恢复，已恢复旧对象不重接，重新启用须桥事件后新建对象。 " stringByAppendingString:WUMiniAdsStatus()];
         if(!sw.enabled) cell.detailTextLabel.text=@"尚未观察到可核验的宿主接口/布局；不会启用空开关";
         [sw addTarget:self action:@selector(change:) forControlEvents:UIControlEventValueChanged]; cell.accessoryView=sw; cell.selectionStyle=UITableViewCellSelectionStyleNone;
-    } else { cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; cell.textLabel.text=p.section==8?@"查看接口检测（不含聊天数据）":(p.row==0?@"编辑朋友圈屏蔽词":(p.row==1?@"识别链接 / 外部浏览器打开":(p.row==2?@"导入和管理本地主题 / 气泡":@"账号表情分组 / 聊天工具栏"))); }
-    if(p.section==7 && p.row==4) cell.textLabel.text=@"朋友圈缓存 / 收藏 / 安全清理";
-    if(p.section==7 && p.row==5) cell.textLabel.text=@"宿主行为 / 版本控制";
-    if(p.section==7 && p.row==6) cell.textLabel.text=@"复读标签 / 主题及用户图标 / 文件下载";
+    } else { cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; cell.textLabel.text=[self titleForOriginalPath:p]; }
     if(p.section>=7) {
         NSArray<NSString *> *symbols=@[@"text.alignleft",@"link",@"paintpalette",@"face.smiling",@"tray.full",@"slider.horizontal.3",@"arrow.2.squarepath"];
         NSString *symbol=p.section==8?@"checkmark.shield":symbols[p.row];
@@ -130,8 +157,8 @@
     if(!WUSave(key,@(sender.on))) { sender.on=[WUValue(key) boolValue]; [self alert:@"保存失败，原配置保留。请检查可用空间；未以开关动画冒充保存成功。"]; }
 }
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p {
-    [t deselectRowAtIndexPath:p animated:YES]; if(p.section<7) return;
-    if(p.section==8) { [self alert:[WUHookStatus() componentsJoinedByString:@"\n"]]; return; }
+    [t deselectRowAtIndexPath:p animated:YES]; p=[self originalPath:p]; if(p.section<7) return;
+    if(p.section==8) { WUShowDiagnostics(self); return; }
     if(p.row==6) { WUShowRepeatSettings(self); return; }
     if(p.row==5) { WUShowNativeSettings(self); return; }
     if(p.row==4) { WUShowMomentsCache(self); return; }

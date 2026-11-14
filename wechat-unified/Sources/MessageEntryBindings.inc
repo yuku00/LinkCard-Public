@@ -1,15 +1,17 @@
+#import "WUDiagnostics.h"
 // Included once by Messages.m; uses its existing checked host adapters and account/session generation.
 static void OpenSelectedLinks(UIViewController *owner) {
-    if(!WUEnabled(@"enhancedLinks")) return;
+    WURecordDiagnosticEvent(WUDiagEntrySelected);
+    if(!WUEnabled(@"enhancedLinks")) { WURecordDiagnosticEvent(WUDiagRejectDisabled); return; }
     NSString *account=Account(), *session=Session(owner); NSUInteger gen=generation;
     id selected=Obj(owner,@"getSelectedMsgs");
-    if(![selected isKindOfClass:NSArray.class] || ![selected count] || [selected count]>20) { Notice(owner,@"请先使用微信原长按菜单→多选，选择1–20条消息，再从聊天页工具中打开“所选消息链接”。不会读取未选择的消息。"); return; }
-    if(!account.length || !session.length) { Notice(owner,@"无法核验账号或会话，已取消。"); return; }
+    if(![selected isKindOfClass:NSArray.class] || ![selected count] || [selected count]>20) { WURecordDiagnosticEvent(WUDiagRejectSelection); Notice(owner,@"请先使用微信原长按菜单→多选，选择1–20条消息，再从聊天页工具中打开“所选消息链接”。不会读取未选择的消息。"); return; }
+    if(!account.length || !session.length) { WURecordDiagnosticEvent(WUDiagRejectContext); Notice(owner,@"无法核验账号或会话，已取消。"); return; }
     NSArray *wraps=[selected copy]; NSMutableArray *identities=[NSMutableArray array], *contents=[NSMutableArray array];
     NSUInteger total=0;
     for(id wrap in wraps) {
         NSDictionary *identity=Info(wrap); NSString *content=Str(wrap,@"m_nsContent")?:@"";
-        if(!InSession(identity,account,session) || (![identity[@"id"] unsignedLongLongValue] && ![identity[@"local"] unsignedLongLongValue]) || content.length>8192 || (total+=content.length)>65536) { Notice(owner,@"选择包含不可核验或超长消息，本次未读取链接。"); return; }
+        if(!InSession(identity,account,session) || (![identity[@"id"] unsignedLongLongValue] && ![identity[@"local"] unsignedLongLongValue]) || content.length>8192 || (total+=content.length)>65536) { WURecordDiagnosticEvent(WUDiagRejectMessage); Notice(owner,@"选择包含不可核验或超长消息，本次未读取链接。"); return; }
         [identities addObject:identity]; [contents addObject:@{@"type":identity[@"type"],@"content":content}];
     }
     __weak UIViewController *weak=owner;

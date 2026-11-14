@@ -10,6 +10,7 @@
 #import "VoicePacks.h"
 #import "WUNativeAction.h"
 #import "MessageEntries.h"
+#import "WUDiagnostics.h"
 #import "WUImageEntry.h"
 #import "RepeatOptions.h"
 #import "EmoticonLibrary.h"
@@ -51,8 +52,32 @@ static id Service(NSString *name) {
 static _Atomic(NSUInteger) generation=1;
 static NSString *lastAccount;
 static NSString *Account(void) {
-    NSString *a=Str(Obj(Service(@"CContactMgr"),@"getSelfContact"),@"m_nsUsrName");
-    @synchronized(NSProcessInfo.processInfo) { if(![a isEqual:lastAccount]) { generation++; lastAccount=[a copy]; } }
+    NSString *a=nil; WUDiagnosticEvent failure=0;
+    @try {
+        Class centerClass=NSClassFromString(@"MMServiceCenter");
+        if(!centerClass) failure=WUDiagAccountCenterClass;
+        else if(!Has(centerClass,@"defaultCenter","@",@[])) failure=WUDiagAccountCenterSignature;
+        else {
+            id center=Obj(centerClass,@"defaultCenter");
+            Class managerClass=NSClassFromString(@"CContactMgr");
+            if(!center) failure=WUDiagAccountCenterMissing;
+            else if(!managerClass) failure=WUDiagAccountManagerClass;
+            else if(!Has(center,@"getService:","@",@[@"#"]) && !Has(center,@"getService:","@",@[@"@"])) failure=WUDiagAccountServiceSignature;
+            else {
+                id mgr=((id(*)(id,SEL,Class))objc_msgSend)(center,NSSelectorFromString(@"getService:"),managerClass);
+                if(!mgr) failure=WUDiagAccountManagerMissing;
+                else if(!Has(mgr,@"getSelfContact","@",@[])) failure=WUDiagAccountSelfSignature;
+                else {
+                    id contact=Obj(mgr,@"getSelfContact");
+                    if(!contact) failure=WUDiagAccountSelfMissing;
+                    else if(!Has(contact,@"m_nsUsrName","@",@[])) failure=WUDiagAccountNameSignature;
+                    else { a=Str(contact,@"m_nsUsrName"); if(!a.length) failure=WUDiagAccountNameInvalid; }
+                }
+            }
+        }
+    } @catch(NSException *e) { WURecordAccountDiagnosticEvent(WUDiagAccountException); @throw; }
+    if(failure) WURecordAccountDiagnosticEvent(failure);
+    @synchronized(NSProcessInfo.processInfo) { if((a || lastAccount) && ![a isEqual:lastAccount]) { generation++; lastAccount=[a copy]; } }
     return a;
 }
 NSString *WUCurrentAccount(void) { @try { return Account(); } @catch(NSException *e) { return nil; } }
