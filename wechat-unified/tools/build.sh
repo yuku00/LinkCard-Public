@@ -2,6 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build
+python3 tools/generate_candidates.py
+python3 tests/test_candidate_manifest.py
 python3 tests/test_source.py
 python3 tests/test_github_transport.py
 python3 tests/miniads/contract.py

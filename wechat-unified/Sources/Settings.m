@@ -48,6 +48,8 @@
     self.tableView.estimatedRowHeight=64;
     self.tableView.cellLayoutMarginsFollowReadableWidth=YES;
     self.tableView.separatorInset=UIEdgeInsetsMake(0,16,0,16);
+    // Keep scrolling cells out of the navigation bar, including its search row.
+    self.edgesForExtendedLayout=UIRectEdgeNone;
     self.navigationController.navigationBar.prefersLargeTitles=YES;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:WUChanged object:nil];
 }
