@@ -50,7 +50,7 @@ class Guardrails(unittest.TestCase):
     def test_independent_ad_scope_and_reward_passthrough(self):
         ads=(ROOT/'Sources/Ads.m').read_text()
         hooks=re.findall(r'WUHook\(@"([^"]+)",@"([^"]+)"',ads)
-        self.assertEqual(set(hooks), {('BrandTLExptConfig','isExptNotShowAd'),('BrandTLFlutterViewController','enableAd'),('BrandTLCanvasCardMgr','isAdRequestOpen'),('BrandTLCanvasCardMgr','isAdCardOpen'),('BrandTLFlutterViewController','getMagicBrushFlutterPlugins'),('WCAdvertiseDataHelper','IsAdvertiseDataValid:dataItem:'),('WAAppTaskSplashADConfig','canShowSplashADWindow'),('WAAppTaskSplashADConfig','canHotStartShowSplashAD')})
+        self.assertEqual(set(hooks), {('BrandTLExptConfig','isExptNotShowRecoFlow'),('BrandTLExptConfig','isExptNotShowRecCard'),('BrandTLExptConfig','isExptNotShowAd'),('BrandTLFlutterViewController','enableAd'),('BrandTLCanvasCardMgr','isAdRequestOpen'),('BrandTLCanvasCardMgr','isAdCardOpen'),('BrandTLFlutterViewController','getMagicBrushFlutterPlugins'),('WCAdvertiseDataHelper','IsAdvertiseDataValid:dataItem:'),('WAAppTaskSplashADConfig','canShowSplashADWindow'),('WAAppTaskSplashADConfig','canHotStartShowSplashAD')})
         for forbidden in ['handleJSEvent:', 'isSplashADFinished', 'splashADHasContent', 'WAJSInvoker', 'URLWithString:', 'saveAdvertiseDatas', 'm_advertiseList']:
             self.assertNotIn(forbidden,ads)
         self.assertIn('splashWindowReady && splashHotReady',ads)
@@ -162,7 +162,11 @@ class Guardrails(unittest.TestCase):
         core=(ROOT/'Sources/Core.m').read_text()
         self.assertIn('WUAccountOptions(account)[@"toolbar"]',messages)
         self.assertIn('gen!=generation',messages)
-        self.assertIn('StatsReady(Service(@"CMessageMgr"))',messages)
+        self.assertIn('BOOL checked=StatsReady(mgr)',messages)
+        self.assertIn('if(!checked || !account.length || !session.length)',messages)
+        menu=messages[messages.index('if([WUValue(@"enabled") boolValue] && account.length && session.length) for'):messages.index('if(menu.count)')]
+        self.assertNotIn('StatsReady(',menu)
+        self.assertIn('else if([key isEqual:@"stats"]) OpenStats(owner)',menu)
         self.assertIn('if(self.tools) [items removeObject:self.tools]',messages)
         self.assertIn('WUValidAccountOptions',core)
         self.assertIn('data.length>65536',core)

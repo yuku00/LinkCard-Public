@@ -18,9 +18,13 @@ with tempfile.TemporaryDirectory() as directory:
     assert rows[('Target','do:','-')]['sources'] == ['Sources/a.m:2 WUHook']
     assert ('','m_nsUsrName','?') in rows and ('CContactMgr','getSelfContact','-') in rows
     assert ('EmoticonPickViewController','Confirm','-') in rows
+    for key in [('BaseMessageCellView','filteredMenuItems:','-'), ('VoiceMessageCellView','filteredMenuItems:','-'), ('MMMenuItem','initWithTitle:svgName:action:','-')]:
+        assert '聊天菜单' in rows[key]['categories']
+        assert 'ABI未核验' in ' '.join(rows[key]['sources'])
+    assert ('BaseMessageCellView','filteredMenuItems','-') not in rows
     assert g.render(m) == g.render(g.generate(root))
 source = (ROOT / 'Sources/WUDiagnostics.m').read_text()
-for text in ('开始只读采集','分享候选报告','类名可能暴露其他插件','index+50','10*NSEC_PER_MSEC', 'objc_lookUpClass', 'class_getClassMethod', 'class_getInstanceMethod', 'method_getTypeEncoding', '未知（无记录）', '未关联类', '当前未发现', '绝不启用'):
+for text in ('@"聊天菜单"', '开始只读采集','分享候选报告','类名可能暴露其他插件','index+50','10*NSEC_PER_MSEC', 'objc_lookUpClass', 'class_getClassMethod', 'class_getInstanceMethod', 'method_getTypeEncoding', '未知（无记录）', '未关联类', '当前未发现', '绝不启用'):
     assert text in source, text
 for forbidden in ('objc_msgSend', 'performSelector:', 'NSURLSession', 'writeToFile:'):
     assert forbidden not in source

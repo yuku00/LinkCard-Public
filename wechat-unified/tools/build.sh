@@ -4,6 +4,9 @@ cd "$(dirname "$0")/.."
 mkdir -p build
 python3 tools/generate_candidates.py
 python3 tests/test_candidate_manifest.py
+xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/menu_signature.c -o build/menu-signature-tests
+build/menu-signature-tests
+rm build/menu-signature-tests
 python3 tests/test_capture_contract.py
 python3 tests/test_feature_diagnostics.py
 for test in tests/test_incremental_safety.py tests/test_chat_layout.py tests/test_chat_surface.py tests/test_child_surface_refresh.py tests/test_home_service_resolution.py tests/test_host_popup_surface.py tests/test_keyboard_playback_contract.py tests/test_neo_search_tiles.py tests/test_plus_switch_safety.py tests/test_quick_reply_surface.py tests/test_red_reminder_wiring.py tests/test_reply_surface.py tests/test_text_bubble_surface.py; do
@@ -93,6 +96,7 @@ build/ads-logic-tests | tee build/ads-logic-tests.txt
 rm build/ads-logic-tests
 xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I tests/ads-stubs -I Sources tests/ads_hooks.m Sources/Ads.m Sources/AdsLogic.m Sources/WUMiniAds.m -framework Foundation -framework JavaScriptCore -o build/ads-hook-tests
 build/ads-hook-tests | tee build/ads-hook-tests.txt
+build/ads-hook-tests wrong-reco | tee -a build/ads-hook-tests.txt
 rm build/ads-hook-tests
 xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/message_logic.m Sources/MessageLogic.m -framework Foundation -o build/message-logic-tests
 build/message-logic-tests | tee build/message-logic-tests.txt

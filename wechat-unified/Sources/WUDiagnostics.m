@@ -7,6 +7,7 @@
 #import <stdlib.h>
 #import <string.h>
 #import "WUCandidateManifest.inc"
+#import "WUMenuSignature.h"
 
 @interface WUDiagnosticsLock : NSObject @end
 @implementation WUDiagnosticsLock @end
@@ -96,6 +97,29 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
     return [NSString stringWithFormat:@"存在，类型编码 %@",encoding?[NSString stringWithUTF8String:encoding]:@"未知"];
 }
 
+static NSString *WUMenuSignatureReport(Class cls, SEL sel, BOOL filter) {
+    Method m=cls?class_getInstanceMethod(cls,sel):NULL;
+    if(!m) return @"菜单签名：未获取；不可用于接入";
+    unsigned count=method_getNumberOfArguments(m);
+    char *result=method_copyReturnType(m);
+    NSMutableArray *types=[NSMutableArray array];
+    for(unsigned i=0;i<MIN(count, 8u);i++) {
+        char *type=method_copyArgumentType(m,i);
+        [types addObject:WUWrapperString(type)]; free(type);
+    }
+    NSString *assessment=@"初始化器仅列实际编码，动作参数契约未验证，不可调用";
+    if(filter) {
+        char *a=count>0?method_copyArgumentType(m,0):NULL;
+        char *b=count>1?method_copyArgumentType(m,1):NULL;
+        char *c=count>2?method_copyArgumentType(m,2):NULL;
+        BOOL match=WUMenuFilterSignatureMatches(count,result,a,b,c);
+        free(a); free(b); free(c);
+        assessment=match?@"形状匹配对象返回及一个对象参数；仅元数据，不能授权接入":@"形状未匹配或无法确定；拒绝接入";
+    }
+    NSString *report=[NSString stringWithFormat:@"菜单签名：返回 %@；参数数 %u；参数编码 %@%@；%@",WUWrapperString(result),count,[types componentsJoinedByString:@", "],count>8?@"（截断）":@"",assessment];
+    free(result); return report;
+}
+
 @implementation WUDiagnostics
 - (void)collectWrapper {
     if(self.wrapperCollecting) return;
@@ -143,7 +167,7 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
 }
 - (void)collectByCategory {
     UIAlertController *menu=[UIAlertController alertControllerWithTitle:@"按功能一键诊断" message:@"仅按证据来源归类；并非功能可用性测试。" preferredStyle:UIAlertControllerStyleActionSheet];
-    for(NSString *category in @[@"账号",@"聊天搜索与撤回",@"多选",@"语音",@"表情",@"朋友圈",@"链接",@"小程序"]) {
+    for(NSString *category in @[@"账号",@"聊天搜索与撤回",@"聊天菜单",@"多选",@"语音",@"表情",@"朋友圈",@"链接",@"小程序"]) {
         [menu addAction:[UIAlertAction actionWithTitle:category style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { self.candidateCategory=category; [self collectCandidates]; }]];
     }
     [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
@@ -183,6 +207,10 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
                         else {
                             SEL sel=sel_registerName(selector.UTF8String);
                             status=[NSString stringWithFormat:@"运行时类声明（含继承）实例方法：%@；类方法：%@",WUDescribeMethod(cls,sel,NO),WUDescribeMethod(cls,sel,YES)];
+                            if(([name isEqualToString:@"BaseMessageCellView"] || [name isEqualToString:@"VoiceMessageCellView"]) && [selector isEqualToString:@"filteredMenuItems:"])
+                                status=[status stringByAppendingFormat:@"\n%@",WUMenuSignatureReport(cls,sel,YES)];
+                            else if([name isEqualToString:@"MMMenuItem"] && [selector isEqualToString:@"initWithTitle:svgName:action:"])
+                                status=[status stringByAppendingFormat:@"\n%@",WUMenuSignatureReport(cls,sel,NO)];
                         }
                     }
                     NSMutableArray *records=[NSMutableArray array];

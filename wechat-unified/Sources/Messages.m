@@ -212,7 +212,7 @@ static NSHashTable *chatActions;
     if([WUValue(@"enabled") boolValue] && account.length && session.length) for(NSString *key in selected) {
         if([key isEqual:@"messageLinks"] && (!WUEnabled(@"enhancedLinks") || !Has(v,@"getSelectedMsgs","@",@[]))) continue;
         if([key isEqual:@"search"] && !Has(v,@"onSearchItem","v",@[])) continue;
-        if([key isEqual:@"stats"] && !StatsReady(Service(@"CMessageMgr"))) continue;
+        // Keep the selected entry visible; OpenStats rechecks the host ABI on tap.
         if([key isEqual:@"moments"] && (!WUEnabled(@"convenientMoments") || !WUMomentsAvailable())) continue;
         NSString *title=@{@"messageLinks":@"所选消息链接",@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"repository":@"消息仓库",@"voiceForward":@"所选语音转发",@"voicePacks":@"本地语音包",@"emojiSave":@"所选表情保存图库",@"imageEmoji":@"所选图片 → 微信表情编辑",@"emoticonLibrary":@"本地表情分组 / 资源库",@"moments":@"半屏朋友圈"}[key];
         void (^run)(void)=^{
@@ -354,7 +354,7 @@ static NSDictionary *GroupInfo(id model, NSString *session, NSString *account) {
 }
 @implementation WUCellActions
 - (void)restore {
-    if(self.changed) { self.head.hidden=self.headHidden; self.name.hidden=self.nameHidden; self.changed=NO; }
+    if(self.changed) { if(self.head.hidden) self.head.hidden=self.headHidden; if(self.name.hidden) self.name.hidden=self.nameHidden; self.changed=NO; self.head=nil; self.name=nil; }
 }
 - (void)update {
     UIView *cell=self.cell; [self restore]; UIViewController *v=Chat(cell); id wrap=Wrap(cell);
@@ -382,8 +382,8 @@ static NSDictionary *GroupInfo(id model, NSString *session, NSString *account) {
     id adjacent=models[bottom?index+1:index-1]; NSDictionary *a=GroupInfo(bottom?model:adjacent,session,account), *b=GroupInfo(bottom?adjacent:model,session,account);
     if(!WUGroupAdjacent(a,b)) return;
     id head=KnownValue(cell,@"m_headImageView"), name=KnownValue(cell,@"m_chatRoomNameLabel");
-    if(![head isKindOfClass:UIView.class]) return;
-    self.head=head; self.name=[name isKindOfClass:UIView.class]?name:nil; self.headHidden=self.head.hidden; self.nameHidden=self.name.hidden; self.changed=YES; self.head.hidden=YES; self.name.hidden=YES;
+    if(![head isKindOfClass:UIView.class] || head==cell || ![head isDescendantOfView:cell]) return;
+    self.head=head; self.name=([name isKindOfClass:UIView.class] && name!=cell && [name isDescendantOfView:cell])?name:nil; self.headHidden=self.head.hidden; self.nameHidden=self.name.hidden; self.changed=YES; self.head.hidden=YES; self.name.hidden=YES;
 }
 - (void)downloadRepeat:(UILongPressGestureRecognizer *)gesture {
     if(gesture.state!=UIGestureRecognizerStateBegan || self.submitting) return;
@@ -412,8 +412,8 @@ static NSDictionary *GroupInfo(id model, NSString *session, NSString *account) {
 @end
 static IMP cellLayoutOriginal, cellReuseOriginal, cellModelOriginal, cellWindowOriginal;
 static char cellKey;
-static void CellModel(UIView *cell, SEL s, id model) { WUCellActions *actions=objc_getAssociatedObject(cell,&cellKey); [actions.repeat removeFromSuperview]; actions.repeat=nil; WURestoreMessageSurface(cell); ((void(*)(id,SEL,id))cellModelOriginal)(cell,s,model); }
-static void CellWindow(UIView *cell, SEL s) { WURestoreMessageSurface(cell); ((void(*)(id,SEL))cellWindowOriginal)(cell,s); [cell setNeedsLayout]; }
+static void CellModel(UIView *cell, SEL s, id model) { WUCellActions *actions=objc_getAssociatedObject(cell,&cellKey); [actions restore]; [actions.repeat removeFromSuperview]; actions.repeat=nil; WURestoreMessageSurface(cell); ((void(*)(id,SEL,id))cellModelOriginal)(cell,s,model); }
+static void CellWindow(UIView *cell, SEL s) { WUCellActions *actions=objc_getAssociatedObject(cell,&cellKey); [actions restore]; WURestoreMessageSurface(cell); ((void(*)(id,SEL))cellWindowOriginal)(cell,s); [cell setNeedsLayout]; }
 static void CellLayout(UIView *cell, SEL s) {
     WURestoreMessageSurface(cell);
     WUCellActions *a=objc_getAssociatedObject(cell,&cellKey); [a restore]; ((void(*)(id,SEL))cellLayoutOriginal)(cell,s);

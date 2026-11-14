@@ -2,9 +2,10 @@
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
-static BOOL enabled=YES, moments=YES, splash=YES;
+static BOOL enabled=YES, moments=YES, splash=YES, flow=NO, card=NO;
+static NSUInteger recoOriginalCalls;
 static NSUInteger originalCalls, eventCalls;
-BOOL WUEnabled(NSString *key) { return enabled && ([key isEqual:@"momentsAds"]?moments:([key isEqual:@"miniSplashAds"]?splash:NO)); }
+BOOL WUEnabled(NSString *key) { return enabled && ([key isEqual:@"momentsAds"]?moments:([key isEqual:@"miniSplashAds"]?splash:([key isEqual:@"officialRecoFlow"]?flow:([key isEqual:@"officialRecCard"]?card:NO)))); }
 // Fixture hook installer exercises the exact production registrations against real ObjC methods.
 BOOL WUHook(NSString *name,NSString *selector,BOOL meta,const char *result,NSArray *args,IMP replacement,IMP *original) {
     Class c=NSClassFromString(name); if(meta && c) c=object_getClass(c);
@@ -16,6 +17,9 @@ BOOL WUHook(NSString *name,NSString *selector,BOOL meta,const char *result,NSArr
     if(method_getImplementation(m)==replacement) return YES;
     *original=method_setImplementation(m,replacement); return YES;
 }
+@interface BrandTLExptConfig : NSObject @end
+@implementation BrandTLExptConfig @end
+static BOOL OriginalReco(id self,SEL cmd) { recoOriginalCalls++; return NO; }
 @interface WCDataItem : NSObject @end
 @implementation WCDataItem @end
 @interface WCAdvertiseDataHelper : NSObject
@@ -40,11 +44,38 @@ BOOL WUHook(NSString *name,NSString *selector,BOOL meta,const char *result,NSArr
 @end
 static BOOL Hot(id self,SEL cmd) { originalCalls++; return YES; }
 static void Wrong(id self,SEL cmd) {}
-int main(void) { @autoreleasepool {
+int main(int argc, const char **argv) { @autoreleasepool {
+    if(argc>1 && strcmp(argv[1],"wrong-reco")==0) {
+        SEL rf=NSSelectorFromString(@"isExptNotShowRecoFlow"), rc=NSSelectorFromString(@"isExptNotShowRecCard");
+        NSString *type=[NSString stringWithFormat:@"%s@:",@encode(BOOL)];
+        assert(class_addMethod(BrandTLExptConfig.class,rf,(IMP)OriginalReco,type.UTF8String));
+        assert(class_addMethod(BrandTLExptConfig.class,rc,(IMP)Wrong,"v@:"));
+        WUInstallAds();
+        assert(WUAdsAvailable(@"officialRecoFlow") && !WUAdsAvailable(@"officialRecCard"));
+        assert(method_getImplementation(class_getInstanceMethod(BrandTLExptConfig.class,rc))==(IMP)Wrong);
+        flow=YES; assert(((BOOL(*)(id,SEL))objc_msgSend)([BrandTLExptConfig new],rf));
+        puts("Ads hooks: wrong recommendation ABI rejected independently"); return 0;
+    }
     WCAdvertiseDataHelper *helper=[WCAdvertiseDataHelper new];
     WAAppTaskSplashADConfig *config=[WAAppTaskSplashADConfig new];
     id item=[WCDataItem new], ad=[NSObject new];
     WUInstallAds();
+    assert(!WUAdsAvailable(@"officialRecoFlow") && !WUAdsAvailable(@"officialRecCard"));
+    SEL rf=NSSelectorFromString(@"isExptNotShowRecoFlow"), rc=NSSelectorFromString(@"isExptNotShowRecCard");
+    NSString *boolType=[NSString stringWithFormat:@"%s@:",@encode(BOOL)];
+    assert(class_addMethod(BrandTLExptConfig.class,rf,(IMP)OriginalReco,boolType.UTF8String));
+    assert(class_addMethod(BrandTLExptConfig.class,rc,(IMP)OriginalReco,boolType.UTF8String));
+    WUInstallAds();
+    assert(WUAdsAvailable(@"officialRecoFlow") && WUAdsAvailable(@"officialRecCard"));
+    id brand=[BrandTLExptConfig new];
+    BOOL (*call)(id,SEL)=(BOOL(*)(id,SEL))objc_msgSend;
+    assert(!call(brand,rf) && !call(brand,rc) && recoOriginalCalls==2);
+    flow=YES; assert(call(brand,rf) && !call(brand,rc));
+    flow=NO; card=YES; assert(!call(brand,rf) && call(brand,rc));
+    flow=YES; assert(call(brand,rf) && call(brand,rc));
+    enabled=NO; assert(!call(brand,rf) && !call(brand,rc)); enabled=YES;
+    flow=NO; card=NO; assert(!call(brand,rf) && !call(brand,rc));
+    assert(recoOriginalCalls==8);
     assert(WUAdsAvailable(@"momentsAds"));
     assert(!WUAdsAvailable(@"miniSplashAds")); // Missing hot-start gate disables both overrides.
     assert([config canShowSplashADWindow]);

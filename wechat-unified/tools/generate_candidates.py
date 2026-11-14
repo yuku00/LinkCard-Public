@@ -55,8 +55,9 @@ def generate(root):
         add('BaseMsgContentViewController', 'getSelectedMsgs', '-', '功能证据：'+feature+'；Sources/Messages.m 对应功能门禁')
     add('BaseMsgContentViewController', 'onSearchItem', '-', 'Sources/Messages.m 聊天搜索功能门禁')
     # User-supplied leads, not verified declarations or a license to hook.
-    add('BaseMessageCellView', 'filteredMenuItems', '-', '用户提供菜单线索；类与selector关联及ABI未核验')
-    add('MMMenuItem', '', '?', '用户提供菜单线索；仅类候选，方法及ABI未核验')
+    add('BaseMessageCellView', 'filteredMenuItems:', '-', '用户提供菜单线索；WCPulse 逆向提示，目标版关联及ABI未核验')
+    add('VoiceMessageCellView', 'filteredMenuItems:', '-', '用户提供菜单线索；WCPulse-0xaff1c.asm 0xaffd4 类型分支，方法归属及ABI未核验')
+    add('MMMenuItem', 'initWithTitle:svgName:action:', '-', '用户提供菜单线索；WCPulse-0xaff1c.asm 调用线索，目标版关联及ABI未核验')
     add('EcsOrderService', 'jumpOrderAndCardCenterFromVc:clickSessionId:', '-', '卡包证据：WCPulse 逆向线索；ABI需运行时验证')
     add('MMUIRouteRegistry', 'openLegacyCardHomePageWithNavigationController:', '+', '卡包证据：WCPulse 逆向线索；ABI需运行时验证')
     # Account() checks the returned contact but does not establish its concrete class.

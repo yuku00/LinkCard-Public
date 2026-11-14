@@ -1,6 +1,8 @@
 #import "RepositoryLogic.h"
 #import <objc/runtime.h>
 #include <string.h>
+#include <errno.h>
+#include <sys/stat.h>
 static BOOL Text(id x, NSUInteger n) { return [x isKindOfClass:NSString.class] && [x length] && [x length]<=n; }
 static BOOL RepoUInt(id x) { return [x isKindOfClass:NSNumber.class] && [x doubleValue]>=0 && [x doubleValue]<=(double)UINT32_MAX && [x doubleValue]==[x unsignedIntValue]; }
 static BOOL Part(id p) {
@@ -32,9 +34,19 @@ static NSURL *Path(NSURL *d, NSString *a) {
 }
 NSArray *WURepositoryLoad(NSURL *d, NSString *a, NSError **e) {
     NSURL *p=Path(d,a); if(!p) { Fail(e,@"账号不可用或过长"); return nil; }
-    if(![NSFileManager.defaultManager fileExistsAtPath:p.path]) return @[];
-    NSNumber *size=nil; if(![p getResourceValue:&size forKey:NSURLFileSizeKey error:e]) return nil;
-    if(size.unsignedLongLongValue>1024*1024) { Fail(e,@"仓库超过1MiB，拒绝加载且不覆盖"); return nil; }
+    struct stat dirStat;
+    if(stat(d.fileSystemRepresentation,&dirStat)!=0) {
+        int code=errno; if(code==ENOENT) return @[];
+        if(e) *e=[NSError errorWithDomain:NSPOSIXErrorDomain code:code userInfo:nil]; return nil;
+    }
+    if(!S_ISDIR(dirStat.st_mode)) { Fail(e,@"仓库目录不可用，未覆盖原文件"); return nil; }
+    struct stat fileStat;
+    if(stat(p.fileSystemRepresentation,&fileStat)!=0) {
+        int code=errno; if(code==ENOENT) return @[];
+        if(e) *e=[NSError errorWithDomain:NSPOSIXErrorDomain code:code userInfo:nil]; return nil;
+    }
+    if(!S_ISREG(fileStat.st_mode)) { Fail(e,@"仓库文件不可用，未覆盖原文件"); return nil; }
+    if(fileStat.st_size>1024*1024) { Fail(e,@"仓库超过1MiB，拒绝加载且不覆盖"); return nil; }
     NSData *data=[NSData dataWithContentsOfURL:p options:0 error:e]; if(!data) return nil;
     id root=[NSPropertyListSerialization propertyListWithData:data options:NSPropertyListImmutable format:NULL error:e];
     if(![root isKindOfClass:NSDictionary.class] || [root count]!=3 || ![root[@"version"] isEqual:@1] || ![root[@"account"] isEqual:a] || !WURepositoryValid(root[@"items"])) { Fail(e,@"仓库损坏或账号不符，未覆盖原文件"); return nil; }

@@ -59,6 +59,14 @@ check(b.onError(listener) === 'on-result','onError return'); b.onError(listener)
 b.onError(removedListener); check(b.offError(removedListener) === 'off-result','offError return');
 const count = nativeShows;
 rejected(b.show(),'banner'); rejected(i.show(),'interstitial');
+const retryAd = wx.createInterstitialAd(); let retries = 0, closes = 0;
+retryAd.onClose(() => closes++);
+retryAd.onError(() => { retries++; if (retries < 5) rejected(retryAd.show(),'retry'); });
+rejected(retryAd.show(),'retry initial');
+// A macrotask is not available in all JSC hosts; two promise turns cover the first retry.
+jobs.push(Promise.resolve().then(() => Promise.resolve()).then(() => {
+  check(retries === 1 && closes === 0,'bounded error retry and no fabricated close');
+}));
 check(nativeShows === count,'no native show while blocked');
 b.emit({code:'NATIVE'}); check(native === 1,'original onError not swallowed');
 const offAll = wx.createBannerAd(); offAll.onError(removedListener); offAll.offError(); rejected(offAll.show(),'off-all');

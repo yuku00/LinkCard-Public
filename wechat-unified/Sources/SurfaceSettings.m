@@ -32,7 +32,7 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
     NSDictionary *style=WUSurfaceStyle(self.role);
     for(UILabel *label in @[self.lightPreview,self.darkPreview]) {
         BOOL dark=label==self.darkPreview; UITraitCollection *traits=[UITraitCollection traitCollectionWithUserInterfaceStyle:dark?UIUserInterfaceStyleDark:UIUserInterfaceStyleLight];
-        label.text=dark?@"深色样式\n文字效果预览":@"浅色样式\n文字效果预览";
+        label.text=dark?@"深色样式示意\n文字效果预览":@"浅色样式示意\n文字效果预览";
         label.backgroundColor=WUSurfaceColor(self.role,@"background",traits,dark?[UIColor colorWithWhite:0.16 alpha:1]:UIColor.whiteColor);
         label.textColor=WUSurfaceColor(self.role,@"text",traits,dark?UIColor.whiteColor:UIColor.blackColor);
         label.tintColor=WUSurfaceColor(self.role,@"tint",traits,UIColor.systemBlueColor);
@@ -48,7 +48,11 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
 - (void)viewWillAppear:(BOOL)animated { [super viewWillAppear:animated]; [self refreshPreview]; [self.tableView reloadData]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 3; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==1?self.fields.count:1; }
-- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s==0?@"同时受总开关控制。":s==1?@"留空恢复默认；深色未设置时跟随浅色。部分项目不含文字，字体设置不会生效。":@"重置只清除本项样式，不改变开关或主题。"; }
+- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
+    if(s==0) return @"同时受总开关控制。";
+    if(s==1) return [self.role isEqual:@"emoticonSurface"] ? @"仅对已识别的聊天消息背景生效，不对表情本体裁圆角，也不覆盖表情面板。留空恢复默认；深色未设置时跟随浅色。为避免破坏微信布局，不提供宽高调整。" : @"留空恢复默认；深色未设置时跟随浅色。部分项目不含文字，字体设置不会生效。为避免破坏微信布局，不提供宽高调整。";
+    return @"重置只清除本项样式，不改变开关或主题。";
+}
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil]; c.textLabel.numberOfLines=0;
     if(p.section==0) { c.textLabel.text=@"启用本项美化"; UISwitch *s=[UISwitch new]; s.on=[WUValue(self.role) boolValue]; if([self.role isEqual:@"plusSurface"]) s.enabled=s.on; [s addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventValueChanged]; c.accessoryView=s; }
@@ -98,7 +102,7 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
     }
     NSArray *field=self.fields[p.row]; NSString *key=field[0]; BOOL numeric=[@[@"radius",@"borderWidth",@"opacity",@"fontSize",@"fontWeight"] containsObject:key];
     UIAlertController *a=[UIAlertController alertControllerWithTitle:field[1] message:@"留空恢复默认值" preferredStyle:UIAlertControllerStyleAlert];
-    [a addTextFieldWithConfigurationHandler:^(UITextField *f){ f.text=[WUSurfaceStyle(self.role)[key] description]; f.autocorrectionType=UITextAutocorrectionTypeNo; f.autocapitalizationType=UITextAutocapitalizationTypeNone; f.placeholder=numeric?@"点值 / 数值":@"#RRGGBBAA"; }];
+    [a addTextFieldWithConfigurationHandler:^(UITextField *f){ f.text=[WUSurfaceStyle(self.role)[key] description]; f.autocorrectionType=UITextAutocorrectionTypeNo; f.autocapitalizationType=UITextAutocapitalizationTypeNone; f.placeholder=numeric?@"输入数值":([key isEqual:@"fontName"]?@"例如 HelveticaNeue":@"#RRGGBB 或 #RRGGBBAA"); if(numeric && ![key isEqual:@"fontWeight"]) f.keyboardType=UIKeyboardTypeDecimalPad; }];
     [a addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ NSString *text=[a.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]; NSMutableDictionary *style=[WUSurfaceStyle(self.role) mutableCopy];
         if(!text.length) [style removeObjectForKey:key]; else if(numeric) { NSScanner *scanner=[NSScanner scannerWithString:text]; double n; if(![scanner scanDouble:&n]||!scanner.isAtEnd) { [self error:@"请输入完整数值"]; return; } style[key]=@(n); } else { if([key isEqual:@"fontName"]&&![UIFont fontWithName:text size:17]) { [self error:@"该字体未安装，请使用已安装字体的PostScript名称"]; return; } style[key]=text; } [self saveStyle:style];
     }]]; [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]]; [self presentViewController:a animated:YES completion:nil];

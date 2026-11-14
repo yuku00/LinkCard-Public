@@ -2,8 +2,10 @@
 #import "AdsLogic.h"
 #import "WUMiniAds.h"
 static IMP momentsValid, splashWindow, splashHot;
-static BOOL momentsReady, splashWindowReady, splashHotReady;
+static BOOL momentsReady, splashWindowReady, splashHotReady, recoFlowReady, recCardReady;
 BOOL WUAdsAvailable(NSString *key) {
+    if([key isEqual:@"officialRecoFlow"]) return recoFlowReady;
+    if([key isEqual:@"officialRecCard"]) return recCardReady;
     if([key isEqual:@"momentsAds"]) return momentsReady && NSClassFromString(@"WCDataItem")!=Nil;
     if([key isEqual:@"miniSplashAds"]) return splashWindowReady && splashHotReady;
     return WUMiniAdsAvailable(key);
@@ -20,7 +22,9 @@ static BOOL SplashHot(id o,SEL s) {
     BOOL original=((BOOL(*)(id,SEL))splashHot)(o,s);
     return WUSplashAdResult(original,WUAdsAvailable(@"miniSplashAds") && WUEnabled(@"miniSplashAds"));
 }
-static IMP notShow, enableAd, canvasRequest, canvasCard, plugins;
+static IMP notShow, enableAd, canvasRequest, canvasCard, plugins, recoFlow, recCard;
+static BOOL RecoFlow(id o,SEL s) { return WUEnabled(@"officialRecoFlow") ? YES : ((BOOL(*)(id,SEL))recoFlow)(o,s); }
+static BOOL RecCard(id o,SEL s) { return WUEnabled(@"officialRecCard") ? YES : ((BOOL(*)(id,SEL))recCard)(o,s); }
 static BOOL NoAd(id o,SEL s) { return WUEnabled(@"ads") ? YES : ((BOOL(*)(id,SEL))notShow)(o,s); }
 static BOOL Enable(id o,SEL s) { return WUEnabled(@"ads") ? NO : ((BOOL(*)(id,SEL))enableAd)(o,s); }
 static BOOL Request(id o,SEL s) { return WUEnabled(@"ads") ? NO : ((BOOL(*)(id,SEL))canvasRequest)(o,s); }
@@ -40,6 +44,9 @@ void WUInstallAds(void) {
     splashWindowReady=WUHook(@"WAAppTaskSplashADConfig",@"canShowSplashADWindow",NO,@encode(BOOL),@[],(IMP)SplashWindow,&splashWindow);
     splashHotReady=WUHook(@"WAAppTaskSplashADConfig",@"canHotStartShowSplashAD",NO,@encode(BOOL),@[],(IMP)SplashHot,&splashHot);
     WUHook(@"BrandTLExptConfig",@"isExptNotShowAd",NO,@encode(BOOL),@[],(IMP)NoAd,&notShow);
+    // Recommendations are content, not ordinary ads; require separate opt-in.
+    recoFlowReady=WUHook(@"BrandTLExptConfig",@"isExptNotShowRecoFlow",NO,@encode(BOOL),@[],(IMP)RecoFlow,&recoFlow);
+    recCardReady=WUHook(@"BrandTLExptConfig",@"isExptNotShowRecCard",NO,@encode(BOOL),@[],(IMP)RecCard,&recCard);
     WUHook(@"BrandTLFlutterViewController",@"enableAd",NO,@encode(BOOL),@[],(IMP)Enable,&enableAd);
     WUHook(@"BrandTLCanvasCardMgr",@"isAdRequestOpen",YES,@encode(BOOL),@[],(IMP)Request,&canvasRequest);
     WUHook(@"BrandTLCanvasCardMgr",@"isAdCardOpen",YES,@encode(BOOL),@[],(IMP)Card,&canvasCard);

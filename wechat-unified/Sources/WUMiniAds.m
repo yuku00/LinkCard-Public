@@ -23,7 +23,7 @@ BOOL WUMiniAdsAvailable(NSString *key) {
 NSString *WUMiniAdsStatus(void) {
     unsigned d=WUMiniAdsDiagnostics();
     return [NSString stringWithFormat:@"仅当前WA→JSC realm；接口仍需逐对象核验。%@%@%@",
-        d&4 ? @" 已遇到不支持的广告对象；该对象原路。" : @"",
+        d&4 ? @" 已遇到不支持或累计拦截达上限的对象；该对象原路，广告可能显示。" : @"",
         d&8 ? @" 已遇到第三方覆盖；不抢回。" : @"",
         d&48 ? @" 已遇到缺接口或安装异常；原路执行。" : @""];
 }

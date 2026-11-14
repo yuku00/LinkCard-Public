@@ -14,5 +14,13 @@ int main(void) { @autoreleasepool {
     m[@"id"]=@0; assert(!WURevokeEligible(@"me",@"peer",m,110)); m[@"id"]=@7; m[@"from"]=@"other"; assert(!WURevokeEligible(@"me",@"peer",m,110));
     NSDictionary *a=@{@"session":@"s",@"sender":@"a",@"time":@100};
     NSMutableDictionary *b=[a mutableCopy]; b[@"time"]=@399; assert(WUGroupAdjacent(a,b)); b[@"time"]=@400; assert(!WUGroupAdjacent(a,b)); b[@"time"]=@100; assert(WUGroupAdjacent(a,b)); b[@"separator"]=@YES; assert(!WUGroupAdjacent(a,b)); [b removeObjectForKey:@"separator"]; b[@"session"]=@"other"; assert(!WUGroupAdjacent(a,b));
-    puts("MessageLogic: 21 native assertions passed");
+    // WUGroupAdjacent is deliberately type-agnostic after host identity extraction.
+    NSDictionary *voice=@{@"session":@"s",@"sender":@"a",@"time":@101,@"type":@34};
+    NSDictionary *text=@{@"session":@"s",@"sender":@"a",@"time":@102,@"type":@1};
+    assert(WUGroupAdjacent(voice,text)); assert(!WUGroupAdjacent(text,voice));
+    assert(!WUGroupAdjacent(voice,@{@"session":@"s",@"sender":@"b",@"time":@102}));
+    assert(!WUGroupAdjacent(voice,@{@"session":@"s",@"sender":@"a",@"time":@102,@"separator":@YES}));
+    assert(!WUGroupAdjacent(@{@"session":@"s",@"sender":@"",@"time":@101},text));
+    assert(!WUGroupAdjacent(@{@"session":@"s",@"sender":@"a",@"time":@0},text));
+    puts("MessageLogic native assertions passed");
 } return 0; }

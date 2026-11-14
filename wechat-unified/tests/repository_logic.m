@@ -32,6 +32,13 @@ int main(void) { @autoreleasepool {
     bad[@"parts"]=@[@{@"kind":@"text",@"text":[@"x" stringByPaddingToLength:10001 withString:@"x" startingAtIndex:0]}]; CHECK(!WURepositoryValid(@[bad]));
     NSMutableArray *large=[NSMutableArray array]; for(NSUInteger i=0;i<201;i++) [large addObject:@{@"id":NSUUID.UUID.UUIDString,@"name":@"n",@"parts":@[text]}]; CHECK(!WURepositoryValid(large));
     NSMutableArray *parts=[NSMutableArray array]; for(NSUInteger i=0;i<51;i++) [parts addObject:text]; bad[@"parts"]=parts; CHECK(!WURepositoryValid(@[bad]));
+    NSURL *fresh=[dir URLByAppendingPathComponent:@"new/nested" isDirectory:YES];
+    e=nil; CHECK([WURepositoryLoad(fresh,@"账号A",&e) isEqual:@[]]); CHECK(e==nil);
+    CHECK(WURepositorySave(fresh,@"账号A",@[entry],&e));
+    CHECK([WURepositoryLoad(fresh,@"账号A",&e) isEqual:@[entry]]);
+    CHECK([WURepositoryLoad(fresh,@"账号B",&e) isEqual:@[]]);
+    CHECK(WURepositorySave(fresh,@"账号B",@[],&e));
+    CHECK([WURepositoryLoad(fresh,@"账号A",&e) isEqual:@[entry]]);
     CHECK([WURepositoryLoad(dir,@"a",&e) isEqual:@[]]); CHECK(WURepositorySave(dir,@"a",@[entry],&e));
     CHECK([WURepositoryLoad(dir,@"a",&e) isEqual:@[entry]]); CHECK([WURepositoryLoad(dir,@"b",&e) isEqual:@[]]);
     NSMutableArray *oversize=[NSMutableArray array];
@@ -44,7 +51,9 @@ int main(void) { @autoreleasepool {
     CHECK(WURepositorySave(dir,@"a",@[],&e)); CHECK([WURepositoryLoad(dir,@"a",&e) isEqual:@[]]);
     NSURL *file=[dir URLByAppendingPathComponent:@"61.plist"]; CHECK([[@"bad plist" dataUsingEncoding:NSUTF8StringEncoding] writeToURL:file atomically:YES]); CHECK(WURepositoryLoad(dir,@"a",&e)==nil);
     NSData *before=[NSData dataWithContentsOfURL:file]; CHECK(!WURepositorySave(dir,@"a",@[bad],&e)); CHECK([before isEqual:[NSData dataWithContentsOfURL:file]]);
-    NSURL *blocked=[dir URLByAppendingPathComponent:@"blocked"]; CHECK([before writeToURL:blocked atomically:YES]); CHECK(!WURepositorySave(blocked,@"a",@[entry],&e));
+    NSURL *blocked=[dir URLByAppendingPathComponent:@"blocked"]; CHECK([before writeToURL:blocked atomically:YES]);
+    e=nil; CHECK(WURepositoryLoad(blocked,@"a",&e)==nil); CHECK(e!=nil);
+    CHECK(!WURepositorySave(blocked,@"a",@[entry],&e));
     NSURL *occupied=[dir URLByAppendingPathComponent:@"63.plist"]; CHECK([NSFileManager.defaultManager createDirectoryAtURL:occupied withIntermediateDirectories:NO attributes:nil error:&e]); CHECK(!WURepositorySave(dir,@"c",@[entry],&e));
     NSData *wrongAccount=[NSPropertyListSerialization dataWithPropertyList:@{@"version":@1,@"account":@"b",@"items":@[entry]} format:NSPropertyListBinaryFormat_v1_0 options:0 error:&e]; CHECK([wrongAccount writeToURL:[dir URLByAppendingPathComponent:@"64.plist"] atomically:YES]); CHECK(WURepositoryLoad(dir,@"d",&e)==nil);
     Sender *sender=[Sender new]; CHECK(WURepositoryCanInvoke(sender,@"sendMsg:toContactUsrName:")); CHECK(WURepositoryCanInvoke(sender,@"ForwardMsg:ToContact:"));

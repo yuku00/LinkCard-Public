@@ -11,10 +11,29 @@ class SettingsLayoutTests(unittest.TestCase):
         keys = re.findall(r'@\[(@"[^"]+"|WUDictation\w+),', rows)
         ranges = re.search(r'NSRange ranges\[\] = \{([^;]+)\};', SOURCE).group(1)
         ranges = [(int(a), int(b)) for a, b in re.findall(r'\{(\d+),(\d+)\}', ranges)]
-        self.assertEqual(len(keys), 51)
+        self.assertEqual(len(keys), 53)
         self.assertEqual(len(set(keys)), len(keys))
         self.assertEqual([i for start, count in ranges for i in range(start, start + count)], list(range(len(keys))))
         self.assertEqual([keys[start] for start, _ in ranges], ['@"enabled"', '@"voiceProgress"', '@"ads"', '@"inputBorder"', '@"hideHomeSearch"', '@"convenientMoments"', '@"themes"'])
+
+    def test_recommendation_controls_are_searchable_and_independently_available(self):
+        rows = SOURCE.split('self.rows=@[', 1)[1].split(';', 1)[0]
+        keys = re.findall(r'@\[(@"[^"]+"|WUDictation\w+),', rows)
+        ranges = re.search(r'NSRange ranges\[\] = \{([^;]+)\};', SOURCE).group(1)
+        ranges = [(int(a), int(b)) for a, b in re.findall(r'\{(\d+),(\d+)\}', ranges)]
+        start, count = ranges[2]
+        available = SOURCE.split('- (BOOL)available:', 1)[1].split('NSDictionary *map=', 1)[0]
+        search = SOURCE.split('- (void)updateSearchResultsForSearchController:', 1)[1].split('- (NSString *)tableView:', 1)[0]
+        self.assertIn('[self titleForOriginalPath:path]', search)
+        for key, title in [('officialRecoFlow', '看一看 · 推荐流过滤'), ('officialRecCard', '看一看 · 推荐卡过滤')]:
+            self.assertIn(f'@[@"{key}",@"{title}"]', rows)
+            self.assertIn(f'@"{key}"', keys[start:start + count])
+            self.assertIn(f'@"{key}"', available)
+            self.assertIn('return WUAdsAvailable(key)', available)
+            detail = SOURCE.split(f'if([key isEqual:@"{key}"]) cell.detailTextLabel.text=', 1)[1].split(';\n', 1)[0]
+            for phrase in ('默认关闭', '影响推荐内容', '关闭时透传宿主原行为'):
+                self.assertIn(phrase, detail)
+        self.assertIn('stringByAppendingString:@" 尚未观察到', SOURCE)
 
     def test_navigation_uses_opaque_compact_full_screen_presentation(self):
         view = SOURCE.split('@implementation WUSettings', 1)[1].split('- (void)dealloc', 1)[0]

@@ -7,6 +7,17 @@ int main(void) { @autoreleasepool {
     CHECK([NSFileManager.defaultManager createDirectoryAtPath:dir withIntermediateDirectories:YES attributes:nil error:NULL]);
     configDir=open(dir.fileSystemRepresentation,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
     snapshot=@{@"schema":@1,@"enabled":@NO,@"words":@""};
+    CHECK(!WUEnabled(@"officialRecoFlow") && !WUEnabled(@"officialRecCard"));
+    CHECK(WUSave(@"officialRecoFlow",@YES) && WUSave(@"officialRecCard",@NO));
+    snapshot=ReadConfig(@"config.json");
+    CHECK([WUValue(@"officialRecoFlow") boolValue] && ![WUValue(@"officialRecCard") boolValue]);
+    CHECK(!WUEnabled(@"officialRecoFlow"));
+    CHECK(WUSave(@"enabled",@YES) && WUEnabled(@"officialRecoFlow") && !WUEnabled(@"officialRecCard"));
+    CHECK(WUSave(@"officialRecoFlow",@NO) && WUSave(@"officialRecCard",@YES));
+    close(configDir); configDir=open(dir.fileSystemRepresentation,O_RDONLY|O_DIRECTORY|O_NOFOLLOW); snapshot=ReadConfig(@"config.json");
+    CHECK(!WUEnabled(@"officialRecoFlow") && WUEnabled(@"officialRecCard"));
+    CHECK(!WUSave(@"officialRecoFlow",@"YES") && !WUSave(@"officialRecCard",@[]));
+    CHECK(WUSave(@"enabled",@NO));
     CHECK(!WUEnabled(@"miniBannerAds") && !WUEnabled(@"miniInterstitialAds"));
     CHECK(WUSave(@"miniBannerAds",@YES) && WUSave(@"miniInterstitialAds",@NO));
     snapshot=ReadConfig(@"config.json");

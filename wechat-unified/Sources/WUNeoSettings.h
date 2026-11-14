@@ -39,8 +39,11 @@ static inline void WUNeoPrepareTable(UITableViewController *owner) {
 }
 
 static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol) {
-    UIBackgroundConfiguration *background=[UIBackgroundConfiguration listGroupedCellConfiguration];
+    // A clear configuration avoids the grouped-cell joined-corner treatment.
+    // Vertical insets leave a visible gap while the full row remains tappable.
+    UIBackgroundConfiguration *background=[UIBackgroundConfiguration clearConfiguration];
     background.backgroundColor=UIColor.secondarySystemGroupedBackgroundColor;
+    background.backgroundInsets=NSDirectionalEdgeInsetsMake(4,0,4,0);
     background.cornerRadius=20;
     cell.backgroundConfiguration=background;
     cell.directionalLayoutMargins=NSDirectionalEdgeInsetsMake(14,18,14,18);
