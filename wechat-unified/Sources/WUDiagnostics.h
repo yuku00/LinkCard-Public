@@ -1,4 +1,4 @@
-#import <UIKit/UIKit.h>
+@class UIViewController;
 void WUShowDiagnostics(UIViewController *owner);
 
 #import "WUDiagnosticRing.h"
