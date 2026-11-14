@@ -1,14 +1,34 @@
 import pathlib
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / 'Sources/Themes.m').read_text()
 
 
+def ios_clang_command(path):
+    compiler = ['clang']
+    sdk = []
+    if sys.platform == 'darwin':
+        compiler = ['xcrun', '--sdk', 'iphoneos', 'clang']
+        sdk = ['-isysroot', subprocess.check_output(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()]
+    return compiler + ['-target', 'arm64-apple-ios13.0'] + sdk + ['-fsyntax-only', '-fobjc-arc', '-Werror', '-Wno-undefined-internal', str(path)]
+
+
 class ThemeSVGABI(unittest.TestCase):
+    def test_darwin_uses_iphoneos_sdk_for_cross_compile(self):
+        with mock.patch.object(sys, 'platform', 'darwin'), mock.patch('subprocess.check_output', return_value='/SDK/iPhoneOS.sdk\n'):
+            command = ios_clang_command('abi.m')
+        self.assertEqual(command[:3], ['xcrun', '--sdk', 'iphoneos'])
+        self.assertIn('-isysroot', command)
+        self.assertEqual(command[command.index('-isysroot') + 1], '/SDK/iPhoneOS.sdk')
+        self.assertIn('-Werror', command)
+        self.assertIn('arm64-apple-ios13.0', command)
+
     def test_install_signatures_and_fallback(self):
         install = SOURCE.split('void WUInstallThemes(void) {', 1)[1].split('\n}', 1)[0]
         lines = [line.strip() for line in install.splitlines() if 'svgImageNamed:size:color:alpha:angle:ignoreNotFound:' in line]
@@ -47,7 +67,7 @@ static UIImage *Replacement(NSString *, UIImage *, UITraitCollection *, CGSize, 
         with tempfile.TemporaryDirectory() as tmp:
             path = pathlib.Path(tmp) / 'abi.m'
             path.write_text(prelude + bodies)
-            result = subprocess.run(['clang', '-target', 'arm64-apple-ios13.0', '-fsyntax-only', '-fobjc-arc', '-Werror', '-Wno-undefined-internal', str(path)], capture_output=True, text=True)
+            result = subprocess.run(ios_clang_command(path), capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
         for name, ctype, imp in [('Int', 'int', 'svgIntIMP'), ('Double', 'CGFloat', 'svgDoubleIMP')]:
             body = re.search(r'static UIImage \*SVGNamed' + name + r'\((.*?)\n}', bodies, re.S).group(1)
