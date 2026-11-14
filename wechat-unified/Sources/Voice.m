@@ -1,3 +1,4 @@
+#import "WUCapture.h"
 #import "WU.h"
 #import "VoiceLogic.h"
 #import "VoiceAudio.h"
@@ -292,7 +293,7 @@ static void Window(id cell, SEL cmd) {
     } else Bind(cell);
 }
 static void SetPlaying(id vm, SEL cmd, BOOL value) {
-    WUNativePlaybackCall(vm,value,^{ ((void(*)(id,SEL,BOOL))playingOriginal)(vm,cmd,value); });
+    WUNativePlaybackCall(vm,value,^{ ((void(*)(id,SEL,BOOL))playingOriginal)(vm,cmd,value); WUCaptureObserve(vm,4); });
     if(!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(),^{ [clockOwner stop]; }); return; }
     if(!value) { if(clockOwner.model==vm) [clockOwner stop]; }
     else {

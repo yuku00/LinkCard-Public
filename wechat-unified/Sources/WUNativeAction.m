@@ -63,7 +63,7 @@ static void StartObservers(void) {
 - (BOOL)consumed { return _consumed; }
 - (BOOL)isValid {
     @try { return !_finished && self.owner.viewIfLoaded.window &&
-        (!self.owner.navigationController || self.owner.navigationController.visibleViewController==self.owner) &&
+        (!self.owner.navigationController || self.owner.navigationController.topViewController==self.owner) &&
         UIApplication.sharedApplication.applicationState==UIApplicationStateActive &&
         WUNativeEnabled(self.key) && self.valid && self.valid(); }
     @catch(NSException *e) { return NO; }

@@ -1,3 +1,4 @@
+#import "WUCapture.h"
 #import "WUNativeAction.h"
 
 @interface WUKeyboardPlaybackLease : NSObject
@@ -115,6 +116,7 @@ static BOOL PatIdentity(NSDictionary *f, NSString *account, NSString *session) {
     return [from isEqual:session] && [to isEqual:account] && (![session hasSuffix:@"@chatroom"] || real.length);
 }
 static void Pat(UIView *cell,SEL cmd,id sender) {
+    WUCaptureObserve(cell,5);
     if(!WUNativeEnabled(@"patConfirm")) { ((void(*)(id,SEL,id))patOriginal)(cell,cmd,sender); return; }
     if(!NSThread.isMainThread) return;
     @try {

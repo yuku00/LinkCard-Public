@@ -90,3 +90,5 @@ NSString *WUChatSession(UIViewController *v) { return [v isKindOfClass:BaseMsgCo
     _tool=[MMInputToolView new]; [_chat.view addSubview:_tool]; _tool.editor=[UITextView new]; [_tool addSubview:_tool.editor]; _tool.editor.firstResponder=YES; _chat.tool=_tool;
 } return self; }
 @end
+
+void WUCaptureObserve(id object, unsigned point) { (void)object; (void)point; }

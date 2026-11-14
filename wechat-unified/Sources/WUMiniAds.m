@@ -1,3 +1,4 @@
+#import "WUCapture.h"
 #import "WU.h"
 #import "WUMiniAds.h"
 #import <JavaScriptCore/JavaScriptCore.h>
@@ -83,6 +84,7 @@ static void SetupCurrent(void) {
     }
 }
 static id Invoke(id object,SEL selector,id opaqueArgument) {
+    WUCaptureObserve(object,6);
     if(object_getClass(object)==invokerClass) SetupCurrent();
     // No argument probing, nil substitution, original exception catch or return conversion.
     return ((id(*)(id,SEL,id))invokeOriginal)(object,selector,opaqueArgument);

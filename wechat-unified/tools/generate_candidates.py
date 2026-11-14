@@ -25,6 +25,9 @@ CATEGORY_FILES = {
     '朋友圈': ('Sources/Moments', 'Sources/Timeline.', 'reverse-round2-moments.md', 'FAKE-LIKES-GAP.md'),
     '链接': ('Sources/LinkLogic.', 'Sources/MessageEntries.', 'Sources/MessageEntryBindings.', 'Sources/WUArticleImage.', '功能证据：链接'),
     '小程序': ('Sources/WUMiniAds.', 'Sources/WUMiniAdsScript.inc'),
+    '聊天菜单': ('用户提供菜单线索',),
+    '服务': ('WUHostService.', 'MMServiceCenter', 'MMContext'),
+    '卡包': ('卡包证据',),
 }
 def categories(sources):
     return [category for category, patterns in CATEGORY_FILES.items()
@@ -51,6 +54,11 @@ def generate(root):
     for feature in ('多选', '链接'):
         add('BaseMsgContentViewController', 'getSelectedMsgs', '-', '功能证据：'+feature+'；Sources/Messages.m 对应功能门禁')
     add('BaseMsgContentViewController', 'onSearchItem', '-', 'Sources/Messages.m 聊天搜索功能门禁')
+    # User-supplied leads, not verified declarations or a license to hook.
+    add('BaseMessageCellView', 'filteredMenuItems', '-', '用户提供菜单线索；类与selector关联及ABI未核验')
+    add('MMMenuItem', '', '?', '用户提供菜单线索；仅类候选，方法及ABI未核验')
+    add('EcsOrderService', 'jumpOrderAndCardCenterFromVc:clickSessionId:', '-', '卡包证据：WCPulse 逆向线索；ABI需运行时验证')
+    add('MMUIRouteRegistry', 'openLegacyCardHomePageWithNavigationController:', '+', '卡包证据：WCPulse 逆向线索；ABI需运行时验证')
     # Account() checks the returned contact but does not establish its concrete class.
     for cls, sel, kind in [('MMServiceCenter','defaultCenter','+'), ('MMServiceCenter','getService:','-'), ('CContactMgr','getSelfContact','-'), ('','m_nsUsrName','?')]:
         add(cls, sel, kind, 'Sources/Messages.m Account（手工证据；返回对象的具体类未假定）')

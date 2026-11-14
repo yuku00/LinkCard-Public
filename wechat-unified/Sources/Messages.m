@@ -319,6 +319,7 @@ static IMP chatAppearOriginal, chatDisappearOriginal;
 static char chatKey;
 static void ChatAppeared(UIViewController *v,SEL s,BOOL animated) {
     ((void(*)(id,SEL,BOOL))chatAppearOriginal)(v,s,animated);
+    WUCaptureObserve(v,1);
     @try { RecordStatsVisit(v); } @catch(__unused NSException *e) {}
     @try { WUChatActions *a=objc_getAssociatedObject(v,&chatKey); if(!a) { a=[WUChatActions new]; a.owner=v; objc_setAssociatedObject(v,&chatKey,a,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [chatActions addObject:a]; } [a refresh]; } @catch(NSException *e) {}
 }

@@ -48,7 +48,7 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
 - (void)viewWillAppear:(BOOL)animated { [super viewWillAppear:animated]; [self refreshPreview]; [self.tableView reloadData]; }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 3; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==1?self.fields.count:1; }
-- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s==0?@"仍受整合总开关控制。仅修改已确认的视图及其中实际文字控件；文件/表情背景没有文字时字体项不生效。":s==1?@"颜色使用 #RGB / #RGBA / #RRGGBB / #RRGGBBAA 或 transparent。留空恢复该项默认。深色未配置跟随浅色；显式设置优先于主题色表。字体不存在时保留原字体，修改字重时使用系统字体。聊天按钮不改点击行为；不修改聊天附件面板或系统键盘。":@"重置只删除本项样式，不删除主题、不修改业务开关。关闭后按逐属性所有权恢复，不覆盖宿主后来修改的值。"; }
+- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s==0?@"同时受总开关控制。":s==1?@"留空恢复默认；深色未设置时跟随浅色。部分项目不含文字，字体设置不会生效。":@"重置只清除本项样式，不改变开关或主题。"; }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil]; c.textLabel.numberOfLines=0;
     if(p.section==0) { c.textLabel.text=@"启用本项美化"; UISwitch *s=[UISwitch new]; s.on=[WUValue(self.role) boolValue]; if([self.role isEqual:@"plusSurface"]) s.enabled=s.on; [s addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventValueChanged]; c.accessoryView=s; }

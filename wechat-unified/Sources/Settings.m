@@ -103,7 +103,7 @@
 }
 - (void)updateSearchResultsForSearchController:(UISearchController *)searchController {
     NSString *query=[searchController.searchBar.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if(!query.length) { self.searchRows=nil; [self.tableView reloadData]; return; }
+    if(!query.length) { self.searchRows=nil; self.tableView.backgroundView=nil; [self.tableView reloadData]; return; }
     self.categories.selectedSegmentIndex=0;
     NSMutableArray *sections=[NSMutableArray array];
     for(NSInteger section=0;section<9;section++) {
@@ -114,7 +114,10 @@
         }
         [sections addObject:matches];
     }
-    self.searchRows=sections; [self.tableView reloadData];
+    self.searchRows=sections;
+    NSUInteger count=0; for(NSArray *matches in sections) count+=matches.count;
+    UILabel *empty=[UILabel new]; empty.text=@"没有找到相关设置"; empty.textAlignment=NSTextAlignmentCenter; empty.textColor=UIColor.secondaryLabelColor; empty.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody]; empty.adjustsFontForContentSizeCategory=YES;
+    self.tableView.backgroundView=count?nil:empty; [self.tableView reloadData];
 }
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { if(![self showsSection:s] || (self.searchRows && !self.searchRows[s].count)) return nil; return @[@"常用",@"语音播放",@"内容过滤",@"输入与转述",@"消息与首页外观",@"聊天功能",@"主题与界面细节",@"本地工具",@"宿主适配状态"][s]; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
@@ -234,13 +237,16 @@ void WUShowSettings(UIViewController *owner) {
 @end
 static IMP settingsAppear;
 static char entryKey;
-static void Appeared(UIViewController *v,SEL s,BOOL animated) {
-    ((void(*)(id,SEL,BOOL))settingsAppear)(v,s,animated);
+static void EnsureSettingsEntry(UIViewController *v) {
     WUEntry *entry=objc_getAssociatedObject(v,&entryKey);
     if(!entry) { entry=[WUEntry new]; entry.owner=v; entry.button=[[UIBarButtonItem alloc] initWithTitle:@"整合" style:UIBarButtonItemStylePlain target:entry action:@selector(open)]; entry.button.accessibilityLabel=@"微信整合设置"; objc_setAssociatedObject(v,&entryKey,entry,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
     NSMutableArray *items=[v.navigationItem.rightBarButtonItems mutableCopy] ?: [NSMutableArray array];
     if(![items containsObject:entry.button]) { [items addObject:entry.button]; v.navigationItem.rightBarButtonItems=items; }
 }
+static void Appeared(UIViewController *v,SEL s,BOOL animated) {
+    ((void(*)(id,SEL,BOOL))settingsAppear)(v,s,animated);
+    EnsureSettingsEntry(v);
+}
 static IMP settingLayout;
-static void SettingsLayout(UIViewController *v,SEL s) { ((void(*)(id,SEL))settingLayout)(v,s); WUStyleSettingSwitches(v); }
+static void SettingsLayout(UIViewController *v,SEL s) { ((void(*)(id,SEL))settingLayout)(v,s); WUStyleSettingSwitches(v); if(v.view.window) EnsureSettingsEntry(v); }
 void WUInstallSettings(void) { WUHook(@"NewSettingViewController",@"viewDidLayoutSubviews",NO,"v",@[],(IMP)SettingsLayout,&settingLayout); WUHook(@"NewSettingViewController",@"viewDidAppear:",NO,"v",@[[NSString stringWithUTF8String:@encode(BOOL)]],(IMP)Appeared,&settingsAppear); }

@@ -1,3 +1,4 @@
+#import "WUCapture.h"
 #import "WUNeoSettings.h"
 #import "WUDiagnostics.h"
 #import "WUHostService.h"
@@ -300,7 +301,7 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
 }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 5; }
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if(section==0) return 2;
+    if(section==0) return 3;
     if(section==1) return self.visibleHooks.count?:1;
     if(section==2) return self.events.count?:1;
     if(section==3) return self.results.count?:1;
@@ -320,7 +321,8 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
     cell.textLabel.numberOfLines=0; cell.textLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
     cell.textLabel.adjustsFontForContentSizeCategory=YES; cell.selectionStyle=UITableViewCellSelectionStyleNone;
-    if(indexPath.section==0 && indexPath.row==1) { cell.textLabel.text=self.wrapperCollecting?@"后台采集中…":@"一键诊断 MMServiceWrapper（只读预览）"; cell.selectionStyle=UITableViewCellSelectionStyleDefault; }
+    if(indexPath.section==0 && indexPath.row==2) { cell.textLabel.text=@"跨页面接口采集（开始／停止／预览）"; cell.selectionStyle=UITableViewCellSelectionStyleDefault; }
+    else if(indexPath.section==0 && indexPath.row==1) { cell.textLabel.text=self.wrapperCollecting?@"后台采集中…":@"一键诊断 MMServiceWrapper（只读预览）"; cell.selectionStyle=UITableViewCellSelectionStyleDefault; }
     else if(indexPath.section==0) cell.textLabel.text=[self environment];
     else if(indexPath.section==1) cell.textLabel.text=self.visibleHooks.count?self.visibleHooks[indexPath.row]:@"无匹配记录";
     else if(indexPath.section==2) cell.textLabel.text=self.events.count?self.events[indexPath.row]:@"无事件";
@@ -330,6 +332,7 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if(indexPath.section==0 && indexPath.row==2) { WUShowCapture(self); return; }
     if(indexPath.section==0 && indexPath.row==1) { [self collectWrapper]; return; }
     if(indexPath.section!=3 || (NSUInteger)indexPath.row>=self.results.count) return;
     NSString *selected=[self.results[indexPath.row] copy];

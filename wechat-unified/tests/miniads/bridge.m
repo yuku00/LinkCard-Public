@@ -12,7 +12,7 @@
 
 static NSMutableDictionary *hooks;
 static atomic_bool banner=true, interstitial=true, master=true;
-static atomic_uint reads, originalCalls, setupReads, records;
+static atomic_uint reads, originalCalls, setupReads, records, captureCalls;
 static _Thread_local void *expectedContext;
 static _Thread_local JSValueRef expectedArgument, expectedException;
 static _Thread_local BOOL throwOriginal, changeException;
@@ -177,16 +177,17 @@ int main(int argc,const char **argv) { @autoreleasepool {
     IMP installed=class_getMethodImplementation(waClass,invokeSelector); WUInstallMiniAds();
     assert(installed!=before && installed==class_getMethodImplementation(waClass,invokeSelector) && atomic_load(&records)==1);
     assert([JSContext currentContext]==nil);
-    unsigned r=atomic_load(&reads), calls=atomic_load(&originalCalls);
+    unsigned r=atomic_load(&reads), calls=atomic_load(&originalCalls), captures=atomic_load(&captureCalls);
     assert(Call([waClass new])==returnToken);
-    assert(atomic_load(&reads)==r && atomic_load(&originalCalls)==calls+1);
+    assert(atomic_load(&reads)==r && atomic_load(&originalCalls)==calls+1 && atomic_load(&captureCalls)==captures+1);
     id savedOpaque=opaque, savedReturn=returnToken;
     opaque=nil; returnToken=nil; assert(Call([waClass new])==nil);
     opaque=savedOpaque; returnToken=savedReturn;
-    throwOriginal=YES;
+    calls=atomic_load(&originalCalls); captures=atomic_load(&captureCalls); throwOriginal=YES;
     @try { (void)Call([waClass new]); assert(0 && "original exception swallowed"); }
     @catch(NSException *exception) { assert(exception==nativeException); }
     throwOriginal=NO;
+    assert(atomic_load(&originalCalls)==calls+1 && atomic_load(&captureCalls)==captures+1);
     SmallCases();
     NSString *fixture=[NSString stringWithContentsOfFile:@(argv[2]) encoding:NSUTF8StringEncoding error:NULL]; assert(fixture);
     Full(fixture,NO);
@@ -195,3 +196,5 @@ int main(int argc,const char **argv) { @autoreleasepool {
     assert(dispatch_semaphore_wait(done,dispatch_time(DISPATCH_TIME_NOW,15*NSEC_PER_SEC))==0);
     puts("miniads full PASS: production bridge/currentContext/arguments/worker VM/Promise/errors/rollback");
 } return 0; }
+
+void WUCaptureObserve(id object, unsigned point) { assert(object && point==6); atomic_fetch_add(&captureCalls,1); }

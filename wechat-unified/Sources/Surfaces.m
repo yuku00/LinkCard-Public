@@ -1,4 +1,5 @@
 #import "WU.h"
+#import "WUCapture.h"
 #import "InteractionLogic.h"
 #import <QuartzCore/QuartzCore.h>
 static NSHashTable<UIView *> *styled, *textBubbleCells, *childSurfaceRoots, *referRoots;
@@ -57,7 +58,7 @@ void WURefreshMessageSurface(UIView *cell,NSString *role) {
         }
     }
 }
-static void Search(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))searchLayout)(v,s); WUStyleSurface(v,@"searchSurface",14); }
+static void Search(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))searchLayout)(v,s); if(v.window) WUCaptureObserve(v,3); WUStyleSurface(v,@"searchSurface",14); }
 static id CheckedObjectGetter(id object,NSString *name);
 static BOOL IsTextMessageReply(UIView *v) {
     Class cls=NSClassFromString(@"TextMessageCellView");
@@ -118,7 +119,7 @@ static void RefreshChatButtons(UIView *tool) {
         [chatButtonRoles addObject:@"chatSendSurface"]; WUApplyConfiguredSurface(send,@"chatSendSurface",8,YES); [buttons addObject:send];
     }
     if(mmButton && [mmButton isSubclassOfClass:UIButton.class] && [attachment isKindOfClass:mmButton] && attachment!=tool && attachment!=send && [attachment isDescendantOfView:tool]) {
-        [chatButtonRoles addObject:@"chatAttachmentSurface"]; WUApplyConfiguredSurface(attachment,@"chatAttachmentSurface",8,YES); [buttons addObject:attachment];
+        [chatButtonRoles addObject:@"chatAttachmentSurface"]; WUApplyConfiguredSurface(attachment,@"chatAttachmentSurface",8,NO); [buttons addObject:attachment];
     }
     objc_setAssociatedObject(tool,&chatButtonsKey,buttons,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
@@ -128,7 +129,7 @@ static void ChatToolLayout(UIView *tool,SEL sel) {
 }
 static void ChatToolWindow(UIView *tool,SEL sel) {
     RestoreChatButtons(tool); ((void(*)(id,SEL))chatToolWindow)(tool,sel);
-    [chatTools addObject:tool]; if(tool.window) [tool setNeedsLayout];
+    [chatTools addObject:tool]; if(tool.window) { WUCaptureObserve(tool,2); [tool setNeedsLayout]; }
 }
 // Scope the preview toolbar to a verified text-message delegate and owned descendant.
 static IMP textPreviewLayout,textPreviewDisappear;

@@ -34,7 +34,7 @@ static inline void WUNeoPrepareTable(UITableViewController *owner) {
     table.rowHeight=UITableViewAutomaticDimension;
     table.estimatedRowHeight=72;
     table.cellLayoutMarginsFollowReadableWidth=YES;
-    table.separatorInset=UIEdgeInsetsMake(0,20,0,20);
+    table.separatorStyle=UITableViewCellSeparatorStyleNone;
     table.sectionHeaderTopPadding=16;
 }
 

@@ -72,3 +72,5 @@ int main(void) { @autoreleasepool {
     assert(!WUAdsAvailable(@"unknown"));
     puts("Ads hooks: runtime signature/missing-gate/normal-item/reward/original-path fixtures passed");
 } return 0; }
+
+void WUCaptureObserve(id object, unsigned point) { (void)object; (void)point; }

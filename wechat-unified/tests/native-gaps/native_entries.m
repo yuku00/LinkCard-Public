@@ -127,3 +127,4 @@ int main(void) { @autoreleasepool {
     [brand layoutSubviews]; assert([First(brand).cells isEqual:filtered] && label.superview==brand);
     puts("PASS production WUHook: two local BOOL flags, default/exception/off fallback, exact profile row identity, original actions, reversible projection, rebuild and reentry");
 } return 0; }
+

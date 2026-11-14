@@ -10,6 +10,16 @@ static void PatTests(void) {
     [a.actions[1] fire]; [a.actions[1] fire]; assert(f.cell.pats==1 && f.cell.receivedSender==opaque && !Alert(f));
     f=[TestScene new]; Pat(f,f.cell.head); a=Alert(f); [a.actions[0] fire]; [a.actions[1] fire]; assert(!f.cell.pats && !Alert(f));
     f=[TestScene new]; Pat(f,f.cell.head); [Alert(f).actions[1] fire]; assert(f.cell.pats==1 && f.cell.receivedSender==f.cell.head);
+    // A presented alert can be the navigation controller's visible controller,
+    // while the chat remains the top item on its navigation stack.
+    f=[TestScene new]; UINavigationController *nav=[UINavigationController new];
+    nav.topViewController=f.chat; nav.visibleViewController=f.chat; f.chat.navigationController=nav;
+    Pat(f,f.cell.head); a=Alert(f); assert(a); nav.visibleViewController=a;
+    WUNativeRefreshActions(); assert(Alert(f)==a && !f.cell.pats);
+    nav.visibleViewController=f.chat; [a.actions[1] fire]; assert(f.cell.pats==1 && !Alert(f));
+    f=[TestScene new]; nav=[UINavigationController new]; nav.topViewController=f.chat; nav.visibleViewController=f.chat; f.chat.navigationController=nav;
+    Pat(f,f.cell.head); a=Alert(f); assert(a); nav.topViewController=[UIViewController new];
+    WUNativeRefreshActions(); assert(!Alert(f)); [a.actions[1] fire]; assert(!f.cell.pats);
     f=[TestScene new]; Pat(f,[NSObject new]); a=Alert(f); assert(WUNativeOwnsController(a));
     [a dismissViewControllerAnimated:NO completion:nil]; [a.actions[1] fire]; assert(f.cell.pats==1); // UIKit auto-dismissed before handler
     f=[TestScene new]; Pat(f,[NSObject new]); a=Alert(f); a.deferDismissCompletion=YES; [a.actions[1] fire];

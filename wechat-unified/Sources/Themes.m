@@ -294,7 +294,7 @@ static UIImage *PreviewImage(NSString *identifier,BOOL dark) {
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 2; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?3:self.packs.count; }
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return s==0?@"独立选择 / 恢复 / 样式":@"本地资源 · 置顶优先"; }
-- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s==0?@"主题与气泡独立；气泡留空跟随主题；缺项回退主题再回宿主。关闭立即恢复已记录的图片和视图。切换或追加资源后，已显示的宿主页面可能需重新进入；不强制重载宿主。":@"目录保持原样。ZIP≤32MB / 解包≤64MB / 单文件≤8MB / ≤510资源。SVG需WCSVGImage真实解码；CAR经系统Assets.car加载；CSS/XML仅已列WeUI字面色值，实际应用到已开启的明确视图。无在线服务。"; }
+- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s==0?@"主题与气泡可分别选择。更换后部分页面需重新进入。":@"本地导入：压缩包不超过32MB，解压后不超过64MB；单文件不超过8MB，最多510项资源。"; }
 - (CGFloat)tableView:(UITableView *)t heightForRowAtIndexPath:(NSIndexPath *)p { return p.section==1&&[[self options][@"cards"] boolValue]&&!UIContentSizeCategoryIsAccessibilityCategory(t.traitCollection.preferredContentSizeCategory)?[UIFontMetrics.defaultMetrics scaledValueForValue:148]:UITableViewAutomaticDimension; }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;

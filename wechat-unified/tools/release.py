@@ -34,6 +34,7 @@ def upload():
     allowed += ['tools/github_native.py','tools/download.py','tools/verify_build.py','tests/test_github_transport.py']
     allowed += ['Sources/WUCandidateManifest.inc','tools/generate_candidates.py','tests/test_candidate_manifest.py','tests/test_feature_diagnostics.py']
     allowed += ['Sources/WUNeoSettings.h','tests/test_secondary_settings_style.py','tests/test_settings_layout.py','tests/settings_layout_device_check.md']
+    allowed += ['Sources/WUCapture.h','Sources/WUCapture.m','tests/test_capture_contract.py','CAPTURE-GUIDE.md']
     allowed += ['Sources/WUDiagnostics.h','Sources/WUDiagnostics.m','Sources/WUDiagnosticRing.h','tests/diagnostic_ring.c','tests/test_diagnostics_contract.py','tests/test_link_diagnostics.py','tests/test_settings_search.py','tests/test_diagnostics_integration.py','tests/test_wrapper_diagnostics.py']
     allowed += ['Sources/LinkLogic.h', 'Sources/LinkLogic.m', 'Sources/MessageEntries.h', 'Sources/MessageEntries.m', 'Sources/MessageEntryBindings.inc', 'Sources/RepeatOptions.h', 'Sources/RepeatSettings.m', 'tests/message_entry_logic.m', 'tests/test_message_entries.py', 'tools/test_message_entries.sh']
     allowed += ['Sources/WUImageEntry.h','Sources/WUImageEntry.m','tests/image-entry-stubs/UIKit/UIKit.h','tests/image_entry_native.m','tests/test_image_entry_native.py','tests/test_image_entry_contract.py']

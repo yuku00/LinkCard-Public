@@ -1,3 +1,4 @@
+#import "WUCapture.h"
 @class UIViewController;
 void WUShowDiagnostics(UIViewController *owner);
 
