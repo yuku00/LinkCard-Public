@@ -61,9 +61,10 @@ static NSData *AccountFingerprint(NSString *account) {
 }
 static NSString *Account(void) {
     NSString *a=nil; WUDiagnosticEvent failure=0;
+    id mgr=nil; WUProviderPath providerPath=WUProviderUnknown; BOOL accountException=NO;
     @try {
         Class managerClass=NSClassFromString(@"CContactMgr");
-        id mgr=managerClass?Service(@"CContactMgr"):nil;
+        mgr=managerClass?WUHostServiceWithPath(@"CContactMgr",&providerPath):nil;
         if(!managerClass) failure=WUDiagAccountManagerClass;
         else if(!mgr) failure=WUDiagAccountManagerMissing;
         else if(!Has(mgr,@"getSelfContact","@",@[])) failure=WUDiagAccountSelfSignature;
@@ -73,8 +74,9 @@ static NSString *Account(void) {
             else if(!Has(contact,@"m_nsUsrName","@",@[])) failure=WUDiagAccountNameSignature;
             else { a=Str(contact,@"m_nsUsrName"); if(!a.length) { a=nil; failure=WUDiagAccountNameInvalid; } }
         }
-    } @catch(NSException *e) { WURecordAccountDiagnosticEvent(WUDiagAccountException); a=nil; }
+    } @catch(NSException *e) { WURecordAccountDiagnosticEvent(WUDiagAccountException); accountException=YES; a=nil; }
     if(failure) WURecordAccountDiagnosticEvent(failure);
+    if((failure || accountException) && mgr) WURecordAccountServiceMismatch(mgr,providerPath);
     NSData *fingerprint=AccountFingerprint(a);
     if(a && !fingerprint) a=nil;
     @synchronized(NSProcessInfo.processInfo) {

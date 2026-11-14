@@ -15,9 +15,12 @@ core=(root/'Sources/Core.m').read_text()
 s=(root/'Sources/Messages.m').read_text()
 helpers=s[s.index('static BOOL Has('):s.index('static uint64_t Num(')]
 account=s[s.index('static id Service('):s.index('NSString *WUCurrentAccount(')]
+account=account.replace('static id Service(NSString *name) { return WUHostService(name); }\n', '')
 (work/'account.inc').write_text(helpers+account)
 PY
 for bad in 0 1; do
   xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -DBAD_CONTEXT=$bad -I "$ROOT/Sources" -I "$WORK" "$ROOT/tests/host_service_native.m" "$ROOT/Sources/WUHostService.m" -framework Foundation -o "$WORK/test"
   "$WORK/test"
+  "$WORK/test" subclass
+  "$WORK/test" missing
 done

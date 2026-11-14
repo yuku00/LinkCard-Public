@@ -31,6 +31,24 @@ class DiagnosticsIntegrationTests(unittest.TestCase):
                          len(re.findall(r'WUDiag\w+', header.split('} WUDiagnosticEvent;', 1)[0])))
         self.assertIn('if((fingerprint || lastAccountFingerprint) && ![fingerprint isEqual:lastAccountFingerprint])', account)
 
+    def test_failed_service_metadata_wiring_and_bounds(self):
+        host = (ROOT / 'Sources/WUHostService.m').read_text()
+        messages = (ROOT / 'Sources/Messages.m').read_text()
+        diag = (ROOT / 'Sources/WUDiagnostics.m').read_text()
+        build = (ROOT / 'tools/build.sh').read_text()
+        release = (ROOT / 'tools/release.py').read_text()
+        metadata = host.split('void WURecordAccountServiceMismatch', 1)[1]
+        self.assertIn('if((failure || accountException) && mgr) WURecordAccountServiceMismatch(mgr,providerPath)', messages)
+        for text in ('object_getClass(service)', 'class_getSuperclass(cursor)', 'method_getTypeEncoding(method)', 'WUProviderActive', 'WUProviderCurrent', 'WUProviderLegacy', 'WUDiagnosticRateAllow(&rate', 'className.length>96', 'type.length>96'):
+            self.assertIn(text, metadata)
+        for forbidden in ('description', 'objc_msgSend', 'writeToFile', 'NSUserDefaults', 'NSURL', 'm_nsUsrName'):
+            self.assertNotIn(forbidden, metadata)
+        self.assertIn('WUAccountServiceDiagnosticSnapshot()', diag)
+        self.assertIn('摘要可能包含账号服务的运行时类名', diag)
+        self.assertIn('sh tools/test_host_service.sh', build)
+        for name in ('tests/host_service_native.m', 'tools/test_host_service.sh', 'Sources/WUHostService.m'):
+            self.assertIn(name, release)
+
     def test_result_sharing_does_not_promise_query_is_absent(self):
         source = (ROOT / 'Sources/WUDiagnostics.m').read_text()
         self.assertNotIn('仅分享你选择的这一条，不包含搜索词', source)

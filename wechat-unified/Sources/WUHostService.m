@@ -1,6 +1,7 @@
 #import "WUHostService.h"
 #import <objc/runtime.h>
 #import <objc/message.h>
+#include <string.h>
 #import "WUDiagnostics.h"
 
 extern BOOL WUMatches(Method method, const char *result, NSArray<NSString *> *arguments);
@@ -16,7 +17,9 @@ static id FromProvider(id provider, Class service) {
     if(!Has(provider, @"getService:", "@", @[@"#"]) && !Has(provider, @"getService:", "@", @[@"@"])) return nil;
     return ((id (*)(id, SEL, Class))objc_msgSend)(provider, NSSelectorFromString(@"getService:"), service);
 }
-id WUHostService(NSString *name) {
+id WUHostService(NSString *name) { return WUHostServiceWithPath(name, NULL); }
+id WUHostServiceWithPath(NSString *name, WUProviderPath *path) {
+    if(path) *path=WUProviderUnknown;
     BOOL account=[name isEqualToString:@"CContactMgr"];
 #define REPORT(e) do { if(account) WURecordAccountDiagnosticEvent(e); } while(0)
     @try {
@@ -27,9 +30,11 @@ id WUHostService(NSString *name) {
         id provider=nil;
         if(context && !Has(context,@"activeUserContext","@",@[])) REPORT(WUDiagActiveSignature);
         else if(context && !(provider=Object(context,@"activeUserContext"))) REPORT(WUDiagActiveMissing);
+        if(provider && path) *path=WUProviderActive;
         if(!provider && context) {
             if(!Has(context,@"currentContext","@",@[])) REPORT(WUDiagCurrentSignature);
             else if(!(provider=Object(context,@"currentContext"))) REPORT(WUDiagCurrentMissing);
+            if(provider && path) *path=WUProviderCurrent;
         }
         if(provider) {
             if(!Has(provider,@"getService:","@",@[@"#"]) && !Has(provider,@"getService:","@",@[@"@"])) { REPORT(WUDiagContextServiceSignature); return nil; }
@@ -42,10 +47,48 @@ id WUHostService(NSString *name) {
         if(!Has(legacy,@"defaultCenter","@",@[])) { REPORT(WUDiagLegacySignature); return nil; }
         provider=Object(legacy,@"defaultCenter");
         if(!provider) { REPORT(WUDiagLegacyMissing); return nil; }
+        if(path) *path=WUProviderLegacy;
         if(!Has(provider,@"getService:","@",@[@"#"]) && !Has(provider,@"getService:","@",@[@"@"])) { REPORT(WUDiagLegacyServiceSignature); return nil; }
         id result=FromProvider(provider,service);
         if(!result) REPORT(WUDiagLegacyServiceMissing);
         return result;
     } @catch(NSException *exception) { REPORT(WUDiagHostServiceException); return nil; }
 #undef REPORT
+}
+
+@interface WUHostDiagnosticLock : NSObject @end
+@implementation WUHostDiagnosticLock @end
+static NSString *WUAccountServiceSnapshot;
+
+void WURecordAccountServiceMismatch(id service, WUProviderPath path) {
+    if(!service) return;
+    @try {
+        @synchronized(WUHostDiagnosticLock.class) {
+            static WUDiagnosticRate rate;
+            if(!WUDiagnosticRateAllow(&rate, NSProcessInfo.processInfo.systemUptime)) return;
+            Class cls=object_getClass(service), base=objc_getClass("CContactMgr");
+            BOOL isContactManager=NO;
+            for(Class cursor=cls; cursor; cursor=class_getSuperclass(cursor)) {
+                if(cursor==base && base) { isContactManager=YES; break; }
+            }
+            const char *raw=cls?class_getName(cls):NULL;
+            NSString *className=(raw && strnlen(raw,97)<=96)?[NSString stringWithUTF8String:raw]:nil;
+            NSCharacterSet *badName=[[NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.$"] invertedSet];
+            if(!className.length || className.length>96 || [className rangeOfCharacterFromSet:badName].location!=NSNotFound) className=@"不可用或超限";
+            Method method=cls?class_getInstanceMethod(cls,sel_registerName("getSelfContact")):NULL;
+            const char *encoding=method?method_getTypeEncoding(method):NULL;
+            NSString *type=(encoding && strnlen(encoding,97)<=96)?[NSString stringWithUTF8String:encoding]:nil;
+            // Named or complex encodings can contain arbitrary strings; do not export them.
+            NSCharacterSet *badType=[[NSCharacterSet characterSetWithCharactersInString:@"vBcCsSiIlLqQfdD@#:^*?0123456789+-rnoORV"] invertedSet];
+            if(!type.length || type.length>96 || [type rangeOfCharacterFromSet:badType].location!=NSNotFound) type=method?@"不可用、复杂或超限":@"无";
+            NSString *provider=@"未知";
+            if(path==WUProviderActive) provider=@"activeUserContext";
+            else if(path==WUProviderCurrent) provider=@"currentContext";
+            else if(path==WUProviderLegacy) provider=@"defaultCenter";
+            WUAccountServiceSnapshot=[NSString stringWithFormat:@"账号服务接收类：%@；CContactMgr或子类：%@；getSelfContact：%@；类型编码：%@；provider：%@",className,isContactManager?@"是":@"否",method?@"存在":@"不存在",type,provider];
+        }
+    } @catch(NSException *exception) { }
+}
+NSString *WUAccountServiceDiagnosticSnapshot(void) {
+    @synchronized(WUHostDiagnosticLock.class) { return WUAccountServiceSnapshot; }
 }

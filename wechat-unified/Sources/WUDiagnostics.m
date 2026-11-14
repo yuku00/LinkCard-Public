@@ -1,4 +1,5 @@
 #import "WUDiagnostics.h"
+#import "WUHostService.h"
 #import "WU.h"
 #import <objc/runtime.h>
 #import <stdlib.h>
@@ -25,6 +26,8 @@ static NSArray<NSString *> *WUEventSnapshot(void) {
     @synchronized (WUDiagnosticsLock.class) {
         for(size_t i=0;i<WUEvents.count;i++) [out addObject:names[WUEvents.values[(WUEvents.start+i)%WU_DIAGNOSTIC_CAPACITY]]];
     }
+    NSString *service=WUAccountServiceDiagnosticSnapshot();
+    if(service) [out addObject:service];
     return [out copy];
 }
 
@@ -150,9 +153,14 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
 }
 - (void)shareSummary:(UIBarButtonItem *)sender {
     NSString *body=[NSString stringWithFormat:@"微信整合本地诊断摘要\n%@\n\nHook 最近安装记录（非实时完整性校验）：\n%@\n\n当前页面可见的链接与账号链诊断事件（按记录顺序）：\n%@\n\n不额外附带搜索词或运行时搜索结果；Hook 名称本身可能包含搜索词；缺失或签名不匹配不等于故障原因。",[self environment],self.hooks.count?[self.hooks componentsJoinedByString:@"\n"]:@"无记录（可能被启动保护阻止）", self.events.count?[self.events componentsJoinedByString:@"\n"]:@"无事件"];
-    UIActivityViewController *sheet=[[UIActivityViewController alloc] initWithActivityItems:@[body] applicationActivities:nil];
-    sheet.popoverPresentationController.barButtonItem=sender;
-    [self presentViewController:sheet animated:YES completion:nil];
+    UIAlertController *warning=[UIAlertController alertControllerWithTitle:@"手动分享诊断摘要？" message:@"摘要可能包含账号服务的运行时类名和方法类型编码；类名可能暴露其他插件或内部实现。请检查后自行选择分享方式，不会自动上传。" preferredStyle:UIAlertControllerStyleAlert];
+    [warning addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [warning addAction:[UIAlertAction actionWithTitle:@"选择分享方式" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        UIActivityViewController *sheet=[[UIActivityViewController alloc] initWithActivityItems:@[body] applicationActivities:nil];
+        sheet.popoverPresentationController.barButtonItem=sender;
+        [self presentViewController:sheet animated:YES completion:nil];
+    }]];
+    [self presentViewController:warning animated:YES completion:nil];
 }
 - (void)updateSearchResultsForSearchController:(UISearchController *)controller {
     NSString *q=[controller.searchBar.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];

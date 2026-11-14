@@ -41,6 +41,8 @@ static id active, current, legacy;
 @implementation CContactMgr
 - (id)getSelfContact { return self.contact; }
 @end
+@interface ChildManager : CContactMgr @end
+@implementation ChildManager @end
 @interface Contact : NSObject
 @property(nonatomic,copy) NSString *m_nsUsrName;
 @end
@@ -86,7 +88,21 @@ static Provider *Make(NSString *name) {
     CContactMgr *manager=[CContactMgr new]; manager.contact=contact;
     Provider *provider=[Provider new]; provider.manager=manager; return provider;
 }
-int main(void) { @autoreleasepool {
+int main(int argc, const char **argv) { @autoreleasepool {
+    if(argc>1) {
+        id object=strcmp(argv[1],"subclass")==0?[ChildManager new]:[NSObject new];
+        WURecordAccountServiceMismatch(object,WUProviderCurrent);
+        NSString *snapshot=WUAccountServiceDiagnosticSnapshot();
+        assert([snapshot containsString:@"provider：currentContext"]);
+        if(strcmp(argv[1],"subclass")==0) {
+            assert([snapshot containsString:@"ChildManager"] && [snapshot containsString:@"CContactMgr或子类：是"]);
+            assert([snapshot containsString:@"getSelfContact：存在"] && [snapshot containsString:@"类型编码：@"]);
+        } else {
+            assert([snapshot containsString:@"NSObject"] && [snapshot containsString:@"getSelfContact：不存在"]);
+            assert([snapshot containsString:@"类型编码：无"]);
+        }
+        return 0;
+    }
     legacy=Make(@"legacy"); current=Make(@"current"); active=Make(@"active");
     ((Provider *)current).homeManager=[MainSessionMgr new];
     ((Provider *)current).sessionManager=[MMNewSessionMgr new];
@@ -104,21 +120,34 @@ int main(void) { @autoreleasepool {
     assert(WUHostService(@"MainSessionMgr")==nil); // no cross-account fallback
 #endif
 #if BAD_CONTEXT
+    WUProviderPath path=WUProviderUnknown;
+    assert(WUHostServiceWithPath(@"CContactMgr",&path)==((Provider *)current).manager && path==WUProviderCurrent);
     assert([Account() isEqual:@"current"]); // malformed class method must never be invoked
 #else
+    WUProviderPath path=WUProviderUnknown;
+    assert(WUHostServiceWithPath(@"CContactMgr",&path)==((Provider *)active).manager && path==WUProviderActive);
+    assert(WUAccountServiceDiagnosticSnapshot()==nil);
     assert([Account() isEqual:@"active"]); NSUInteger g=generation;
     assert([Account() isEqual:@"active"] && generation==g);
     active=Make(@"other"); assert([Account() isEqual:@"other"] && generation==g+1); g=generation;
     active=[BadProvider new]; assert(Account()==nil && generation==g+1); g=generation;
     active=Make(@"other"); assert([Account() isEqual:@"other"] && generation==g+1);
     ((Provider *)active).manager=[BadManager new]; assert(Account()==nil);
+    NSString *snapshot=WUAccountServiceDiagnosticSnapshot();
+    assert([snapshot containsString:@"BadManager"] && [snapshot containsString:@"CContactMgr或子类：否"]);
+    assert([snapshot containsString:@"getSelfContact：存在"] && [snapshot containsString:@"类型编码：i"]);
+    assert([snapshot containsString:@"provider：activeUserContext"] && ![snapshot containsString:@"other"]);
+    ((Provider *)active).manager=[NSObject new]; assert(Account()==nil);
+    assert([snapshot isEqual:WUAccountServiceDiagnosticSnapshot()]); // rate limited
     ((Provider *)active).manager=nil; assert(Account()==nil);
     active=Make(@"other");
     ((CContactMgr *)((Provider *)active).manager).contact=[BadContact new]; assert(Account()==nil);
     active=Make(nil); assert(Account()==nil);
     active=nil; assert([Account() isEqual:@"current"]);
 #endif
-    active=nil; current=nil; assert([Account() isEqual:@"legacy"]);
+    active=nil; current=nil;
+    assert(WUHostServiceWithPath(@"CContactMgr",&path)==((Provider *)legacy).manager && path==WUProviderLegacy);
+    assert([Account() isEqual:@"legacy"]);
     legacy=nil; assert(Account()==nil);
     assert(WUHostService(@"AbsentServiceClass")==nil);
     puts("host-service native mock: OK");

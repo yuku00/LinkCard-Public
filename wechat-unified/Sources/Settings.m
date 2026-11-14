@@ -48,9 +48,8 @@
     self.tableView.estimatedRowHeight=64;
     self.tableView.cellLayoutMarginsFollowReadableWidth=YES;
     self.tableView.separatorInset=UIEdgeInsetsMake(0,16,0,16);
-    // Keep scrolling cells out of the navigation bar, including its search row.
     self.edgesForExtendedLayout=UIRectEdgeNone;
-    self.navigationController.navigationBar.prefersLargeTitles=YES;
+    self.navigationItem.largeTitleDisplayMode=UINavigationItemLargeTitleDisplayModeNever;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refresh) name:WUChanged object:nil];
 }
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
@@ -177,6 +176,15 @@ void WUShowSettings(UIViewController *owner) {
     if(owner.presentedViewController) return;
     WUSettings *s=[[WUSettings alloc] initWithStyle:UITableViewStyleInsetGrouped];
     UINavigationController *nav=[[UINavigationController alloc] initWithRootViewController:s];
+    nav.modalPresentationStyle=UIModalPresentationFullScreen;
+    nav.navigationBar.prefersLargeTitles=NO;
+    nav.navigationBar.translucent=NO;
+    UINavigationBarAppearance *appearance=[UINavigationBarAppearance new];
+    [appearance configureWithOpaqueBackground];
+    appearance.backgroundColor=UIColor.systemBackgroundColor;
+    nav.navigationBar.standardAppearance=appearance;
+    nav.navigationBar.scrollEdgeAppearance=appearance;
+    nav.navigationBar.compactAppearance=appearance;
     [owner presentViewController:nav animated:YES completion:nil];
 }
 @interface WUEntry : NSObject
