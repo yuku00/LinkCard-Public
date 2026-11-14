@@ -46,7 +46,7 @@ def upload():
     allowed += ['tests/hook_ownership.m','tools/test_hook_ownership.py','tests/test_home_count_abi.py','tests/test_theme_svg_abi.py']
     allowed += ['Sources/VoicePath.h','Sources/WUSilkEncode.h','Sources/WUSilkEncode.c','tests/silk_encode.c','Sources/ChatGrid.inc']
     allowed += ['tests/test_incremental_safety.py','tests/test_emoticon_library_contract.py','tests/test_chat_layout.py','tests/test_official_gif.py']
-    allowed += ['tests/test_reply_surface.py','tests/test_quick_reply_surface.py','tests/test_host_popup_surface.py','tests/test_chat_surface.py','evidence/host-popups/PROVENANCE.md','tools/targeted_surface_ci.py']
+    allowed += ['tests/test_reply_surface.py','tests/test_quick_reply_surface.py','tests/test_host_popup_surface.py','tests/fixtures/host-popup-summary.json','tests/test_chat_surface.py','evidence/host-popups/PROVENANCE.md','tools/targeted_surface_ci.py']
     allowed += ['Sources/WUHostService.h','Sources/WUHostService.m','Sources/WUVerifiedServiceProxy.h','tests/host_service_native.m','tests/test_account_generation_regression.py','tools/test_host_service.sh']
     allowed += ['tests/test_child_surface_refresh.py','tests/test_home_service_resolution.py','tests/test_keyboard_playback_contract.py','tests/test_neo_search_tiles.py','tests/test_plus_switch_safety.py','tests/test_red_reminder_wiring.py','tests/test_text_bubble_surface.py']
     # Exact manifest closure only: no SDK repository/history, binaries or private media.

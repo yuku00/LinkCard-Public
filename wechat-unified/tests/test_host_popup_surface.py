@@ -1,5 +1,6 @@
 """Source/evidence contracts only: no UIKit or actual WeChat execution."""
 from pathlib import Path
+import json
 import unittest
 R=Path(__file__).resolve().parents[1]
 class HostPopupSurface(unittest.TestCase):
@@ -28,11 +29,22 @@ class HostPopupSurface(unittest.TestCase):
             self.assertNotIn(forbidden,part)
         for cls in ('MMTipsViewController','WeToast','UIAlertController'):
             self.assertNotIn('WUHook(@"'+cls+'"',s)
-        toast=(R/'evidence/host-popups/MMToastView.h').read_text()
-        owner=(R/'evidence/host-popups/WeToast.h').read_text()
-        self.assertIn('UIView *backgroundView;',toast)
-        self.assertIn('MMToastView *toastView;',owner)
-        self.assertIn('wcpay_show',(R/'evidence/host-popups/MMTipsViewController.h').read_text())
+        # Synthetic public-header summary is a test input, not host/runtime evidence.
+        fixture=json.loads((R/'tests/fixtures/host-popup-summary.json').read_text())
+        self.assertIn('synthetic', fixture['kind'])
+        self.assertEqual(fixture['facts'], {
+            'MMToastView.backgroundView': 'UIView',
+            'WeToast.toastView': 'MMToastView',
+            'MMTipsViewController': ['wcpay_show'],
+        })
+    def test_fixture_is_packaged_without_raw_headers(self):
+        fixture='tests/fixtures/host-popup-summary.json'
+        self.assertIn('tests/test_host_popup_surface.py', (R/'tools/build.sh').read_text())
+        for script in ('release.py', 'targeted_surface_ci.py'):
+            text=(R/'tools'/script).read_text()
+            self.assertIn("'"+fixture+"'", text)
+            for header in ('MMToastView.h', 'WeToast.h', 'MMTipsViewController.h'):
+                self.assertNotIn("'evidence/host-popups/"+header+"'", text)
     def test_lifecycle_and_no_quick_reply_replacement(self):
         s=(R/'Sources/Surfaces.m').read_text()
         self.assertIn('RestoreHostPopup(v); Restore(v); ((void(*)(id,SEL))toastLayout)(v,s)',s)

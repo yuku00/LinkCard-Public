@@ -1,0 +1,9 @@
+{
+  "kind": "synthetic test fixture; summary of public declarations, not a host header or runtime evidence",
+  "source": "Huangbai233/WeChatHeaders@014c32f794165acf9006cf0f6bbac0bae34dd8b2, 8.0.54",
+  "facts": {
+    "MMToastView.backgroundView": "UIView",
+    "WeToast.toastView": "MMToastView",
+    "MMTipsViewController": ["wcpay_show"]
+  }
+}
