@@ -2,6 +2,7 @@
 #import "HomeLogic.h"
 static BOOL ready, applying;
 static IMP setters[3], countSetter;
+static BOOL countSigned;
 static NSArray<NSString *> *getNames, *setNames;
 static NSHashTable *managers, *homePages;
 static char managerKey, pageKey;
@@ -35,6 +36,9 @@ static NSDictionary *Row(id session) { @try { return DecodeRow(session); } @catc
 @property(nonatomic,strong) NSMutableArray *source;
 @property(nonatomic,strong) NSArray *published;
 @property(nonatomic) NSUInteger topCount;
+@property(nonatomic) unsigned long long unsignedTopCount;
+@property(nonatomic) long long signedTopCount;
+@property(nonatomic) BOOL countUsable;
 @property(nonatomic) BOOL countKnown, filtered, invalid, queued;
 - (BOOL)current;
 - (void)apply;
@@ -107,6 +111,11 @@ NSArray<NSDictionary *> *WUStatsHostSessions(void) {
         return [result copy];
     } @catch(__unused NSException *e) { return nil; }
 }
+static void SetCount(id manager, BOOL projected, unsigned long long count, long long signedOriginal) {
+    SEL sel=NSSelectorFromString(@"setTotalTopSessionCount:");
+    if(countSigned) ((void(*)(id,SEL,long long))countSetter)(manager,sel,projected?(long long)count:signedOriginal);
+    else ((void(*)(id,SEL,unsigned long long))countSetter)(manager,sel,(unsigned long long)count);
+}
 @implementation WUHomeSnapshot
 - (void)schedule {
     if(self.queued) return; self.queued=YES;
@@ -116,7 +125,7 @@ NSArray<NSDictionary *> *WUStatsHostSessions(void) {
 - (BOOL)current { NSString *a=WUCurrentAccount(); return a.length && [a isEqual:self.account] && self.manager==CurrentManager(); }
 - (void)apply {
     if(applying || !NSThread.isMainThread || ![self current] || self.invalid || !self.countKnown || [self.source containsObject:NSNull.null]) return;
-    NSDictionary *state=State(self.account); BOOL active=ready && [WUValue(@"enabled") boolValue] && [state[@"enabled"] boolValue];
+    NSDictionary *state=State(self.account); BOOL active=ready && self.countUsable && [WUValue(@"enabled") boolValue] && [state[@"enabled"] boolValue];
     NSMutableArray *output=[NSMutableArray array], *decoded=[NSMutableArray array]; NSDictionary *plan=nil;
     if(active) for(NSArray *array in self.source) {
         NSMutableArray *rows=[NSMutableArray array]; for(id native in array) { NSDictionary *r=Row(native); if(!r) { active=NO; break; } [rows addObject:r]; }
@@ -132,13 +141,13 @@ NSArray<NSDictionary *> *WUStatsHostSessions(void) {
     applying=YES;
     @try {
         for(NSUInteger i=0;i<3;i++) ((void(*)(id,SEL,id))setters[i])(self.manager,NSSelectorFromString(setNames[i]),[output[i] mutableCopy]);
-        ((void(*)(id,SEL,NSUInteger))countSetter)(self.manager,NSSelectorFromString(@"setTotalTopSessionCount:"),active?[plan[@"topCount"] unsignedIntegerValue]:self.topCount);
+        SetCount(self.manager,active,active?[plan[@"topCount"] unsignedLongLongValue]:self.unsignedTopCount,self.signedTopCount);
         NSMutableArray *actual=[NSMutableArray array]; for(NSString *name in getNames) [actual addObject:Obj(self.manager,name)?:NSNull.null]; self.published=actual; self.filtered=active;
     } @catch(NSException *e) {
         self.invalid=YES;
         // Roll back all three slots, not just the setter that threw; never leave a mixed index space.
         for(NSUInteger i=0;i<3;i++) @try { ((void(*)(id,SEL,id))setters[i])(self.manager,NSSelectorFromString(setNames[i]),[self.source[i] mutableCopy]); } @catch(NSException *ignored) {}
-        @try { ((void(*)(id,SEL,NSUInteger))countSetter)(self.manager,NSSelectorFromString(@"setTotalTopSessionCount:"),self.topCount); } @catch(NSException *ignored) {}
+        @try { SetCount(self.manager,NO,self.unsignedTopCount,self.signedTopCount); } @catch(NSException *ignored) {}
         self.filtered=NO; self.published=nil;
     } @finally { applying=NO; }
 }
@@ -159,12 +168,23 @@ static void Capture(id m,SEL sel,id array,NSUInteger index) {
 static void Top(id m,SEL s,id a) { Capture(m,s,a,0); }
 static void AllTop(id m,SEL s,id a) { Capture(m,s,a,1); }
 static void Normal(id m,SEL s,id a) { Capture(m,s,a,2); }
-static void Count(id m,SEL s,NSUInteger n) {
-    if(applying || !NSThread.isMainThread) { ((void(*)(id,SEL,NSUInteger))countSetter)(m,s,n); return; }
+static void CaptureCount(id m, unsigned long long u, long long q) {
     WUHomeSnapshot *snap=Snapshot(m);
     if(![snap current]) { snap.account=WUCurrentAccount(); snap.source=[NSMutableArray arrayWithArray:@[NSNull.null,NSNull.null,NSNull.null]]; snap.filtered=NO; snap.invalid=NO; }
-    snap.topCount=n; snap.countKnown=YES; snap.published=nil;
-    ((void(*)(id,SEL,NSUInteger))countSetter)(m,s,n); [snap apply]; [snap schedule];
+    snap.unsignedTopCount=u; snap.signedTopCount=q; snap.countUsable=countSigned?(q>=0 && (unsigned long long)q<=NSUIntegerMax):(u<=NSUIntegerMax);
+    snap.topCount=snap.countUsable?(NSUInteger)(countSigned?(unsigned long long)q:u):0;
+    snap.countKnown=YES; snap.published=nil;
+    if(countSigned) ((void(*)(id,SEL,long long))countSetter)(m,NSSelectorFromString(@"setTotalTopSessionCount:"),q);
+    else ((void(*)(id,SEL,unsigned long long))countSetter)(m,NSSelectorFromString(@"setTotalTopSessionCount:"),u);
+    [snap apply]; [snap schedule];
+}
+static void CountSigned(id m,SEL s,long long n) {
+    if(applying || !NSThread.isMainThread) { ((void(*)(id,SEL,long long))countSetter)(m,s,n); return; }
+    CaptureCount(m,0,n);
+}
+static void CountUnsigned(id m,SEL s,unsigned long long n) {
+    if(applying || !NSThread.isMainThread) { ((void(*)(id,SEL,unsigned long long))countSetter)(m,s,n); return; }
+    CaptureCount(m,n,0);
 }
 static UITableView *Table(UIView *v,NSUInteger depth) { if(!depth) return nil; if([v isKindOfClass:UITableView.class]) return (id)v; if(v.subviews.count>100) return nil; for(UIView *c in v.subviews) { UITableView *t=Table(c,depth-1); if(t) return t; } return nil; }
 static NSArray *Tabs(NSDictionary *s) { return [@[@{@"id":@"all",@"name":@"全部"},@{@"id":@"private",@"name":@"私信"},@{@"id":@"chatroom",@"name":@"群聊"},@{@"id":@"other",@"name":@"其他"}] arrayByAddingObjectsFromArray:s[@"groups"]]; }
@@ -300,6 +320,8 @@ void WUInstallHomeGroups(void) {
     getNames=@[@"topSessions",@"allTopSessions",@"normalSessions"]; setNames=@[@"setTopSessions:",@"setAllTopSessions:",@"setNormalSessions:"];
     Class cls=NSClassFromString(@"MainSessionMgr"); BOOL valid=cls!=Nil && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"onNeedReload")),"v",@[]);
     for(NSUInteger i=0;i<3;i++) valid=valid && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(getNames[i])),"@",@[]) && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(setNames[i])),"v",@[@"@"]);
-    valid=valid && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"setTotalTopSessionCount:")),"v",@[@(@encode(NSUInteger))]);
-    if(valid) { BOOL a=WUHook(@"MainSessionMgr",setNames[0],NO,"v",@[@"@"],(IMP)Top,&setters[0]); BOOL b=WUHook(@"MainSessionMgr",setNames[1],NO,"v",@[@"@"],(IMP)AllTop,&setters[1]); BOOL c=WUHook(@"MainSessionMgr",setNames[2],NO,"v",@[@"@"],(IMP)Normal,&setters[2]); BOOL d=WUHook(@"MainSessionMgr",@"setTotalTopSessionCount:",NO,"v",@[@(@encode(NSUInteger))],(IMP)Count,&countSetter); ready=a&&b&&c&&d; }
+    Method countMethod=class_getInstanceMethod(cls,NSSelectorFromString(@"setTotalTopSessionCount:"));
+    BOOL q=WUMatches(countMethod,"v",@[@"q"]), Q=WUMatches(countMethod,"v",@[@"Q"]);
+    valid=valid && (q || Q);
+    if(valid) { countSigned=q; BOOL a=WUHook(@"MainSessionMgr",setNames[0],NO,"v",@[@"@"],(IMP)Top,&setters[0]); BOOL b=WUHook(@"MainSessionMgr",setNames[1],NO,"v",@[@"@"],(IMP)AllTop,&setters[1]); BOOL c=WUHook(@"MainSessionMgr",setNames[2],NO,"v",@[@"@"],(IMP)Normal,&setters[2]); BOOL d=WUHook(@"MainSessionMgr",@"setTotalTopSessionCount:",NO,"v",@[q?@"q":@"Q"],q?(IMP)CountSigned:(IMP)CountUnsigned,&countSetter); ready=a&&b&&c&&d; }
 }

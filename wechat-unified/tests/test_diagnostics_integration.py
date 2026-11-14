@@ -22,14 +22,14 @@ class DiagnosticsIntegrationTests(unittest.TestCase):
         diag = (ROOT / 'Sources/WUDiagnostics.m').read_text()
         enums = re.findall(r'WUDiagAccount\w+', header.split('} WUDiagnosticEvent;', 1)[0])
         self.assertEqual(len(enums), 11)
-        for event in enums:
+        for event in ('WUDiagAccountManagerClass', 'WUDiagAccountManagerMissing', 'WUDiagAccountSelfSignature', 'WUDiagAccountSelfMissing', 'WUDiagAccountNameSignature', 'WUDiagAccountNameInvalid', 'WUDiagAccountException'):
             self.assertIn(event, account)
         self.assertIn('if(failure) WURecordAccountDiagnosticEvent(failure)', account)
         self.assertIn('WUDiagnosticRateAllow(&rate,NSProcessInfo.processInfo.systemUptime)', diag)
         names = re.search(r'names=@\[(.*?)\];', diag, re.S).group(1)
         self.assertEqual(len(re.findall(r'@"(?:[^"\\\\]|\\\\.)*"', names)),
                          len(re.findall(r'WUDiag\w+', header.split('} WUDiagnosticEvent;', 1)[0])))
-        self.assertIn('if((a || lastAccount) && ![a isEqual:lastAccount])', account)
+        self.assertIn('if((fingerprint || lastAccountFingerprint) && ![fingerprint isEqual:lastAccountFingerprint])', account)
 
     def test_result_sharing_does_not_promise_query_is_absent(self):
         source = (ROOT / 'Sources/WUDiagnostics.m').read_text()

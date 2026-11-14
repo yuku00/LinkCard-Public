@@ -157,7 +157,7 @@ UIImage *WUThemeRepeatIcon(NSString *userIcon,BOOL themed,UITraitCollection *tra
     }
 }
 
-static IMP namedIMP,warnIMP,bundleIMP,uiNamedIMP,uiBundleIMP,svgIMP,imageWindowIMP,buttonWindowIMP;
+static IMP namedIMP,warnIMP,bundleIMP,uiNamedIMP,uiBundleIMP,svgIntIMP,svgDoubleIMP,imageWindowIMP,buttonWindowIMP;
 static UIImage *RestoreStaleImage(UIImage *image) {
     if(!image) return nil;
     @synchronized(images) { NSNumber *epoch=[imageEpochs objectForKey:image]; if(!epoch||epoch.unsignedIntegerValue==resourceEpoch) return image; id old=[originals objectForKey:image]; return old?(old==NSNull.null?nil:old):image; }
@@ -168,10 +168,17 @@ static void ButtonWindow(UIButton *v,SEL s) {
     for(NSNumber *n in @[@(UIControlStateNormal),@(UIControlStateHighlighted),@(UIControlStateSelected),@(UIControlStateDisabled)]) { UIControlState state=n.unsignedIntegerValue; UIImage *image=[v imageForState:state],*restored=RestoreStaleImage(image); if(restored!=image) [v setImage:restored forState:state]; image=[v backgroundImageForState:state]; restored=RestoreStaleImage(image); if(restored!=image) [v setBackgroundImage:restored forState:state]; }
 }
 static _Thread_local NSUInteger resourceDepth;
-static UIImage *SVGNamed(id o,SEL s,NSString *n,CGSize size,UIColor *color,CGFloat alpha,CGFloat angle,BOOL ignore) {
+static UIImage *SVGNamedInt(id o,SEL s,NSString *n,CGSize size,UIColor *color,CGFloat alpha,int angle,BOOL ignore) {
     BOOL outer=resourceDepth++==0;
-    @try { UIImage *original=((id(*)(id,SEL,id,CGSize,id,CGFloat,CGFloat,BOOL))svgIMP)(o,s,n,size,color,alpha,angle,ignore);
+    @try { UIImage *original=((id(*)(id,SEL,id,CGSize,id,CGFloat,int,BOOL))svgIntIMP)(o,s,n,size,color,alpha,angle,ignore);
         // shortcut: rotation/alpha coordinate contract is not proved; those requests retain the host result.
+        if(!outer||alpha!=1||angle!=0) return original;
+        return Replacement(n,original,UITraitCollection.currentTraitCollection,size,color)?:original;
+    } @finally { resourceDepth--; }
+}
+static UIImage *SVGNamedDouble(id o,SEL s,NSString *n,CGSize size,UIColor *color,CGFloat alpha,CGFloat angle,BOOL ignore) {
+    BOOL outer=resourceDepth++==0;
+    @try { UIImage *original=((id(*)(id,SEL,id,CGSize,id,CGFloat,CGFloat,BOOL))svgDoubleIMP)(o,s,n,size,color,alpha,angle,ignore);
         if(!outer||alpha!=1||angle!=0) return original;
         return Replacement(n,original,UITraitCollection.currentTraitCollection,size,color)?:original;
     } @finally { resourceDepth--; }
@@ -192,7 +199,8 @@ void WUInstallThemes(void) {
     WUHook(@"UIImage",@"imageNamed:inBundle:compatibleWithTraitCollection:",YES,"@",@[@"@",@"@",@"@"],(IMP)UIBundle,&uiBundleIMP);
     WUHook(@"MMThemeManager",@"imageNamed:",NO,"@",@[@"@"],(IMP)Named,&namedIMP);
     WUHook(@"MMThemeManager",@"imageNamed:warnIfNotFound:",NO,"@",@[@"@",[NSString stringWithUTF8String:@encode(BOOL)]],(IMP)Warn,&warnIMP);
-    WUHook(@"MMThemeManager",@"svgImageNamed:size:color:alpha:angle:ignoreNotFound:",NO,"@",@[@"@",[NSString stringWithUTF8String:@encode(CGSize)],@"@",[NSString stringWithUTF8String:@encode(CGFloat)],[NSString stringWithUTF8String:@encode(CGFloat)],[NSString stringWithUTF8String:@encode(BOOL)]],(IMP)SVGNamed,&svgIMP);
+    if(!WUHook(@"MMThemeManager",@"svgImageNamed:size:color:alpha:angle:ignoreNotFound:",NO,"@",@[@"@",[NSString stringWithUTF8String:@encode(CGSize)],@"@",[NSString stringWithUTF8String:@encode(CGFloat)],@"i",[NSString stringWithUTF8String:@encode(BOOL)]],(IMP)SVGNamedInt,&svgIntIMP))
+        WUHook(@"MMThemeManager",@"svgImageNamed:size:color:alpha:angle:ignoreNotFound:",NO,"@",@[@"@",[NSString stringWithUTF8String:@encode(CGSize)],@"@",[NSString stringWithUTF8String:@encode(CGFloat)],[NSString stringWithUTF8String:@encode(CGFloat)],[NSString stringWithUTF8String:@encode(BOOL)]],(IMP)SVGNamedDouble,&svgDoubleIMP);
     WUHook(@"MMThemeManager",@"imageNamed:inBundle:",NO,"@",@[@"@",@"@"],(IMP)Bundle,&bundleIMP);
 }
 

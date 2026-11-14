@@ -5,12 +5,16 @@ mkdir -p build
 python3 tools/generate_candidates.py
 python3 tests/test_candidate_manifest.py
 python3 tests/test_source.py
+python3 tests/test_home_count_abi.py
+python3 tests/test_theme_svg_abi.py
+python3 tests/test_account_generation_regression.py
 python3 tests/test_github_transport.py
 python3 tests/miniads/contract.py
 python3 tests/test_settings_search.py
 python3 tests/test_diagnostics_contract.py
 python3 tests/test_link_diagnostics.py
 python3 tests/test_diagnostics_integration.py
+sh tools/test_host_service.sh
 xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/diagnostic_ring.c -o build/diagnostic-ring-tests
 build/diagnostic-ring-tests
 rm build/diagnostic-ring-tests

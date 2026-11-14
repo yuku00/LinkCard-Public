@@ -1,8 +1,16 @@
 """Structural guardrails, not a substitute for iOS runtime tests."""
 from pathlib import Path
-import re, unittest
+import re, unittest, tempfile
 ROOT=Path(__file__).resolve().parents[1]
 SRC='\n'.join(p.read_text() for p in sorted((ROOT/'Sources').glob('*')))
+def excluded_client_hits(sources):
+    # The generated manifest is verified separately against the generator; it is
+    # JSON data in C string literals, not executable host calls. Scan every other
+    # source/include, including unrelated generated files.
+    text='\n'.join(p.read_text() for p in sorted(sources.glob('*'))
+                   if p.is_file() and p.name != 'WUCandidateManifest.inc')
+    forbidden=['DelMsg:', 'sendVoice', 'UIKeyboardDockView', 'MSHookMessageEx', 'dlopen(', 'system(', 'OpenRedEnvelopesRequest', 'HBHelperUtil']
+    return [word for word in forbidden if word in (text.replace('ResendVoiceMsg:MsgWrap:', '') if word == 'sendVoice' else text)]
 class Guardrails(unittest.TestCase):
     def test_dictation_production_wiring_and_scope(self):
         module=(ROOT/'Sources/WUDictation.m').read_text()
@@ -54,21 +62,38 @@ class Guardrails(unittest.TestCase):
         self.assertIn('WUAdsAvailable(key)',(ROOT/'Sources/Settings.m').read_text())
         self.assertIn('tests/ads_logic.m',(ROOT/'tools/build.sh').read_text())
     def test_single_hook_owner(self):
-        hooks=re.findall(r'WUHook\(@"([^"]+)",@"([^"]+)",(YES|NO)', SRC)
+        theme=(ROOT/'Sources/Themes.m').read_text()
+        # One owner: the CGFloat ABI is tried only if the int ABI was not installed.
+        pair='''    if(!WUHook(@"MMThemeManager",@"svgImageNamed:size:color:alpha:angle:ignoreNotFound:",NO,"@",@[@"@",[NSString stringWithUTF8String:@encode(CGSize)],@"@",[NSString stringWithUTF8String:@encode(CGFloat)],@"i",[NSString stringWithUTF8String:@encode(BOOL)]],(IMP)SVGNamedInt,&svgIntIMP))
+        WUHook(@"MMThemeManager",@"svgImageNamed:size:color:alpha:angle:ignoreNotFound:",NO,"@",@[@"@",[NSString stringWithUTF8String:@encode(CGSize)],@"@",[NSString stringWithUTF8String:@encode(CGFloat)],[NSString stringWithUTF8String:@encode(CGFloat)],[NSString stringWithUTF8String:@encode(BOOL)]],(IMP)SVGNamedDouble,&svgDoubleIMP);'''
+        self.assertEqual(theme.count(pair),1)
+        checked=SRC.replace(pair,pair.splitlines()[0],1)
+        hooks=re.findall(r'WUHook\(@"([^"]+)",@"([^"]+)",(YES|NO)', checked)
         self.assertGreaterEqual(len(hooks),10)
         self.assertEqual(len(hooks),len(set(hooks)))
     def test_no_unexpected_delete_or_excluded_client(self):
         no_network='\n'.join(p.read_text() for p in (ROOT/'Sources').glob('*')
                              if p.name not in {'WUArticleImageFetch.h','WUArticleImageFetch.m'})
         self.assertNotIn('NSURLSession',no_network)
-        for forbidden in ['DelMsg:', 'sendVoice', 'UIKeyboardDockView', 'MSHookMessageEx', 'dlopen(', 'system(', 'OpenRedEnvelopesRequest', 'HBHelperUtil']:
-            # Only the evidence-backed host selector is allowed; old helper/AI senders remain forbidden.
-            checked=SRC.replace('ResendVoiceMsg:MsgWrap:', '') if forbidden=='sendVoice' else SRC
-            self.assertNotIn(forbidden,checked)
+        import importlib.util
+        spec=importlib.util.spec_from_file_location('wu_candidates', ROOT/'tools/generate_candidates.py')
+        generator=importlib.util.module_from_spec(spec); spec.loader.exec_module(generator)
+        self.assertEqual((ROOT/'Sources/WUCandidateManifest.inc').read_text(), generator.render(generator.generate(ROOT)))
+        self.assertEqual(excluded_client_hits(ROOT/'Sources'), [])
         messages=(ROOT/'Sources/Messages.m').read_text()
         self.assertEqual(len(re.findall(r'objc_msgSend\)\([^;]+NSSelectorFromString\(@"AddEmoticonMsg:MsgWrap:"\)', SRC)),1)
         self.assertNotIn('NSSelectorFromString(@"AddEmoticonMsg:MsgWrap:")',messages)
         self.assertNotIn('SendPatMgr',messages)  # BOOL protocol is deliberately not deferred/replayed.
+    def test_excluded_client_scanner_regression(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sources=Path(tmp)
+            (sources/'WUCandidateManifest.inc').write_text('ResendVoiceMs')
+            (sources/'Voice.m').write_text('ResendVoiceMsg:MsgWrap:')
+            self.assertEqual(excluded_client_hits(sources), [])
+            for name, token in [('Bad.m','sendVoice'), ('Bad.h','OpenRedEnvelopesRequest'), ('Bad.inc','system(')]:
+                p=sources/name; p.write_text(token)
+                self.assertIn(token, excluded_client_hits(sources))
+                p.unlink()
     def test_runtime_signature_checks_and_local_override(self):
         self.assertIn('method_getNumberOfArguments',SRC)
         self.assertIn('method_copyArgumentType',SRC)

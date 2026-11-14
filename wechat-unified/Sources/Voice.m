@@ -2,6 +2,7 @@
 #import "VoiceLogic.h"
 #import "VoiceAudio.h"
 #import "VoiceDisplay.h"
+#import "WUHostService.h"
 #import <QuartzCore/QuartzCore.h>
 #include <math.h>
 extern void WUNativePlaybackCall(id model, BOOL playing, void (^original)(void));
@@ -19,12 +20,7 @@ static id CallObject(id obj, NSString *name) {
     if(!Signature(obj,name,"@",@[])) return nil;
     @try { return ((id(*)(id,SEL))objc_msgSend)(obj,NSSelectorFromString(name)); } @catch(NSException *e) { return nil; }
 }
-static id Facade(void) {
-    id context=CallObject(NSClassFromString(@"MMContext"),@"currentContext");
-    Class cls=NSClassFromString(@"MsgPlayingFacade");
-    if(!cls || (!Signature(context,@"getService:","@",@[@"#"]) && !Signature(context,@"getService:","@",@[@"@"]))) return nil;
-    @try { return ((id(*)(id,SEL,Class))objc_msgSend)(context,NSSelectorFromString(@"getService:"),cls); } @catch(NSException *e) { return nil; }
-}
+static id Facade(void) { return WUHostService(@"MsgPlayingFacade"); }
 static BOOL ClockReady(id f) { return Signature(f,@"currentPlayTime","I",@[]) || Signature(f,@"currentPlayTime","i",@[]); }
 static double ClockMS(id f) {
     @try {

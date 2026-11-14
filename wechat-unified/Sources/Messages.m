@@ -15,6 +15,9 @@
 #import "RepeatOptions.h"
 #import "EmoticonLibrary.h"
 #import "EmoticonSubmission.h"
+#import "WUHostService.h"
+#import <CommonCrypto/CommonHMAC.h>
+#import <CommonCrypto/CommonDigest.h>
 static void OpenEmoticonLibrary(UIViewController *owner);
 static void OpenSelectedLinks(UIViewController *owner);
 static void DownloadRepeat(UIView *cell);
@@ -42,42 +45,41 @@ static uint64_t Num(id o, NSString *s) {
     char *r=method_copyReturnType(m); BOOL ok=strlen(r)==1 && strchr("IQiq",r[0]); free(r); if(!ok) return 0;
     NSMethodSignature *sig=[o methodSignatureForSelector:sel]; NSInvocation *v=[NSInvocation invocationWithMethodSignature:sig]; v.target=o; v.selector=sel; [v invoke]; uint64_t n=0; [v getReturnValue:&n]; return n;
 }
-static id Service(NSString *name) {
-    id center=Obj(NSClassFromString(@"MMServiceCenter"),@"defaultCenter"); Class c=NSClassFromString(name);
-    if(!c || !Has(center,@"getService:","@",@[@"#"])) {
-        if(!c || !Has(center,@"getService:","@",@[@"@"])) return nil;
-    }
-    return ((id(*)(id,SEL,Class))objc_msgSend)(center,NSSelectorFromString(@"getService:"),c);
-}
+static id Service(NSString *name) { return WUHostService(name); }
 static _Atomic(NSUInteger) generation=1;
-static NSString *lastAccount;
+// Keep only a process-local keyed fingerprint, never the account itself.
+static NSData *lastAccountFingerprint;
+static NSData *AccountFingerprint(NSString *account) {
+    if(!account) return nil;
+    static NSData *salt; static dispatch_once_t once;
+    dispatch_once(&once, ^{ uint8_t bytes[32]; arc4random_buf(bytes,sizeof(bytes)); salt=[NSData dataWithBytes:bytes length:sizeof(bytes)]; });
+    NSData *encoded=[account dataUsingEncoding:NSUTF8StringEncoding];
+    if(!encoded) return nil;
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    CCHmac(kCCHmacAlgSHA256,salt.bytes,salt.length,encoded.bytes,encoded.length,digest);
+    return [NSData dataWithBytes:digest length:sizeof(digest)];
+}
 static NSString *Account(void) {
     NSString *a=nil; WUDiagnosticEvent failure=0;
     @try {
-        Class centerClass=NSClassFromString(@"MMServiceCenter");
-        if(!centerClass) failure=WUDiagAccountCenterClass;
-        else if(!Has(centerClass,@"defaultCenter","@",@[])) failure=WUDiagAccountCenterSignature;
+        Class managerClass=NSClassFromString(@"CContactMgr");
+        id mgr=managerClass?Service(@"CContactMgr"):nil;
+        if(!managerClass) failure=WUDiagAccountManagerClass;
+        else if(!mgr) failure=WUDiagAccountManagerMissing;
+        else if(!Has(mgr,@"getSelfContact","@",@[])) failure=WUDiagAccountSelfSignature;
         else {
-            id center=Obj(centerClass,@"defaultCenter");
-            Class managerClass=NSClassFromString(@"CContactMgr");
-            if(!center) failure=WUDiagAccountCenterMissing;
-            else if(!managerClass) failure=WUDiagAccountManagerClass;
-            else if(!Has(center,@"getService:","@",@[@"#"]) && !Has(center,@"getService:","@",@[@"@"])) failure=WUDiagAccountServiceSignature;
-            else {
-                id mgr=((id(*)(id,SEL,Class))objc_msgSend)(center,NSSelectorFromString(@"getService:"),managerClass);
-                if(!mgr) failure=WUDiagAccountManagerMissing;
-                else if(!Has(mgr,@"getSelfContact","@",@[])) failure=WUDiagAccountSelfSignature;
-                else {
-                    id contact=Obj(mgr,@"getSelfContact");
-                    if(!contact) failure=WUDiagAccountSelfMissing;
-                    else if(!Has(contact,@"m_nsUsrName","@",@[])) failure=WUDiagAccountNameSignature;
-                    else { a=Str(contact,@"m_nsUsrName"); if(!a.length) failure=WUDiagAccountNameInvalid; }
-                }
-            }
+            id contact=Obj(mgr,@"getSelfContact");
+            if(!contact) failure=WUDiagAccountSelfMissing;
+            else if(!Has(contact,@"m_nsUsrName","@",@[])) failure=WUDiagAccountNameSignature;
+            else { a=Str(contact,@"m_nsUsrName"); if(!a.length) { a=nil; failure=WUDiagAccountNameInvalid; } }
         }
-    } @catch(NSException *e) { WURecordAccountDiagnosticEvent(WUDiagAccountException); @throw; }
+    } @catch(NSException *e) { WURecordAccountDiagnosticEvent(WUDiagAccountException); a=nil; }
     if(failure) WURecordAccountDiagnosticEvent(failure);
-    @synchronized(NSProcessInfo.processInfo) { if((a || lastAccount) && ![a isEqual:lastAccount]) { generation++; lastAccount=[a copy]; } }
+    NSData *fingerprint=AccountFingerprint(a);
+    if(a && !fingerprint) a=nil;
+    @synchronized(NSProcessInfo.processInfo) {
+        if((fingerprint || lastAccountFingerprint) && ![fingerprint isEqual:lastAccountFingerprint]) { generation++; lastAccountFingerprint=fingerprint; }
+    }
     return a;
 }
 NSString *WUCurrentAccount(void) { @try { return Account(); } @catch(NSException *e) { return nil; } }

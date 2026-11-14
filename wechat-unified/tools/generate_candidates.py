@@ -35,6 +35,8 @@ def generate(root):
     # Account() checks the returned contact but does not establish its concrete class.
     for cls, sel, kind in [('MMServiceCenter','defaultCenter','+'), ('MMServiceCenter','getService:','-'), ('CContactMgr','getSelfContact','-'), ('','m_nsUsrName','?')]:
         add(cls, sel, kind, 'Sources/Messages.m Account（手工证据；返回对象的具体类未假定）')
+    for cls, sel, kind in [('MMContext','activeUserContext','+'), ('MMContext','currentContext','+'), ('MMContext','getService:','-')]:
+        add(cls, sel, kind, 'AFN.dylib 0x23cd0–0x23da4 / 0x2f3cc–0x2f51c；目标版签名需运行时检查')
     # Explicitly documented gap candidates, not a claim that these ABIs or behaviors work.
     gaps = [
         ('EmoticonPickViewController', ['m_image','setM_image:','Confirm','Cancel','AddEmoticonFinishedWithWrap:IsSuccessed:']),
