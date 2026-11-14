@@ -31,7 +31,7 @@ def upload():
     allowed += ['tools/ui-harness/generate.py','tools/ui-harness/run.py','tools/ui-harness/self_check.py','tools/ui-harness/Host.m','tools/ui-harness/SurfaceHarness.xcscheme.in']
     allowed += ['Sources/WUNative.h','Sources/WUNativeLogic.h','Sources/WUNative.m','Sources/WUNativeAction.h','Sources/WUNativeAction.m','Sources/WUNativeInteractions.m','Sources/WUNativeGameLogic.m','Sources/WUNativeGames.m','Sources/WUNativeSettings.m','Sources/WUNativeBoot.h','Sources/WUNativeBoot.c','Sources/WUNativeRecovery.m']
     allowed += ['tests/native/native_policy.c','tests/native/native_boot.c','tests/native/native_hooks.m','tests/native/native_games.m','tests/native/native_interactions_games.m','tests/native/native_guard.m','tests/native/TestHost.h','tests/native/TestHost.m','tests/native/UIKitMock.m','tests/native/neo_mock.h','tests/native/stubs/UIKit/UIKit.h','tests/native/clock.h','tests/native/extract_core.py','tests/native/run.sh']
-    allowed += ['tools/github_native.py','tools/download.py','tools/verify_build.py','tests/test_github_transport.py']
+    allowed += ['tools/github_native.py','tools/download.py','tools/verify_build.py','tests/test_github_transport.py','tools/test_link_flow_ios.py','tests/link_flow_ios.m']
     allowed += ['Sources/WUCandidateManifest.inc','tools/generate_candidates.py','tests/test_candidate_manifest.py','tests/test_feature_diagnostics.py','Sources/WUMenuSignature.h','tests/menu_signature.c']
     allowed += ['Sources/WUNeoSettings.h','tests/test_secondary_settings_style.py','tests/test_settings_layout.py','tests/settings_layout_device_check.md']
     allowed += ['Sources/WUCapture.h','Sources/WUCapture.m','tests/test_capture_contract.py','CAPTURE-GUIDE.md']
