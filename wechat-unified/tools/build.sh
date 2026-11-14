@@ -4,6 +4,10 @@ cd "$(dirname "$0")/.."
 mkdir -p build
 python3 tools/generate_candidates.py
 python3 tests/test_candidate_manifest.py
+python3 tests/test_feature_diagnostics.py
+for test in tests/test_incremental_safety.py tests/test_chat_layout.py tests/test_chat_surface.py tests/test_child_surface_refresh.py tests/test_home_service_resolution.py tests/test_host_popup_surface.py tests/test_keyboard_playback_contract.py tests/test_neo_search_tiles.py tests/test_plus_switch_safety.py tests/test_quick_reply_surface.py tests/test_red_reminder_wiring.py tests/test_reply_surface.py tests/test_text_bubble_surface.py; do
+  python3 "$test"
+done
 python3 tests/test_source.py
 python3 tests/test_home_count_abi.py
 python3 tests/test_theme_svg_abi.py

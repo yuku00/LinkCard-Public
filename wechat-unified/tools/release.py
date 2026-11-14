@@ -32,7 +32,7 @@ def upload():
     allowed += ['Sources/WUNative.h','Sources/WUNativeLogic.h','Sources/WUNative.m','Sources/WUNativeAction.h','Sources/WUNativeAction.m','Sources/WUNativeInteractions.m','Sources/WUNativeGameLogic.m','Sources/WUNativeGames.m','Sources/WUNativeSettings.m','Sources/WUNativeBoot.h','Sources/WUNativeBoot.c','Sources/WUNativeRecovery.m']
     allowed += ['tests/native/native_policy.c','tests/native/native_boot.c','tests/native/native_hooks.m','tests/native/native_games.m','tests/native/native_interactions_games.m','tests/native/native_guard.m','tests/native/TestHost.h','tests/native/TestHost.m','tests/native/UIKitMock.m','tests/native/neo_mock.h','tests/native/stubs/UIKit/UIKit.h','tests/native/clock.h','tests/native/extract_core.py','tests/native/run.sh']
     allowed += ['tools/github_native.py','tools/download.py','tools/verify_build.py','tests/test_github_transport.py']
-    allowed += ['Sources/WUCandidateManifest.inc','tools/generate_candidates.py','tests/test_candidate_manifest.py']
+    allowed += ['Sources/WUCandidateManifest.inc','tools/generate_candidates.py','tests/test_candidate_manifest.py','tests/test_feature_diagnostics.py']
     allowed += ['Sources/WUNeoSettings.h','tests/test_secondary_settings_style.py','tests/test_settings_layout.py','tests/settings_layout_device_check.md']
     allowed += ['Sources/WUDiagnostics.h','Sources/WUDiagnostics.m','Sources/WUDiagnosticRing.h','tests/diagnostic_ring.c','tests/test_diagnostics_contract.py','tests/test_link_diagnostics.py','tests/test_settings_search.py','tests/test_diagnostics_integration.py','tests/test_wrapper_diagnostics.py']
     allowed += ['Sources/LinkLogic.h', 'Sources/LinkLogic.m', 'Sources/MessageEntries.h', 'Sources/MessageEntries.m', 'Sources/MessageEntryBindings.inc', 'Sources/RepeatOptions.h', 'Sources/RepeatSettings.m', 'tests/message_entry_logic.m', 'tests/test_message_entries.py', 'tools/test_message_entries.sh']
@@ -47,7 +47,8 @@ def upload():
     allowed += ['Sources/VoicePath.h','Sources/WUSilkEncode.h','Sources/WUSilkEncode.c','tests/silk_encode.c','Sources/ChatGrid.inc']
     allowed += ['tests/test_incremental_safety.py','tests/test_emoticon_library_contract.py','tests/test_chat_layout.py','tests/test_official_gif.py']
     allowed += ['tests/test_reply_surface.py','tests/test_quick_reply_surface.py','tests/test_host_popup_surface.py','tests/test_chat_surface.py','evidence/host-popups/PROVENANCE.md','tools/targeted_surface_ci.py']
-    allowed += ['Sources/WUHostService.h','Sources/WUHostService.m','tests/host_service_native.m','tests/test_account_generation_regression.py','tools/test_host_service.sh']
+    allowed += ['Sources/WUHostService.h','Sources/WUHostService.m','Sources/WUVerifiedServiceProxy.h','tests/host_service_native.m','tests/test_account_generation_regression.py','tools/test_host_service.sh']
+    allowed += ['tests/test_child_surface_refresh.py','tests/test_home_service_resolution.py','tests/test_keyboard_playback_contract.py','tests/test_neo_search_tiles.py','tests/test_plus_switch_safety.py','tests/test_red_reminder_wiring.py','tests/test_text_bubble_surface.py']
     # Exact manifest closure only: no SDK repository/history, binaries or private media.
     vendor=json.loads((ROOT/'Vendor/manifest.json').read_text())
     for name,digest in vendor['sha256'].items():

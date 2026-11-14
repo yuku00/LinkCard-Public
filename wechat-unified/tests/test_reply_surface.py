@@ -13,7 +13,7 @@ class ReplySurfaceTests(unittest.TestCase):
 
     def test_exact_message_ownership_and_legacy_fallback(self):
         source = (ROOT/'Sources/Surfaces.m').read_text()
-        part = source[source.index('static BOOL IsTextMessageReply'):source.index('static void Plus(')]
+        part = source[source.index('static BOOL IsTextMessageReply'):source.index('static void Toast(')]
         for text in ('TextMessageCellView', 'isSubclassOfClass:UIView.class',
                      'v.superview', 'isKindOfClass:cls',
                      'CheckedObjectGetter(parent,@"msgReplyView")==v',

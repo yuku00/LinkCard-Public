@@ -8,7 +8,7 @@
 #include <string.h>
 #include "emoticon_matches.inc"
 static int checks, sends, factoryCalls, factoryMode;
-static void (^duringFactory)(void), (^duringCopy)(void);
+static void (^duringFactory)(void), (^duringCopy)(void), (^duringProxySignature)(void);
 static BOOL badCopiedSignature;
 static unsigned timeWrites;
 #if defined(WU_EMOTICON_BAD_FACTORY)
@@ -65,11 +65,28 @@ typedef id __autoreleasing *WUFactoryErrorParameter;
     if(self.throws) @throw [NSException exceptionWithName:@"uncertain" reason:nil userInfo:nil];
 }
 @end
+@interface CMessageMgr : MockManager @end
+@implementation CMessageMgr @end
 @interface BadManager : NSObject
 - (BOOL)AddEmoticonMsg:(NSString *)target MsgWrap:(id)message;
 @end
 @implementation BadManager
 - (BOOL)AddEmoticonMsg:(NSString *)target MsgWrap:(id)message { abort(); }
+@end
+@interface EmoticonProxy : NSProxy { id _target; int _mode; }
++ (id)target:(id)target mode:(int)mode;
+@end
+@implementation EmoticonProxy
++ (id)target:(id)target mode:(int)mode { EmoticonProxy *p=[self alloc]; p->_target=target; p->_mode=mode; return p; }
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector {
+    if(selector!=NSSelectorFromString(@"AddEmoticonMsg:MsgWrap:")) return nil;
+    if(duringProxySignature) duringProxySignature();
+    if(_mode==1) return [NSMethodSignature signatureWithObjCTypes:"B@:@@"];
+    if(_mode==2) return [NSMethodSignature signatureWithObjCTypes:"v@:@I"];
+    if(_mode==3) @throw [NSException exceptionWithName:@"signature" reason:nil userInfo:nil];
+    return [_target methodSignatureForSelector:selector];
+}
+- (void)forwardInvocation:(NSInvocation *)invocation { [invocation invokeWithTarget:_target]; }
 @end
 static NSData *Image(NSString *uti, NSUInteger count) {
     unsigned char pixel[]={255,0,0,255,0,255,0,255,0,0,255,255,255,255,255,255};
@@ -97,7 +114,14 @@ static void Submission(NSData *gif) {
     source.signatureMode=0; badCopiedSignature=YES;
     CHECK([WUSubmitEmoticonCopy(source,manager,@"account-a",@"friend",valid) containsString:@"未提交"] && sends==2 && timeWrites==beforeWrites);
     badCopiedSignature=NO;
-    manager.throws=YES; result=WUSubmitEmoticonData(gif,manager,@"account-a",@"friend",valid); CHECK(sends==3 && [result containsString:@"未知"]);
+    MockManager *forwarded=[MockManager new]; id proxy=[EmoticonProxy target:forwarded mode:0];
+    int prior=sends; result=WUSubmitEmoticonData(gif,proxy,@"account-a",@"friend",valid);
+    CHECK([result containsString:@"已请求"] && sends==prior+1 && forwarded.last);
+    for(int mode=1;mode<=3;mode++) { id bad=[EmoticonProxy target:forwarded mode:mode]; CHECK(!WUEmoticonDataAvailable(bad)); WUSubmitEmoticonData(gif,bad,@"account-a",@"friend",valid); CHECK(sends==prior+1); }
+    duringCopy=^{ current=NO; }; WUSubmitEmoticonData(gif,proxy,@"account-a",@"friend",valid); CHECK(sends==prior+1); duringCopy=nil; current=YES;
+    __block int signatureChecks=0; duringProxySignature=^{ if(++signatureChecks==3) current=NO; };
+    WUSubmitEmoticonCopy(source,proxy,@"account-a",@"friend",valid); CHECK(sends==prior+1 && !current); duringProxySignature=nil; current=YES;
+    manager.throws=YES; result=WUSubmitEmoticonData(gif,manager,@"account-a",@"friend",valid); CHECK(sends==prior+2 && [result containsString:@"未知"]);
 }
 #endif
 int main(void) { @autoreleasepool {

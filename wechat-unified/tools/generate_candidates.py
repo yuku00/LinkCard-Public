@@ -15,6 +15,21 @@ LIT = r'@"([A-Za-z_][A-Za-z_0-9:]*)"'
 HOOK = re.compile(r'\bWUHook\s*\(\s*'+LIT+r'\s*,\s*'+LIT+r'\s*,\s*(YES|NO)\s*,')
 CALL = re.compile(r'\b(NSClassFromString|NSSelectorFromString)\s*\(\s*'+LIT+r'\s*\)')
 DIRECT = re.compile(r'\bclass_get(Instance|Class)Method\s*\(\s*NSClassFromString\s*\(\s*'+LIT+r'\s*\)\s*,\s*NSSelectorFromString\s*\(\s*'+LIT+r'\s*\)\s*\)')
+# Source-file provenance, not selector-name guessing; one candidate may serve multiple functions.
+CATEGORY_FILES = {
+    '账号': ('Messages.m Account', 'WUHostService.', 'account', 'MMContext', 'MMServiceCenter'),
+    '聊天搜索与撤回': ('Sources/Messages.m', 'reverse-round2-message.md', 'Sources/WUStats.m'),
+    '多选': ('Sources/MessageEntries.', 'Sources/MessageEntryBindings.', 'Sources/ChatGrid.inc', '功能证据：多选'),
+    '语音': ('Sources/Voice', 'reverse-voice-state.md', 'Sources/OfflineVoice', 'Sources/WUDictation.'),
+    '表情': ('Sources/Emoticon', 'IMAGE-TO-EMOTICON-GAP.md'),
+    '朋友圈': ('Sources/Moments', 'Sources/Timeline.', 'reverse-round2-moments.md', 'FAKE-LIKES-GAP.md'),
+    '链接': ('Sources/LinkLogic.', 'Sources/MessageEntries.', 'Sources/MessageEntryBindings.', 'Sources/WUArticleImage.', '功能证据：链接'),
+    '小程序': ('Sources/WUMiniAds.', 'Sources/WUMiniAdsScript.inc'),
+}
+def categories(sources):
+    return [category for category, patterns in CATEGORY_FILES.items()
+            if any(pattern.lower() in source.lower() for pattern in patterns for source in sources)]
+
 def generate(root):
     entries = {}
     def add(cls, sel, kind, source):
@@ -32,6 +47,10 @@ def generate(root):
             add(m[2], m[3], '-' if m[1] == 'Instance' else '+', loc(m, '直接关联'))
         for m in CALL.finditer(text):
             add(m[2] if m[1] == 'NSClassFromString' else '', m[2] if m[1] == 'NSSelectorFromString' else '', '?', loc(m, m[1]))
+    # Explicit associations already checked in the feature gate; no message data is read.
+    for feature in ('多选', '链接'):
+        add('BaseMsgContentViewController', 'getSelectedMsgs', '-', '功能证据：'+feature+'；Sources/Messages.m 对应功能门禁')
+    add('BaseMsgContentViewController', 'onSearchItem', '-', 'Sources/Messages.m 聊天搜索功能门禁')
     # Account() checks the returned contact but does not establish its concrete class.
     for cls, sel, kind in [('MMServiceCenter','defaultCenter','+'), ('MMServiceCenter','getService:','-'), ('CContactMgr','getSelfContact','-'), ('','m_nsUsrName','?')]:
         add(cls, sel, kind, 'Sources/Messages.m Account（手工证据；返回对象的具体类未假定）')
@@ -66,7 +85,7 @@ def generate(root):
         add(cls, selector, kind, 'reverse-round2-message.md 撤回注册与调用证据；未证明目标版兼容')
     add('WCFacade','filterTimelineItem:','-', 'reverse-round2-moments.md 第150行注册证据；未证明目标版兼容')
     return {'schema': 1, 'generator': 'literal-candidates-v1', 'candidates': [
-        {'class': c, 'selector': s, 'kind': k, 'sources': sorted(v)}
+        {'class': c, 'selector': s, 'kind': k, 'sources': sorted(v), 'categories': categories(v)}
         for (c, s, k), v in sorted(entries.items())]}
 
 def render(manifest):

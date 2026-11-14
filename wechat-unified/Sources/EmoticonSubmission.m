@@ -2,6 +2,7 @@
 #import "MessageConstruction.h"
 #import "EmoticonLogic.h"
 #import "EmoticonLibraryLogic.h"
+#import "WUVerifiedServiceProxy.h"
 #import <objc/runtime.h>
 #import <objc/message.h>
 #include <limits.h>
@@ -44,10 +45,11 @@ static BOOL SetNumber(id o, NSString *s, uint64_t value) {
     }
     return NO;
 }
+static BOOL SendReady(id manager) { return Has(manager,@"AddEmoticonMsg:MsgWrap:","v",@[@"@",@"@"]) || WUVerifiedProxyMethod(manager,WUVerifiedEmoticonSend); }
 BOOL WUEmoticonSourceReady(id source, id manager) {
     @try {
         Class c=NSClassFromString(@"CMessageWrap");
-        if(![source isKindOfClass:c] || Number(source,@"m_uiMessageType")!=47 || !WUMessageCanConstruct(c) || !Has(source,@"copyToMsg:","v",@[@"@"]) || !Has(manager,@"AddEmoticonMsg:MsgWrap:","v",@[@"@",@"@"])) return NO;
+        if(![source isKindOfClass:c] || Number(source,@"m_uiMessageType")!=47 || !WUMessageCanConstruct(c) || !Has(source,@"copyToMsg:","v",@[@"@"]) || !SendReady(manager)) return NO;
         for(NSString *s in @[@"m_nsFromUsr",@"m_nsToUsr",@"m_nsRealChatUsr"]) if(!Has(source,s,"@",@[])) return NO;
         for(NSString *s in @[@"setM_nsFromUsr:",@"setM_nsToUsr:",@"setM_nsRealChatUsr:"]) if(!Has(source,s,"v",@[@"@"])) return NO;
         for(NSString *s in @[@"setM_uiCreateTime:",@"setM_uiMesLocalID:",@"setM_n64MesSvrID:"]) if(!Numeric(source,s,YES)) return NO;
@@ -55,7 +57,7 @@ BOOL WUEmoticonSourceReady(id source, id manager) {
     } @catch(NSException *e) { return NO; }
 }
 BOOL WUEmoticonDataAvailable(id manager) {
-    @try { return WUMessageCanConstruct(NSClassFromString(@"CMessageWrap")) && Has(manager,@"AddEmoticonMsg:MsgWrap:","v",@[@"@",@"@"]) && Has(NSClassFromString(@"CEmoticonMgr"),@"emoticonMsgForImageData:errorMsg:","@",@[@"@",@"^@"]); }
+    @try { return WUMessageCanConstruct(NSClassFromString(@"CMessageWrap")) && SendReady(manager) && Has(NSClassFromString(@"CEmoticonMgr"),@"emoticonMsgForImageData:errorMsg:","@",@[@"@",@"^@"]); }
     @catch(NSException *e) { return NO; }
 }
 NSString *WUSubmitEmoticonCopy(id source, id manager, NSString *account, NSString *target, BOOL (^current)(void)) {
@@ -73,6 +75,7 @@ NSString *WUSubmitEmoticonCopy(id source, id manager, NSString *account, NSStrin
         if(!isfinite(now) || now<=0 || now>UINT32_MAX || !SetNumber(message,@"setM_uiCreateTime:",(uint64_t)now) || !SetNumber(message,@"setM_uiMesLocalID:",0) || !SetNumber(message,@"setM_n64MesSvrID:",0)) return @"消息数值字段ABI或范围不符，未提交";
         id real=Object(message,@"m_nsRealChatUsr");
         if((real && (![real isKindOfClass:NSString.class] || [real length])) || !current() || ![Object(message,@"m_nsFromUsr") isEqual:account] || ![Object(message,@"m_nsToUsr") isEqual:target] || Number(message,@"m_uiMesLocalID")!=0 || Number(message,@"m_n64MesSvrID")!=0) return @"身份清理或会话复核失败，未提交";
+        if(!SendReady(manager) || !current()) return @"上下文或发送签名已失效，未提交";
         attempted=YES;
         ((void(*)(id,SEL,id,id))objc_msgSend)(manager,NSSelectorFromString(@"AddEmoticonMsg:MsgWrap:"),target,message);
         return @"表情发送已请求；送达状态以微信为准，不自动重试";

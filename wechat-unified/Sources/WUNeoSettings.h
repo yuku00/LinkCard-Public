@@ -35,13 +35,13 @@ static inline void WUNeoPrepareTable(UITableViewController *owner) {
     table.estimatedRowHeight=72;
     table.cellLayoutMarginsFollowReadableWidth=YES;
     table.separatorInset=UIEdgeInsetsMake(0,20,0,20);
-    table.sectionHeaderTopPadding=12;
+    table.sectionHeaderTopPadding=16;
 }
 
 static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol) {
     UIBackgroundConfiguration *background=[UIBackgroundConfiguration listGroupedCellConfiguration];
     background.backgroundColor=UIColor.secondarySystemGroupedBackgroundColor;
-    background.cornerRadius=18;
+    background.cornerRadius=20;
     cell.backgroundConfiguration=background;
     cell.directionalLayoutMargins=NSDirectionalEdgeInsetsMake(14,18,14,18);
     cell.tintColor=WUNeoAccentColor();
@@ -54,9 +54,24 @@ static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol
     cell.detailTextLabel.textColor=UIColor.secondaryLabelColor;
     // Existing thumbnails, checkmarks, accessory controls and disabled text survive.
     if(symbol.length && !cell.imageView.image) {
-        cell.imageView.image=[UIImage systemImageNamed:symbol withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightMedium]];
-        cell.imageView.tintColor=WUNeoAccentColor();
-        cell.imageView.isAccessibilityElement=NO;
+        UIImage *glyph=[UIImage systemImageNamed:symbol withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightMedium]];
+        if(glyph) {
+            // Pad the template itself so UIKit reserves space for the colored tile.
+            UIGraphicsImageRenderer *renderer=[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(34,34)];
+            UIImage *tile=[renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+                [glyph drawInRect:CGRectMake(7,7,20,20)];
+            }];
+            cell.imageView.image=[tile imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+            UIColor *color=WUNeoAccentColor();
+            if([symbol containsString:@"paint"] || [symbol containsString:@"photo"]) color=UIColor.systemIndigoColor;
+            else if([symbol containsString:@"wave"] || [symbol containsString:@"music"]) color=UIColor.systemBlueColor;
+            else if([symbol containsString:@"gear"] || [symbol containsString:@"slider"]) color=UIColor.systemOrangeColor;
+            cell.imageView.tintColor=color;
+            cell.imageView.backgroundColor=[color colorWithAlphaComponent:0.12];
+            cell.imageView.layer.cornerRadius=9;
+            cell.imageView.clipsToBounds=YES;
+            cell.imageView.isAccessibilityElement=NO;
+        }
     }
     if([cell.accessoryView isKindOfClass:UISwitch.class]) {
         UISwitch *toggle=(UISwitch *)cell.accessoryView;

@@ -6,3 +6,5 @@ typedef enum { WUProviderUnknown, WUProviderActive, WUProviderCurrent, WUProvide
 id WUHostServiceWithPath(NSString *name, WUProviderPath *path);
 void WURecordAccountServiceMismatch(id service, WUProviderPath path);
 NSString *WUAccountServiceDiagnosticSnapshot(void);
+// Only the verified getSelfContact object-returning ABI may use proxy forwarding.
+BOOL WUAccountServiceHasSelfContact(id service);

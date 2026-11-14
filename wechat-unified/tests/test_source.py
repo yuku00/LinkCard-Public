@@ -288,8 +288,14 @@ class Guardrails(unittest.TestCase):
         logic=(ROOT/'Sources/VoiceSendLogic.m').read_text()
         for word in ['getSelectedMsgs', 'InSession(identity,account,session)', 'WUVoiceSelectedData(wrap)', 'getContactByName:', 'gen!=generation', 'UIApplicationStateActive', 'dispatch_get_global_queue', 'if(confirmed) return', 'operations[identity]', 'pendingAlerts addObject:confirm']:
             self.assertIn(word,ui)
-        for word in ['WUOfflineDecode', 'numerator/pcm.rate<=60000', 'methodSignatureForSelector', 'getArgumentTypeAtIndex', 'self.consumed=YES', 'AddLocalMsg:MsgWrap:', 'ResendVoiceMsg:MsgWrap:', 'WURepositoryInvoke', 'if(![insert hasPrefix:@"已请求"] || !current()) return self.status']:
+        for word in ['WUOfflineDecode', 'numerator/pcm.rate<=60000', 'methodSignatureForSelector', 'getArgumentTypeAtIndex', 'self.consumed=YES', 'AddLocalMsg:MsgWrap:', 'ResendVoiceMsg:MsgWrap:', 'VoiceServiceInvoke', 'if(![insert hasPrefix:@"已请求"] || !current()) return self.status']:
             self.assertIn(word,logic)
+        self.assertIn('if(!proxy) return NO', logic)
+        self.assertIn('class_getInstanceMethod(host,sel)', logic)
+        self.assertIn('invoked=YES; [inv invoke]', logic)
+        self.assertLess(logic.index('self.consumed=YES'), logic.index('NSString *insert=VoiceServiceInvoke'))
+        self.assertEqual(logic.count('NSString *insert=VoiceServiceInvoke'), 1)
+        self.assertEqual(logic.count('NSString *send=VoiceServiceInvoke'), 1)
         for word in ['ForwardMsg:', 'ResendMsg:', 'writeTo', 'removeItem', 'NSURLSession']:
             self.assertNotIn(word,logic+ui)
         self.assertIn('tests/voice_send_logic.m',(ROOT/'tools/build.sh').read_text())

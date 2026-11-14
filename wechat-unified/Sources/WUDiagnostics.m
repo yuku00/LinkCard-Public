@@ -82,6 +82,7 @@ static NSString *WUWrapperReport(NSString *provider) {
 @property(nonatomic,assign) BOOL collecting;
 @property(atomic,assign) NSUInteger collectGeneration;
 @property(nonatomic,copy) NSString *candidateReport;
+@property(nonatomic,copy) NSString *candidateCategory;
 @property(nonatomic,assign) BOOL wrapperCollecting;
 @property(nonatomic,copy) NSString *wrapperReport;
 @end
@@ -135,21 +136,33 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
 - (void)collectCandidates {
     if(self.collecting) return;
     UIAlertController *notice=[UIAlertController alertControllerWithTitle:@"批量采集候选接口" message:@"仅检查项目源码、既有逆向和缺口证据中的已知类与方法，包含暂缓功能的只读诊断，绝不启用这些功能。记录类名、方法名、方法类型编码、来源与现有安装记录；类名可能暴露其他插件。不读取对象实例、账号、消息、网址或凭证，不调用宿主业务，不自动分享。缺失不代表永久不可用。" preferredStyle:UIAlertControllerStyleAlert];
-    [notice addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    [notice addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) { self.candidateCategory=nil; }]];
     [notice addAction:[UIAlertAction actionWithTitle:@"开始只读采集" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { [self beginCandidateCollection]; }]];
     [self presentViewController:notice animated:YES completion:nil];
 }
+- (void)collectByCategory {
+    UIAlertController *menu=[UIAlertController alertControllerWithTitle:@"按功能一键诊断" message:@"仅按证据来源归类；并非功能可用性测试。" preferredStyle:UIAlertControllerStyleActionSheet];
+    for(NSString *category in @[@"账号",@"聊天搜索与撤回",@"多选",@"语音",@"表情",@"朋友圈",@"链接",@"小程序"]) {
+        [menu addAction:[UIAlertAction actionWithTitle:category style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { self.candidateCategory=category; [self collectCandidates]; }]];
+    }
+    [menu addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+    menu.popoverPresentationController.barButtonItem=self.navigationItem.rightBarButtonItems.firstObject;
+    [self presentViewController:menu animated:YES completion:nil];
+}
 - (void)beginCandidateCollection {
     if(self.collecting) return;
-    NSDictionary *manifest=[NSJSONSerialization JSONObjectWithData:[[NSString stringWithUTF8String:WUCandidateJSON] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:NULL];
-    NSArray *items=manifest[@"candidates"];
-    if(![items isKindOfClass:NSArray.class]) { self.candidateResults=@[@"清单解析失败"]; [self.tableView reloadData]; return; }
+    NSString *category=[self.candidateCategory copy]; self.candidateCategory=nil;
     self.collecting=YES; self.candidateReport=nil; self.candidateResults=@[];
     NSUInteger generation=++self.collectGeneration;
     NSArray *hooks=[WUHookStatus() copy];
     NSString *environment=[self environment];
     [self.tableView reloadData];
     dispatch_async(self.queue, ^{
+        NSDictionary *manifest=[NSJSONSerialization JSONObjectWithData:[[NSString stringWithUTF8String:WUCandidateJSON] dataUsingEncoding:NSUTF8StringEncoding] options:0 error:NULL];
+        NSArray *all=manifest[@"candidates"];
+        if(![all isKindOfClass:NSArray.class]) { dispatch_async(dispatch_get_main_queue(), ^{ if(generation==self.collectGeneration) { self.collecting=NO; self.candidateResults=@[@"清单解析失败"]; [self.tableView reloadData]; } }); return; }
+        NSMutableArray *items=[NSMutableArray array];
+        for(NSDictionary *item in all) if(!category || [item[@"categories"] containsObject:category]) [items addObject:item];
         NSMutableArray<NSString *> *lines=[NSMutableArray array];
         __block NSUInteger index=0;
         __weak WUDiagnostics *weakSelf=self;
@@ -168,7 +181,7 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
                         if(!selector.length) status=cls?@"类已加载":@"类当前未发现（可能尚未加载）";
                         else {
                             SEL sel=sel_registerName(selector.UTF8String);
-                            status=[NSString stringWithFormat:@"实例方法：%@；类方法：%@",WUDescribeMethod(cls,sel,NO),WUDescribeMethod(cls,sel,YES)];
+                            status=[NSString stringWithFormat:@"运行时类声明（含继承）实例方法：%@；类方法：%@",WUDescribeMethod(cls,sel,NO),WUDescribeMethod(cls,sel,YES)];
                         }
                     }
                     NSMutableArray *records=[NSMutableArray array];
@@ -177,7 +190,7 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
                         NSString *b=[NSString stringWithFormat:@"+%@ %@ — ",name,selector];
                         if([record hasPrefix:a] || [record hasPrefix:b]) [records addObject:record];
                     }
-                    [lines addObject:[NSString stringWithFormat:@"%@ %@ %@\n%@\n安装记录：%@\n来源：%@",name.length?name:@"未关联类",selector.length?selector:@"（类候选）",kind,status,records.count?[records componentsJoinedByString:@"；"]:@"未知（无记录）",[item[@"sources"] componentsJoinedByString:@"；"]]];
+                    [lines addObject:[NSString stringWithFormat:@"%@ %@ %@\n%@\n真实代理实例签名：未采集（无安全持有的实例；动态转发未知）\n安装记录：%@\n来源：%@",name.length?name:@"未关联类",selector.length?selector:@"（类候选）",kind,status,records.count?[records componentsJoinedByString:@"；"]:@"未知（无记录）",[item[@"sources"] componentsJoinedByString:@"；"]]];
                 }
             }
             if(index<items.count) { dispatch_after(dispatch_time(DISPATCH_TIME_NOW,10*NSEC_PER_MSEC),owner.queue,batch); return; }
@@ -185,8 +198,15 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 WUDiagnostics *strong=weakSelf; if(!strong || generation!=strong.collectGeneration) return;
                 strong.collecting=NO; strong.candidateResults=finished;
-                strong.candidateReport=[NSString stringWithFormat:@"微信整合候选接口报告\n清单 schema %@ / %@\n%@\n共 %lu 项；快照只反映采集时已加载运行时。当前未发现不代表永久不可用，继承方法也会显示；存在不代表签名兼容或功能正常。安装记录仅为最近记录，不验证当前实现。未关联方法未猜测所属类。\n待定：原图专用交付和确认生命周期、GIF正式入库结果、朋友圈可见单元绑定及伪赞完成回调、完整共同群及入群时间、激励广告奖励流程等缺少已确认接口；未按功能名猜测。参考 requirements.md、reverse-repository-send.md、reverse-voice-state.md、REMAINING.md 和两个 GAP 文档。伪集赞等用户暂缓项仅作只读诊断，绝不启用。\n\n%@",manifest[@"schema"],manifest[@"generator"],environment,(unsigned long)finished.count,[finished componentsJoinedByString:@"\n\n"]];
+                strong.candidateReport=[NSString stringWithFormat:@"微信整合候选接口报告\n功能：%@（按来源证据归类，非业务验证；未分类不包含在按类报告中）\n清单 schema %@ / %@\n%@\n共 %lu 项；快照只反映采集时已加载运行时。当前未发现不代表永久不可用，继承方法也会显示；存在不代表签名兼容或功能正常。安装记录仅为最近记录，不验证当前实现。未关联方法未猜测所属类。\n待定：原图专用交付和确认生命周期、GIF正式入库结果、朋友圈可见单元绑定及伪赞完成回调、完整共同群及入群时间、激励广告奖励流程等缺少已确认接口；未按功能名猜测。参考 requirements.md、reverse-repository-send.md、reverse-voice-state.md、REMAINING.md 和两个 GAP 文档。伪集赞等用户暂缓项仅作只读诊断，绝不启用。\n\n%@",category?:@"全部",manifest[@"schema"],manifest[@"generator"],environment,(unsigned long)finished.count,[finished componentsJoinedByString:@"\n\n"]];
                 [strong.tableView reloadData];
+                if(category) {
+                    UIViewController *preview=[UIViewController new]; preview.title=@"候选报告预览";
+                    UITextView *text=[[UITextView alloc] initWithFrame:UIScreen.mainScreen.bounds];
+                    text.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight; text.editable=NO; text.text=strong.candidateReport; preview.view=text;
+                    preview.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"分享" style:UIBarButtonItemStylePlain target:strong action:@selector(shareCandidates:)];
+                    [strong.navigationController pushViewController:preview animated:YES];
+                }
             });
             batch=nil;
         };
@@ -203,9 +223,9 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
     [warning addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [warning addAction:[UIAlertAction actionWithTitle:@"选择分享方式" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         UIActivityViewController *sheet=[[UIActivityViewController alloc] initWithActivityItems:@[report] applicationActivities:nil];
-        sheet.popoverPresentationController.barButtonItem=sender; [self presentViewController:sheet animated:YES completion:nil];
+        sheet.popoverPresentationController.barButtonItem=sender; [self.navigationController.topViewController presentViewController:sheet animated:YES completion:nil];
     }]];
-    [self presentViewController:warning animated:YES completion:nil];
+    [self.navigationController.topViewController presentViewController:warning animated:YES completion:nil];
 }
 - (void)viewWillAppear:(BOOL)animated { [super viewWillAppear:animated]; self.events=WUEventSnapshot(); [self.tableView reloadData]; }
 - (void)viewDidLoad {
@@ -217,6 +237,7 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
     self.search.searchBar.placeholder=@"搜索类名、selector 或安装状态";
     self.navigationItem.searchController=self.search; self.definesPresentationContext=YES;
     self.navigationItem.rightBarButtonItems=@[
+        [[UIBarButtonItem alloc] initWithTitle:@"按功能诊断" style:UIBarButtonItemStylePlain target:self action:@selector(collectByCategory)],
         [[UIBarButtonItem alloc] initWithTitle:@"分享候选报告" style:UIBarButtonItemStylePlain target:self action:@selector(shareCandidates:)],
         [[UIBarButtonItem alloc] initWithTitle:@"批量采集" style:UIBarButtonItemStylePlain target:self action:@selector(collectCandidates)],
         [[UIBarButtonItem alloc] initWithTitle:@"分享摘要" style:UIBarButtonItemStylePlain target:self action:@selector(shareSummary:)]

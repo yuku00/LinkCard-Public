@@ -45,6 +45,12 @@
     UISearchController *search=[[UISearchController alloc] initWithSearchResultsController:nil];
     search.searchResultsUpdater=self; search.obscuresBackgroundDuringPresentation=NO;
     search.searchBar.placeholder=@"搜索插件功能和本地工具";
+    // Style only this plugin-owned search field; navigation continues to size and clip it.
+    search.searchBar.searchBarStyle=UISearchBarStyleMinimal;
+    search.searchBar.tintColor=WUNeoAccentColor();
+    search.searchBar.searchTextField.backgroundColor=UIColor.tertiarySystemFillColor;
+    search.searchBar.searchTextField.layer.cornerRadius=12;
+    search.searchBar.searchTextField.clipsToBounds=YES;
     self.navigationItem.searchController=search; self.navigationItem.hidesSearchBarWhenScrolling=NO;
     self.definesPresentationContext=YES;
     self.tableView.backgroundColor=UIColor.systemGroupedBackgroundColor;

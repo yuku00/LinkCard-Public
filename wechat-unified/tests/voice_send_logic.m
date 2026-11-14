@@ -23,6 +23,24 @@ static NSUInteger checks;
 - (void)AddLocalMsg:(id)target MsgWrap:(id)wrap { self.inserts++; self.last=wrap; self.target=target; if(self.insertRaises) [NSException raise:@"fixture" format:@"after insertion"]; }
 - (void)ResendVoiceMsg:(id)target MsgWrap:(id)wrap { self.sends++; CHECK(self.last==wrap); CHECK([self.target isEqual:target]); if(self.sendRaises) [NSException raise:@"fixture" format:@"after request"]; }
 @end
+// Real NSProxy forwarding, not an NSObject that merely impersonates a proxy.
+@interface CMessageMgr : VoiceHost @end
+@implementation CMessageMgr @end
+@interface AudioSender : VoiceHost @end
+@implementation AudioSender @end
+@interface VoiceProxy : NSProxy
+@property(nonatomic,strong) VoiceHost *target;
+@property(nonatomic) BOOL badSignature;
++ (instancetype)proxy:(VoiceHost *)target bad:(BOOL)bad;
+@end
+@implementation VoiceProxy
++ (instancetype)proxy:(VoiceHost *)target bad:(BOOL)bad { VoiceProxy *p=[VoiceProxy alloc]; p.target=target; p.badSignature=bad; return p; }
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)s {
+    if(self.badSignature && s==@selector(ResendVoiceMsg:MsgWrap:)) return [NSMethodSignature signatureWithObjCTypes:"B@:@@"];
+    return [self.target methodSignatureForSelector:s];
+}
+- (void)forwardInvocation:(NSInvocation *)inv { [inv invokeWithTarget:self.target]; }
+@end
 @interface WrongWidth : VoiceWrap
 @end
 @implementation WrongWidth
@@ -70,5 +88,11 @@ int main(void) { @autoreleasepool {
     host=[VoiceHost new]; op=Operation([NSData data]); CHECK([Submit(op,host,^BOOL{ return YES; }) hasPrefix:@"失败"]); CHECK(host.inserts==0);
     op=[[WUVoiceForwardOperation alloc] initWithData:amr account:@"" target:@"recipient"]; CHECK([Submit(op,host,^BOOL{ return YES; }) hasPrefix:@"失败"]); CHECK(host.inserts==0);
     NSMutableData *mutable=[amr mutableCopy]; op=Operation(mutable); [mutable resetBytesInRange:NSMakeRange(0,mutable.length)]; CHECK([Submit(op,host,^BOOL{ return YES; }) hasPrefix:@"已请求"]); CHECK([host.last.m_dtVoice isEqual:amr]);
+    host=[VoiceHost new]; op=Operation(tencent);
+    VoiceProxy *proxy=[VoiceProxy proxy:host bad:NO];
+    CHECK([[op submitWithManager:proxy audioSender:proxy messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
+    CHECK(host.inserts==1 && host.sends==1); CHECK([[op submitWithManager:proxy audioSender:proxy messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]); CHECK(host.inserts==1 && host.sends==1);
+    host=[VoiceHost new]; op=Operation(tencent); proxy=[VoiceProxy proxy:host bad:YES];
+    CHECK([[op submitWithManager:proxy audioSender:proxy messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"失败"]); CHECK(host.inserts==0 && host.sends==0);
     printf("Voice forwarding production decode/ABI/one-shot mocks: %lu assertions passed\n",(unsigned long)checks);
 } return 0; }

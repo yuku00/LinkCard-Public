@@ -16,6 +16,7 @@
 #import "EmoticonLibrary.h"
 #import "EmoticonSubmission.h"
 #import "WUHostService.h"
+#import "WUVerifiedServiceProxy.h"
 #import <CommonCrypto/CommonHMAC.h>
 #import <CommonCrypto/CommonDigest.h>
 static void OpenEmoticonLibrary(UIViewController *owner);
@@ -67,9 +68,9 @@ static NSString *Account(void) {
         mgr=managerClass?WUHostServiceWithPath(@"CContactMgr",&providerPath):nil;
         if(!managerClass) failure=WUDiagAccountManagerClass;
         else if(!mgr) failure=WUDiagAccountManagerMissing;
-        else if(!Has(mgr,@"getSelfContact","@",@[])) failure=WUDiagAccountSelfSignature;
+        else if(!WUAccountServiceHasSelfContact(mgr)) failure=WUDiagAccountSelfSignature;
         else {
-            id contact=Obj(mgr,@"getSelfContact");
+            id contact=((id(*)(id,SEL))objc_msgSend)(mgr,NSSelectorFromString(@"getSelfContact"));
             if(!contact) failure=WUDiagAccountSelfMissing;
             else if(!Has(contact,@"m_nsUsrName","@",@[])) failure=WUDiagAccountNameSignature;
             else { a=Str(contact,@"m_nsUsrName"); if(!a.length) { a=nil; failure=WUDiagAccountNameInvalid; } }
@@ -544,7 +545,7 @@ BOOL WUMessageAvailable(NSString *key) {
         if([key isEqual:@"callbackConfirm"]) return callbackOriginal!=NULL;
         if([key isEqual:@"enhancedLinks"]) return chatAppearOriginal && WUMatches(class_getInstanceMethod(base,NSSelectorFromString(@"getSelectedMsgs")),"@",@[]);
         if([key isEqual:@"multiRevoke"]) return chatAppearOriginal && WUMatches(class_getInstanceMethod(base,NSSelectorFromString(@"getSelectedMsgs")),"@",@[]) && RevokeSelector(Service(@"CMessageMgr"));
-        if([key isEqual:@"repeatEmoticon"]) return cellLayoutOriginal && WUMessageCanConstruct(msg) && Has(Service(@"CMessageMgr"),@"AddEmoticonMsg:MsgWrap:","v",@[@"@",@"@"]);
+        if([key isEqual:@"repeatEmoticon"]) { id mgr=Service(@"CMessageMgr"); return cellLayoutOriginal && WUMessageCanConstruct(msg) && (Has(mgr,@"AddEmoticonMsg:MsgWrap:","v",@[@"@",@"@"]) || WUVerifiedProxyMethod(mgr,WUVerifiedEmoticonSend)); }
         if([key hasPrefix:@"merge"]) return cellLayoutOriginal && WUMatches(class_getInstanceMethod(NSClassFromString(@"CommonMessageCellView"),NSSelectorFromString(@"viewModel")),"@",@[]);
         if([key isEqual:@"redReminder"]) return arrivalOriginal!=NULL;
     } @catch(NSException *e) {}
@@ -638,10 +639,10 @@ static void OpenStats(UIViewController *owner) {
 // Repository adapters reuse this module's exact account/session/generation checks.
 static id RepositorySource(NSDictionary *identity, NSString *account) {
     id mgr=Service(@"CMessageMgr");
-    if(!Has(mgr,@"GetMsg:LocalID:","@",@[@"@",@"I"]) && !Has(mgr,@"GetMsg:LocalID:","@",@[@"@",@"i"])) return nil;
-    unsigned int local=[identity[@"local"] unsignedIntValue]; if(!local) return nil;
+    if(!Has(mgr,@"GetMsg:LocalID:","@",@[@"@",@"I"]) && !Has(mgr,@"GetMsg:LocalID:","@",@[@"@",@"i"]) && !WUVerifiedProxyMethod(mgr,WUVerifiedMessageLocalID)) return nil;
+    unsigned int local=[identity[@"local"] unsignedIntValue]; if(!local || ![account isEqual:Account()]) return nil;
     id wrap=((id(*)(id,SEL,id,unsigned int))objc_msgSend)(mgr,NSSelectorFromString(@"GetMsg:LocalID:"),@"filehelper",local);
-    return wrap && [Info(wrap) isEqual:identity] && InSession(identity,account,@"filehelper")?wrap:nil;
+    return wrap && [account isEqual:Account()] && [Info(wrap) isEqual:identity] && InSession(identity,account,@"filehelper")?wrap:nil;
 }
 static void OpenRepository(UIViewController *owner) {
     NSString *account=Account(), *target=Session(owner); NSUInteger gen=generation;

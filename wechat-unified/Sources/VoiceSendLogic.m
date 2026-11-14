@@ -20,6 +20,37 @@ BOOL WUVoiceExactSignature(id o, NSString *name, const char *result, NSArray<NSS
         return ok;
     } @catch(NSException *e) { return NO; }
 }
+// Only the two host methods observed with v@:@@ may be forwarded by an NSProxy.
+// The actual host class and the proxy must both expose the exact same ABI.
+static BOOL VoiceServiceReady(id receiver, NSString *className, NSString *selector) {
+    if(WUVoiceExactSignature(receiver,selector,"v",@[@"@",@"@"])) return YES;
+    @try {
+        BOOL proxy=NO;
+        for(Class c=object_getClass(receiver); c; c=class_getSuperclass(c)) if(c==objc_getClass("NSProxy")) { proxy=YES; break; }
+        if(!proxy) return NO;
+        Class host=NSClassFromString(className); SEL sel=NSSelectorFromString(selector);
+        Method method=host?class_getInstanceMethod(host,sel):NULL;
+        if(!method || method_getNumberOfArguments(method)!=4) return NO;
+        char *r=method_copyReturnType(method), *a=method_copyArgumentType(method,2), *b=method_copyArgumentType(method,3);
+        BOOL ok=r && a && b && !strcmp(r,"v") && !strcmp(a,"@") && !strcmp(b,"@");
+        free(r); free(a); free(b);
+        NSMethodSignature *s=[receiver methodSignatureForSelector:sel];
+        return ok && s && s.numberOfArguments==4 && !strcmp(s.methodReturnType,"v") && !strcmp([s getArgumentTypeAtIndex:0],"@") && !strcmp([s getArgumentTypeAtIndex:1],":") && !strcmp([s getArgumentTypeAtIndex:2],"@") && !strcmp([s getArgumentTypeAtIndex:3],"@");
+    } @catch(NSException *e) { return NO; }
+}
+static NSString *VoiceServiceInvoke(id receiver, NSString *className, NSString *selector, id first, id second) {
+    if(!first || !second || !VoiceServiceReady(receiver,className,selector)) return @"失败：接口不可用，未提交";
+    BOOL invoked=NO;
+    @try {
+        SEL sel=NSSelectorFromString(selector);
+        NSInvocation *inv=[NSInvocation invocationWithMethodSignature:[receiver methodSignatureForSelector:sel]];
+        inv.target=receiver; inv.selector=sel;
+        __unsafe_unretained id a=first,b=second;
+        [inv setArgument:&a atIndex:2]; [inv setArgument:&b atIndex:3];
+        invoked=YES; [inv invoke];
+        return @"已请求（非送达）";
+    } @catch(NSException *e) { return invoked?@"未知：调用异常，请核对宿主，勿盲重发":@"失败：未提交"; }
+}
 NSData *WUVoiceSelectedData(id wrap) {
     @try {
         if(!WUVoiceExactSignature(wrap,@"m_uiMessageType","I",@[]) || !WUVoiceExactSignature(wrap,@"m_uiVoiceFormat","I",@[]) || !WUVoiceExactSignature(wrap,@"m_dtVoice","@",@[])) return nil;
@@ -52,7 +83,7 @@ uint32_t WUVoiceMeasuredMS(NSData *data) {
         if(self.consumed) return self.status; self.consumed=YES;
         BOOL attempted=NO;
         @try {
-            if(!NSThread.isMainThread || !current || !current() || !self.account.length || !self.target.length || !self.data.length || !self.milliseconds || self.milliseconds>60000 || !WUVoiceExactSignature(manager,@"AddLocalMsg:MsgWrap:","v",@[@"@",@"@"]) || !WUVoiceExactSignature(audio,@"ResendVoiceMsg:MsgWrap:","v",@[@"@",@"@"])) { self.status=@"失败：上下文或语音服务不可用，未提交"; return self.status; }
+            if(!NSThread.isMainThread || !current || !current() || !self.account.length || !self.target.length || !self.data.length || !self.milliseconds || self.milliseconds>60000 || !VoiceServiceReady(manager,@"CMessageMgr",@"AddLocalMsg:MsgWrap:") || !VoiceServiceReady(audio,@"AudioSender",@"ResendVoiceMsg:MsgWrap:")) { self.status=@"失败：上下文或语音服务不可用，未提交"; return self.status; }
             id message=WUCreateMessage(cls,34,self.account);
             if(!message) { self.status=@"失败：消息构造ABI不可用或初始化失败，未提交"; return self.status; }
             NSArray *objects=@[@"setM_nsContent:",@"setM_nsFromUsr:",@"setM_nsToUsr:",@"setM_dtVoice:"];
@@ -66,9 +97,9 @@ uint32_t WUVoiceMeasuredMS(NSData *data) {
             if(!current()) { self.status=@"失败：确认已失效，未提交"; return self.status; }
             // Consume before the first host side effect. Repository invocation has no fallback.
             attempted=YES; self.status=@"未知：已尝试本地插入，未获发送回执";
-            NSString *insert=WURepositoryInvoke(manager,@"AddLocalMsg:MsgWrap:",self.target,message);
+            NSString *insert=VoiceServiceInvoke(manager,@"CMessageMgr",@"AddLocalMsg:MsgWrap:",self.target,message);
             if(![insert hasPrefix:@"已请求"] || !current()) return self.status;
-            NSString *send=WURepositoryInvoke(audio,@"ResendVoiceMsg:MsgWrap:",self.target,message);
+            NSString *send=VoiceServiceInvoke(audio,@"AudioSender",@"ResendVoiceMsg:MsgWrap:",self.target,message);
             self.status=[send hasPrefix:@"已请求"]?@"已请求（非送达）；不自动重试":@"未知：可能已插入或请求，请核对宿主，未重试";
         } @catch(NSException *e) { self.status=attempted?@"未知：提交边界异常，请核对宿主，未重试":@"失败：构造异常，未提交"; }
         return self.status;

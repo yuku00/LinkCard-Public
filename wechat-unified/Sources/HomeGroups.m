@@ -2,6 +2,7 @@
 #import "WU.h"
 #import "HomeLogic.h"
 #import "WUHostService.h"
+#import "WUVerifiedServiceProxy.h"
 static BOOL ready, applying;
 static IMP setters[3], countSetter;
 static BOOL countSigned;
@@ -61,8 +62,8 @@ void WUStatsReadSessionCandidates(BOOL (^current)(void), void (^done)(NSArray *,
         Class cls=NSClassFromString(@"MMNewSessionMgr");
         id manager=WUHostService(@"MMNewSessionMgr");
         SEL lookup=NSSelectorFromString(@"GetSessionByUserName:");
-        if(![manager isKindOfClass:cls] || !WUMatches(class_getInstanceMethod(object_getClass(manager),lookup),"@",@[@"@"])) { done(nil,YES); return; }
-        id raw=Obj(manager,@"GetUserNamesOnSessionList");
+        if(![manager isKindOfClass:cls] || !(WUMatches(class_getInstanceMethod(object_getClass(manager),lookup),"@",@[@"@"]) || WUVerifiedProxyMethod(manager,WUVerifiedSessionLookup))) { done(nil,YES); return; }
+        id raw=WUVerifiedProxyMethod(manager,WUVerifiedSessionNames)?((id(*)(id,SEL))objc_msgSend)(manager,NSSelectorFromString(@"GetUserNamesOnSessionList")):Obj(manager,@"GetUserNamesOnSessionList");
         if(![raw isKindOfClass:NSArray.class]) { done(nil,YES); return; }
         BOOL limited=[raw count]>20000;
         NSArray *names=[[raw subarrayWithRange:NSMakeRange(0,MIN([raw count],20000))] copy];

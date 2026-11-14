@@ -6,6 +6,30 @@
 
 extern BOOL WUMatches(Method method, const char *result, NSArray<NSString *> *arguments);
 
+static const char *UnqualifiedType(const char *type) {
+    if(!type) return "";
+    while(*type && strchr("rnNoORV",*type)) type++;
+    return type;
+}
+BOOL WUAccountServiceHasSelfContact(id service) {
+    if(!service) return NO;
+    SEL selector=sel_registerName("getSelfContact");
+    Method method=class_getInstanceMethod(object_getClass(service),selector);
+    if(method) return WUMatches(method,"@",@[]);
+    // Do not broaden forwarding to ordinary objects or to unverified selectors.
+    BOOL proxy=NO;
+    for(Class c=object_getClass(service); c; c=class_getSuperclass(c)) {
+        if(c==objc_getClass("NSProxy")) { proxy=YES; break; }
+    }
+    if(!proxy) return NO;
+    @try {
+        NSMethodSignature *signature=[service methodSignatureForSelector:selector];
+        return signature && signature.numberOfArguments==2 &&
+            strcmp(UnqualifiedType(signature.methodReturnType),"@")==0 &&
+            strcmp(UnqualifiedType([signature getArgumentTypeAtIndex:0]),"@")==0 &&
+            strcmp(UnqualifiedType([signature getArgumentTypeAtIndex:1]),":")==0;
+    } @catch(NSException *exception) { return NO; }
+}
 static BOOL Has(id target, NSString *name, const char *result, NSArray *arguments) {
     return target && WUMatches(class_getInstanceMethod(object_getClass(target), NSSelectorFromString(name)), result, arguments);
 }

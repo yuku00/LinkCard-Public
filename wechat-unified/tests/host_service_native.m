@@ -83,6 +83,33 @@ static id active, current, legacy;
 @implementation BadContact
 - (int)m_nsUsrName { abort(); }
 @end
+@interface MockProxy : NSProxy {
+    id _target;
+    int _mode;
+}
++ (id)proxy:(id)target mode:(int)mode;
+@end
+@implementation MockProxy
++ (id)proxy:(id)target mode:(int)mode {
+    MockProxy *p=[MockProxy alloc]; p->_target=target; p->_mode=mode; return p;
+}
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector {
+    if(selector!=sel_registerName("getSelfContact")) return nil;
+    if(_mode==1) return [NSMethodSignature signatureWithObjCTypes:"i@:"];
+    if(_mode==2) return [NSMethodSignature signatureWithObjCTypes:"@@:@"];
+    if(_mode==3) @throw [NSException exceptionWithName:@"mock" reason:nil userInfo:nil];
+    if(_mode==4) return nil;
+    return [_target methodSignatureForSelector:selector];
+}
+- (id)forwardingTargetForSelector:(SEL)selector {
+    if(_mode==5 && selector==sel_registerName("getSelfContact")) return _target;
+    return nil;
+}
+- (void)forwardInvocation:(NSInvocation *)invocation {
+    if(_mode!=0 && _mode!=5) abort();
+    [invocation invokeWithTarget:_target];
+}
+@end
 static Provider *Make(NSString *name) {
     Contact *contact=[Contact new]; contact.m_nsUsrName=name;
     CContactMgr *manager=[CContactMgr new]; manager.contact=contact;
@@ -128,6 +155,21 @@ int main(int argc, const char **argv) { @autoreleasepool {
     assert(WUHostServiceWithPath(@"CContactMgr",&path)==((Provider *)active).manager && path==WUProviderActive);
     assert(WUAccountServiceDiagnosticSnapshot()==nil);
     assert([Account() isEqual:@"active"]); NSUInteger g=generation;
+    id original=((Provider *)active).manager;
+    for(int mode=1; mode<=4; mode++) {
+        ((Provider *)active).manager=[MockProxy proxy:original mode:mode];
+        assert(!WUAccountServiceHasSelfContact(((Provider *)active).manager));
+    }
+    ((Provider *)active).manager=[MockProxy proxy:original mode:0];
+    assert([Account() isEqual:@"active"] && generation==g);
+    ((Provider *)active).manager=[MockProxy proxy:original mode:5];
+    assert([Account() isEqual:@"active"] && generation==g);
+    active=Make(@"proxy-other");
+    ((Provider *)active).manager=[MockProxy proxy:((Provider *)active).manager mode:0];
+    assert([Account() isEqual:@"proxy-other"] && generation==g+1); g=generation;
+    active=Make(@"active");
+    ((Provider *)active).manager=[MockProxy proxy:((Provider *)active).manager mode:0];
+    assert([Account() isEqual:@"active"] && generation==g+1); g=generation;
     assert([Account() isEqual:@"active"] && generation==g);
     active=Make(@"other"); assert([Account() isEqual:@"other"] && generation==g+1); g=generation;
     active=[BadProvider new]; assert(Account()==nil && generation==g+1); g=generation;
