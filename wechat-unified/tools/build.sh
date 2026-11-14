@@ -13,6 +13,7 @@ python3 tests/miniads/contract.py
 python3 tests/test_settings_search.py
 python3 tests/test_settings_layout.py
 python3 tests/test_secondary_settings_style.py
+python3 tests/test_stats_platform_imports.py
 python3 tests/test_diagnostics_contract.py
 python3 tests/test_link_diagnostics.py
 python3 tests/test_diagnostics_integration.py

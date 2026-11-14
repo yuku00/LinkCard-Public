@@ -1,4 +1,4 @@
-#import "WUNeoSettings.h"
+// UIKit styling is imported only alongside the iOS controller below.
 #import "WUStats.h"
 #import "WUStatsHostProfile.h"
 #import "WUHostRead.h"
@@ -436,8 +436,8 @@ static NSArray *WUReadPage(WUStatsBinding *b,NSDictionary *cursor,uint32_t *left
     [self scheduleStep];
 }
 @end
-
 #if !TARGET_OS_OSX
+#import "WUNeoSettings.h"
 static char WUStatsOwnerKey;
 @interface WUStatsController : UITableViewController
 @property(nonatomic,strong) WUStatsBinding *binding;
