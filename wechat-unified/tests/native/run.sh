@@ -15,7 +15,7 @@ if command -v xcrun >/dev/null 2>&1; then
   build() {
     name=$1; shift
     xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter \
-      -I "$TESTDIR" -I "$TESTDIR/stubs" -I "$MAIN/Sources" -I "$ROOT/Sources" -I "$WORK" -include "$TESTDIR/clock.h" "$@" \
+      -I "$TESTDIR" -I "$TESTDIR/stubs" -I "$MAIN/Sources" -I "$ROOT/Sources" -I "$WORK" -include "$TESTDIR/clock.h" -include "$ROOT/tests/native/neo_mock.h" "$@" \
       "$TESTDIR/UIKitMock.m" "$TESTDIR/TestHost.m" \
       "$ROOT/Sources/WUNative.m" "$ROOT/Sources/WUNativeEntries.m" "$ROOT/Sources/WUNativeAction.m" "$ROOT/Sources/WUNativeRecovery.m" \
       "$ROOT/Sources/WUNativeInteractions.m" "$ROOT/Sources/WUNativeGames.m" "$ROOT/Sources/WUNativeGameLogic.m" \

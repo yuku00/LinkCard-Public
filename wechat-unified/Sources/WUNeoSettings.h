@@ -1,3 +1,5 @@
+#ifndef WU_NEO_SETTINGS_H
+#define WU_NEO_SETTINGS_H
 #import <UIKit/UIKit.h>
 
 static inline UIColor *WUNeoAccentColor(void) {
@@ -64,3 +66,4 @@ static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol
     }
     return cell;
 }
+#endif

@@ -18,7 +18,7 @@ build() {
     name=$1; shift
     xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter \
         -I "$MAIN/tests/native/stubs" -I "$GAP/Sources" -I "$MAIN/Sources" -I "$MAIN/tests/native" -I "$WORK" \
-        -include "$MAIN/tests/native/clock.h" "$@" "$MAIN/tests/native/UIKitMock.m" "$MAIN/tests/native/TestHost.m" \
+        -include "$MAIN/tests/native/clock.h" -include "$MAIN/tests/native/neo_mock.h" "$@" "$MAIN/tests/native/UIKitMock.m" "$MAIN/tests/native/TestHost.m" \
         "$(source_file WUNative.m)" "$(source_file WUNativeEntries.m)" "$(source_file WUNativeSettings.m)" \
         "$MAIN/Sources/WUNativeAction.m" "$MAIN/Sources/WUNativeRecovery.m" "$MAIN/Sources/WUNativeInteractions.m" \
         "$MAIN/Sources/WUNativeGames.m" "$MAIN/Sources/WUNativeGameLogic.m" "$MAIN/Sources/MessageConstruction.m" "$WORK/boot.o" \

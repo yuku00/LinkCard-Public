@@ -39,6 +39,16 @@ class SecondaryStyleTests(unittest.TestCase):
         for required in ['owner.navigationItem.standardAppearance', 'UIColor.systemGroupedBackgroundColor', 'UIColor.secondarySystemGroupedBackgroundColor', 'scaledFontForFont:', 'adjustsFontForContentSizeCategory=YES', 'UITableViewAutomaticDimension', 'if(symbol.length && !cell.imageView.image)', 'if(!toggle.accessibilityLabel.length)']:
             self.assertIn(required, helper)
 
+    def test_native_hook_tests_use_explicit_neo_ui_mock(self):
+        root = SOURCES.parent
+        helper = (SOURCES / 'WUNeoSettings.h').read_text()
+        mock = (root / 'tests/native/neo_mock.h').read_text()
+        self.assertIn('#ifndef WU_NEO_SETTINGS_H', helper)
+        self.assertIn('#define WU_NEO_SETTINGS_H', mock)
+        for script in ('tests/native/run.sh', 'tests/native-gaps/run.sh'):
+            self.assertIn('native/neo_mock.h', (root / script).read_text())
+        self.assertIn('tests/native/neo_mock.h', (root / 'tools/release.py').read_text())
+
     def test_special_content_not_replaced(self):
         themes = (SOURCES / 'Themes.m').read_text()
         self.assertIn('UIContentSizeCategoryIsAccessibilityCategory', themes)
