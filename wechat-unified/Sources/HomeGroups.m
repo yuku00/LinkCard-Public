@@ -1,5 +1,6 @@
 #import "WU.h"
 #import "HomeLogic.h"
+#import "WUHostService.h"
 static BOOL ready, applying;
 static IMP setters[3], countSetter;
 static BOOL countSigned;
@@ -8,9 +9,7 @@ static NSHashTable *managers, *homePages;
 static char managerKey, pageKey;
 static id Obj(id o,NSString *name) { SEL s=NSSelectorFromString(name); if(!o || !WUMatches(class_getInstanceMethod(object_getClass(o),s),"@",@[])) return nil; return ((id(*)(id,SEL))objc_msgSend)(o,s); }
 static id CurrentManager(void) {
-    id center=Obj(NSClassFromString(@"MMServiceCenter"),@"defaultCenter"); Class cls=NSClassFromString(@"MainSessionMgr"); SEL sel=NSSelectorFromString(@"getService:"); Method method=class_getInstanceMethod(object_getClass(center),sel);
-    if(!cls || (!WUMatches(method,"@",@[@"#"]) && !WUMatches(method,"@",@[@"@"]))) return nil;
-    return ((id(*)(id,SEL,Class))objc_msgSend)(center,sel,cls);
+    return WUHostService(@"MainSessionMgr");
 }
 static BOOL Flag(id o,NSString *name,BOOL *value) { SEL s=NSSelectorFromString(name); Method m=class_getInstanceMethod(object_getClass(o),s); if(WUMatches(m,"B",@[])) { *value=((BOOL(*)(id,SEL))objc_msgSend)(o,s); return YES; } if(WUMatches(m,"c",@[])) { *value=((signed char(*)(id,SEL))objc_msgSend)(o,s)!=0; return YES; } return NO; }
 static NSDictionary *State(NSString *a) { return WUAccountOptions(a)[@"home"]?:WUEmptyHomeGroups(); }
@@ -58,11 +57,8 @@ static void Refresh(void);
 void WUStatsReadSessionCandidates(BOOL (^current)(void), void (^done)(NSArray *, BOOL)) {
     if(!NSThread.isMainThread || !current || !done || !current()) return;
     @try {
-        id center=Obj(NSClassFromString(@"MMServiceCenter"),@"defaultCenter");
-        Class cls=NSClassFromString(@"MMNewSessionMgr"); SEL service=NSSelectorFromString(@"getService:");
-        Method sm=class_getInstanceMethod(object_getClass(center),service);
-        if(!cls || (!WUMatches(sm,"@",@[@"#"]) && !WUMatches(sm,"@",@[@"@"])) ) { done(nil,YES); return; }
-        id manager=((id(*)(id,SEL,Class))objc_msgSend)(center,service,cls);
+        Class cls=NSClassFromString(@"MMNewSessionMgr");
+        id manager=WUHostService(@"MMNewSessionMgr");
         SEL lookup=NSSelectorFromString(@"GetSessionByUserName:");
         if(![manager isKindOfClass:cls] || !WUMatches(class_getInstanceMethod(object_getClass(manager),lookup),"@",@[@"@"])) { done(nil,YES); return; }
         id raw=Obj(manager,@"GetUserNamesOnSessionList");

@@ -86,6 +86,12 @@ static void KeyboardTests(void) {
     @try { Touch(f); assert(0); } @catch(NSException *e) {}
     [f.chat hideInputToolView]; assert(f.chat.hides==1); // finally cleared the production scope
 }
+@interface ThrowingGameType : NSObject
+- (unsigned)m_uiGameType;
+@end
+@implementation ThrowingGameType
+- (unsigned)m_uiGameType { @throw [NSException exceptionWithName:@"type" reason:nil userInfo:nil]; }
+@end
 static void GameTests(void) {
     TestConfig(@{@"gameChoice":@YES});
     for(unsigned type=1;type<=2;type++) for(unsigned choice=0;choice<(type==1?3:6);choice++) {
@@ -100,6 +106,23 @@ static void GameTests(void) {
         assert(!w.m_n64MesSvrID && !w.m_uiMesLocalID && w.m_uiCreateTime>100);
         assert(source.m_n64MesSvrID==5000000001LL && source.m_uiMesLocalID==4 && source.m_uiGameContent==99 && [source.m_nsEmoticonMD5 isEqual:@"original"]);
     }
+    // A pending chooser must not swallow ordinary or unclassifiable sends to the same chat.
+    TestScene *pending=[TestScene new]; Game(pending); UIAlertController *pendingAlert=Alert(pending); assert(pendingAlert);
+    CMessageWrap *ordinary=[[CMessageWrap alloc] initWithMsgType:47 nsFromUsr:testAccount]; ordinary.m_uiGameType=0;
+    [pending.manager AddEmoticonMsg:pending.chat.session MsgWrap:ordinary]; assert(pending.manager.sends==1 && pending.manager.sent==ordinary && Alert(pending)==pendingAlert);
+    CMessageWrap *notEmoticon=[[CMessageWrap alloc] initWithMsgType:1 nsFromUsr:testAccount]; notEmoticon.m_uiGameType=1;
+    [pending.manager AddEmoticonMsg:pending.chat.session MsgWrap:notEmoticon]; assert(pending.manager.sends==2 && pending.manager.sent==notEmoticon);
+    id unknown=[NSObject new]; [pending.manager AddEmoticonMsg:pending.chat.session MsgWrap:unknown]; assert(pending.manager.sends==3 && pending.manager.sent==unknown);
+    id throwing=[ThrowingGameType new]; [pending.manager AddEmoticonMsg:pending.chat.session MsgWrap:throwing]; assert(pending.manager.sends==4 && pending.manager.sent==throwing);
+    Game(pending); assert(pending.manager.sends==4 && Alert(pending)==pendingAlert);
+    [pendingAlert.actions[0] fire]; [pendingAlert.actions[0] fire]; assert(pending.manager.sends==5);
+    pending=[TestScene new]; Game(pending); pendingAlert=Alert(pending); pendingAlert.deferDismissCompletion=YES;
+    [pendingAlert.actions[0] fire]; Game(pending);
+    [pending.manager AddEmoticonMsg:pending.chat.session MsgWrap:ordinary]; assert(pending.manager.sends==1 && pending.manager.sent==ordinary);
+    WUTestFlushDismissals(); [pendingAlert.actions[0] fire]; assert(pending.manager.sends==2);
+    pending=[TestScene new]; Game(pending); pendingAlert=Alert(pending); testAccount=@"B"; testGeneration++;
+    [pending.manager AddEmoticonMsg:pending.chat.session MsgWrap:ordinary]; assert(pending.manager.sends==1 && pending.manager.sent==ordinary);
+    [pendingAlert.actions[0] fire]; assert(pending.manager.sends==1 && !Alert(pending));
     TestScene *f=[TestScene new]; Game(f); UIAlertController *a=Alert(f); [a.actions.lastObject fire]; [a.actions[0] fire]; assert(!f.manager.sends);
     for(NSUInteger mutation=0;mutation<5;mutation++) {
         f=[TestScene new]; TestConfig(@{@"gameChoice":@YES}); Game(f); a=Alert(f); assert(a);

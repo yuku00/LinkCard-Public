@@ -46,13 +46,20 @@ static void Send(id manager,SEL cmd,id destination,id source) {
         ((void(*)(id,SEL,id,id))sendOriginal)(manager,cmd,destination,source); return;
     }
     NSString *account=[WUCurrentAccount() copy];
-    // Recognize a pending operation before traversing presentation or any passthrough.
+    unsigned type=0, messageType=0;
+    @try {
+        type=WUNativeGameNumber(source,@"m_uiGameType");
+        messageType=WUNativeGameNumber(source,@"m_uiMessageType");
+    } @catch(NSException *e) { type=0; }
+    if(messageType!=47 || (type!=1 && type!=2)) {
+        WUNativeRefreshActions();
+        ((void(*)(id,SEL,id,id))sendOriginal)(manager,cmd,destination,source); return;
+    }
+    // Keep a matching game pending through dismissal and reentrant original sends.
     WUNativeAction *prior=[destination isKindOfClass:NSString.class]?WUNativePendingAction(@"gameChoice",account,destination):nil;
     if(prior) { WUNativeRefreshActions(); return; }
     WUNativeRefreshActions();
-    unsigned type=0;
-    @try { type=WUNativeGameNumber(source,@"m_uiGameType"); } @catch(NSException *e) { return; }
-    if(!WUNativeEnabled(@"gameChoice") || (type!=1 && type!=2) || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) {
+    if(!WUNativeEnabled(@"gameChoice") || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) {
         ((void(*)(id,SEL,id,id))sendOriginal)(manager,cmd,destination,source); return;
     }
     UIViewController *owner=Chat();

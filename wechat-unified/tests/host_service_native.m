@@ -45,12 +45,23 @@ static id active, current, legacy;
 @property(nonatomic,copy) NSString *m_nsUsrName;
 @end
 @implementation Contact @end
+@interface MainSessionMgr : NSObject @end
+@implementation MainSessionMgr @end
+@interface MMNewSessionMgr : NSObject @end
+@implementation MMNewSessionMgr @end
 @interface Provider : NSObject
 @property(nonatomic,strong) id manager;
+@property(nonatomic,strong) id homeManager;
+@property(nonatomic,strong) id sessionManager;
 - (id)getService:(Class)cls;
 @end
 @implementation Provider
-- (id)getService:(Class)cls { return cls==CContactMgr.class?self.manager:nil; }
+- (id)getService:(Class)cls {
+    if(cls==CContactMgr.class) return self.manager;
+    if(cls==MainSessionMgr.class) return self.homeManager;
+    if(cls==MMNewSessionMgr.class) return self.sessionManager;
+    return nil;
+}
 @end
 @interface BadProvider : NSObject
 - (int)getService:(int)value;
@@ -77,6 +88,21 @@ static Provider *Make(NSString *name) {
 }
 int main(void) { @autoreleasepool {
     legacy=Make(@"legacy"); current=Make(@"current"); active=Make(@"active");
+    ((Provider *)current).homeManager=[MainSessionMgr new];
+    ((Provider *)current).sessionManager=[MMNewSessionMgr new];
+    ((Provider *)legacy).homeManager=[MainSessionMgr new];
+    ((Provider *)legacy).sessionManager=[MMNewSessionMgr new];
+    ((Provider *)active).homeManager=[MainSessionMgr new];
+    ((Provider *)active).sessionManager=[MMNewSessionMgr new];
+#if BAD_CONTEXT
+    assert(WUHostService(@"MainSessionMgr")==((Provider *)current).homeManager);
+    assert(WUHostService(@"MMNewSessionMgr")==((Provider *)current).sessionManager);
+#else
+    assert(WUHostService(@"MainSessionMgr")==((Provider *)active).homeManager);
+    assert(WUHostService(@"MMNewSessionMgr")==((Provider *)active).sessionManager);
+    ((Provider *)active).homeManager=nil;
+    assert(WUHostService(@"MainSessionMgr")==nil); // no cross-account fallback
+#endif
 #if BAD_CONTEXT
     assert([Account() isEqual:@"current"]); // malformed class method must never be invoked
 #else

@@ -16,7 +16,7 @@ void WURestoreMessageSurface(UIView *cell) {
     }
     objc_setAssociatedObject(cell,&cardKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
-static IMP searchLayout,referLayout,plusLayout,toastLayout,timeLayout,swipeLayout;
+static IMP searchLayout,referLayout,toastLayout,timeLayout,swipeLayout;
 static IMP referWindow,toastWindow;
 static void RestoreHostPopup(UIView *view);
 static void RefreshHostPopup(UIView *view);
@@ -77,7 +77,6 @@ static void Refer(UIView *v,SEL s) {
     WUStyleSurface(target,role,12);
     if(WUEnabled(role)) { objc_setAssociatedObject(v,&referTargetKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [referRoots addObject:v]; }
 }
-static void Plus(UIView *v,SEL s) { Restore(v); ((void(*)(id,SEL))plusLayout)(v,s); WUStyleSurface(v,@"plusSurface",18); }
 static void Toast(UIView *v,SEL s) { RestoreHostPopup(v); Restore(v); ((void(*)(id,SEL))toastLayout)(v,s); WUStyleSurface(v,@"toastSurface",16); RefreshHostPopup(v); }
 static void RestoreChildren(UIView *v) { for(UIView *c in objc_getAssociatedObject(v,&childrenKey)) Restore(c); objc_setAssociatedObject(v,&childrenKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
 static void TimeLabels(UIView *v,NSMutableArray *out,NSUInteger depth) { if(depth>4||out.count>=12) return; if([v isKindOfClass:UILabel.class]) { WUStyleSurface(v,@"timeSurface",6); [out addObject:v]; return; } for(UIView *c in v.subviews) TimeLabels(c,out,depth+1); }
@@ -292,7 +291,7 @@ void WUInstallSurfaces(void) {
     Class refer=NSClassFromString(@"MMInputMsgReferView");
     if(refer && [refer isSubclassOfClass:UIView.class] && WUHook(@"MMInputMsgReferView",@"layoutSubviews",NO,"v",@[],(IMP)Refer,&referLayout))
         WUHook(@"MMInputMsgReferView",@"didMoveToWindow",NO,"v",@[],(IMP)ReferWindow,&referWindow);
-    WUHook(@"MainFrameActionFloatView",@"layoutSubviews",NO,"v",@[],(IMP)Plus,&plusLayout);
+    // No verified menu-content target: leave the host's plus menu untouched.
     Class toast=NSClassFromString(@"MMToastView");
     if(toast && [toast isSubclassOfClass:UIView.class] && WUHook(@"MMToastView",@"didMoveToWindow",NO,"v",@[],(IMP)ToastWindow,&toastWindow))
         WUHook(@"MMToastView",@"layoutSubviews",NO,"v",@[],(IMP)Toast,&toastLayout);

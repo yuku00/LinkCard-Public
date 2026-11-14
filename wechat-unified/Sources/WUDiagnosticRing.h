@@ -14,7 +14,12 @@ typedef enum {
     WUDiagAccountCenterClass, WUDiagAccountCenterSignature, WUDiagAccountCenterMissing,
     WUDiagAccountManagerClass, WUDiagAccountServiceSignature, WUDiagAccountManagerMissing,
     WUDiagAccountSelfSignature, WUDiagAccountSelfMissing, WUDiagAccountNameSignature,
-    WUDiagAccountNameInvalid, WUDiagAccountException, WUDiagEventEnd
+    WUDiagAccountNameInvalid, WUDiagAccountException,
+    WUDiagContextClassMissing, WUDiagActiveSignature, WUDiagActiveMissing,
+    WUDiagCurrentSignature, WUDiagCurrentMissing, WUDiagContextServiceSignature,
+    WUDiagContextServiceMissing, WUDiagLegacyClassMissing, WUDiagLegacySignature,
+    WUDiagLegacyMissing, WUDiagLegacyServiceSignature, WUDiagLegacyServiceMissing,
+    WUDiagHostServiceException, WUDiagEventEnd
 } WUDiagnosticEvent;
 #define WU_DIAGNOSTIC_CAPACITY 128
 typedef struct { WUDiagnosticEvent values[WU_DIAGNOSTIC_CAPACITY]; size_t start, count; } WUDiagnosticRing;

@@ -4,22 +4,11 @@ static char switchSkinKey;
 static NSHashTable<UISwitch *> *switches;
 @interface WUSunMoon : UIControl
 @property(nonatomic,weak) UISwitch *original;
-@property(nonatomic,assign) CGPoint began;
-@property(nonatomic,assign) BOOL initial;
 - (void)sync;
 @end
 @implementation WUSunMoon
-- (instancetype)initWithFrame:(CGRect)frame { if((self=[super initWithFrame:frame])) { self.opaque=NO; self.isAccessibilityElement=NO; self.accessibilityElementsHidden=YES; self.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight; } return self; }
+- (instancetype)initWithFrame:(CGRect)frame { if((self=[super initWithFrame:frame])) { self.opaque=NO; self.userInteractionEnabled=NO; self.isAccessibilityElement=NO; self.accessibilityElementsHidden=YES; self.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight; } return self; }
 - (void)sync { self.enabled=self.original.enabled; self.alpha=self.original.enabled?1:.45; [self setNeedsDisplay]; }
-- (BOOL)beginTracking:(UITouch *)touch withEvent:(UIEvent *)event { self.began=[touch locationInView:self]; self.initial=self.original.on; return self.enabled; }
-- (void)endTracking:(UITouch *)touch withEvent:(UIEvent *)event {
-    UISwitch *sw=self.original; CGPoint p=[touch locationInView:self];
-    if(!sw.enabled || !self.window || !CGRectContainsPoint(CGRectInset(self.bounds,-16,-16),p) || !WUEnabled(@"sunMoon")) { [self sync]; return; }
-    BOOL on=fabs(p.x-self.began.x)>8?p.x>CGRectGetMidX(self.bounds):!self.initial;
-    if(sw.on!=on) { [sw setOn:on animated:!UIAccessibilityIsReduceMotionEnabled()]; [sw sendActionsForControlEvents:UIControlEventValueChanged]; }
-    [self sync];
-}
-- (void)cancelTrackingWithEvent:(UIEvent *)event { [self sync]; }
 - (void)drawRect:(CGRect)rect {
     BOOL day=self.original.on; CGRect b=CGRectInset(self.bounds,.5,.5); CGFloat h=b.size.height;
     UIColor *sky=day?[UIColor colorWithRed:.22 green:.65 blue:.90 alpha:1]:[UIColor colorWithRed:.12 green:.16 blue:.30 alpha:1];
@@ -46,7 +35,10 @@ static void SkinWalk(UIView *v,NSUInteger depth,NSUInteger *budget) {
 void WUStyleSettingSwitches(UIViewController *controller) {
     // Only callers in our settings and the explicitly hooked NewSettingViewController.
     static dispatch_once_t once; dispatch_once(&once, ^{ switches=NSHashTable.weakObjectsHashTable;
-        [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(UISwitch *sw in switches) { ClearSwitch(sw); [sw setNeedsLayout]; } [switches removeAllObjects]; }];
+        [NSNotificationCenter.defaultCenter addObserverForName:WUChanged object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){
+            if(!WUEnabled(@"sunMoon")) { for(UISwitch *sw in switches.allObjects) ClearSwitch(sw); [switches removeAllObjects]; }
+            else for(UISwitch *sw in switches.allObjects) [(WUSunMoon *)objc_getAssociatedObject(sw,&switchSkinKey) sync];
+        }];
     });
     NSUInteger budget=512; SkinWalk(controller.view,0,&budget);
 }

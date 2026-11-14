@@ -25,7 +25,7 @@ class DiagnosticsIntegrationTests(unittest.TestCase):
         for event in ('WUDiagAccountManagerClass', 'WUDiagAccountManagerMissing', 'WUDiagAccountSelfSignature', 'WUDiagAccountSelfMissing', 'WUDiagAccountNameSignature', 'WUDiagAccountNameInvalid', 'WUDiagAccountException'):
             self.assertIn(event, account)
         self.assertIn('if(failure) WURecordAccountDiagnosticEvent(failure)', account)
-        self.assertIn('WUDiagnosticRateAllow(&rate,NSProcessInfo.processInfo.systemUptime)', diag)
+        self.assertIn('WUDiagnosticRateAllow(&rates[event],NSProcessInfo.processInfo.systemUptime)', diag)
         names = re.search(r'names=@\[(.*?)\];', diag, re.S).group(1)
         self.assertEqual(len(re.findall(r'@"(?:[^"\\\\]|\\\\.)*"', names)),
                          len(re.findall(r'WUDiag\w+', header.split('} WUDiagnosticEvent;', 1)[0])))

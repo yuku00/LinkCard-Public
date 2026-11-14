@@ -11,16 +11,16 @@ void WURecordDiagnosticEvent(WUDiagnosticEvent event) {
     @synchronized (WUDiagnosticsLock.class) { WUDiagnosticRingAdd(&WUEvents,event); }
 }
 void WURecordAccountDiagnosticEvent(WUDiagnosticEvent event) {
-    if(event<WUDiagAccountCenterClass || event>WUDiagAccountException) return;
-    static WUDiagnosticRate rate;
+    if(event<WUDiagAccountCenterClass || event>=WUDiagEventEnd) return;
+    static WUDiagnosticRate rates[WUDiagEventEnd];
     @synchronized (WUDiagnosticsLock.class) {
-        if(WUDiagnosticRateAllow(&rate,NSProcessInfo.processInfo.systemUptime)) WUDiagnosticRingAdd(&WUEvents,event);
+        if(WUDiagnosticRateAllow(&rates[event],NSProcessInfo.processInfo.systemUptime)) WUDiagnosticRingAdd(&WUEvents,event);
     }
 }
 static NSArray<NSString *> *WUEventSnapshot(void) {
     static NSArray<NSString *> *names;
     static dispatch_once_t once;
-    dispatch_once(&once, ^{ names=@[@"", @"入口：所选消息", @"入口：手动输入", @"拒绝：无账号上下文", @"拒绝：流程无法开始", @"拒绝：没有可用候选", @"拒绝：目标校验失败", @"请求弹窗：输入框", @"请求弹窗：候选选择", @"请求弹窗：目标确认", @"转换拒绝：状态无效或正在转换", @"转换开始", @"转换完成", @"转换中止：流程已结束或上下文失效", @"展示拒绝：上下文或弹窗状态无效", @"展示异常", @"请求：内置 Safari", @"请求：系统打开", @"系统打开 completion：已接受", @"系统打开 completion：未接受", @"拒绝：链接功能未启用", @"拒绝：选择数量或类型无效", @"拒绝：账号或会话上下文不可核验", @"拒绝：消息不可核验或超限", @"链接流程结束", @"账号链：服务中心类缺失", @"账号链：默认中心签名不匹配", @"账号链：默认中心为空", @"账号链：联系人管理器类缺失", @"账号链：服务获取签名不匹配", @"账号链：联系人管理器为空", @"账号链：自身联系人签名不匹配", @"账号链：自身联系人为空", @"账号链：账号字段签名不匹配", @"账号链：账号字段无效或为空", @"账号链：调用异常"]; });
+    dispatch_once(&once, ^{ names=@[@"", @"入口：所选消息", @"入口：手动输入", @"拒绝：无账号上下文", @"拒绝：流程无法开始", @"拒绝：没有可用候选", @"拒绝：目标校验失败", @"请求弹窗：输入框", @"请求弹窗：候选选择", @"请求弹窗：目标确认", @"转换拒绝：状态无效或正在转换", @"转换开始", @"转换完成", @"转换中止：流程已结束或上下文失效", @"展示拒绝：上下文或弹窗状态无效", @"展示异常", @"请求：内置 Safari", @"请求：系统打开", @"系统打开 completion：已接受", @"系统打开 completion：未接受", @"拒绝：链接功能未启用", @"拒绝：选择数量或类型无效", @"拒绝：账号或会话上下文不可核验", @"拒绝：消息不可核验或超限", @"链接流程结束", @"账号链：服务中心类缺失", @"账号链：默认中心签名不匹配", @"账号链：默认中心为空", @"账号链：联系人管理器类缺失", @"账号链：服务获取签名不匹配", @"账号链：联系人管理器为空", @"账号链：自身联系人签名不匹配", @"账号链：自身联系人为空", @"账号链：账号字段签名不匹配", @"账号链：账号字段无效或为空", @"账号链：调用异常", @"账号链：MMContext 类缺失", @"账号链：activeUserContext 签名不匹配", @"账号链：activeUserContext 为空", @"账号链：currentContext 签名不匹配", @"账号链：currentContext 为空", @"账号链：上下文 getService: 签名不匹配", @"账号链：上下文联系人管理器为空", @"账号链：旧中心类缺失", @"账号链：旧中心 defaultCenter 签名不匹配", @"账号链：旧中心为空", @"账号链：旧中心 getService: 签名不匹配", @"账号链：旧中心联系人管理器为空", @"账号链：宿主服务调用异常"]; });
     NSMutableArray *out=[NSMutableArray array];
     @synchronized (WUDiagnosticsLock.class) {
         for(size_t i=0;i<WUEvents.count;i++) [out addObject:names[WUEvents.values[(WUEvents.start+i)%WU_DIAGNOSTIC_CAPACITY]]];
@@ -204,7 +204,7 @@ static NSString *WUDescribeMethod(Class cls, SEL sel, BOOL meta) {
 }
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     if(section==1) return @"installed 仅表示最近一次安装记录，不证明当前未被覆盖或功能正常；签名指方法类型，不是应用签名。";
-    if(section==2) return @"仅内存，最多128条，重启消失；不记录网址、搜索词、正文或账号，不自动上传。事件为进程级，切号不清空且可能跨流程交错；账号链失败最多每5秒记录一次。";
+    if(section==2) return @"仅内存，最多128条，重启消失；不记录网址、搜索词、正文或账号，不自动上传。事件为进程级，切号不清空且可能跨流程交错；同一账号链失败事件最多每5秒记录一次。";
     if(section==3) return @"点击单条结果可手动选择分享；类名和方法名可能敏感。输入 2–80 字符；后台搜索最多前 2000 个已加载类、每类每种方法前 100 个，最多显示 100 条，仅列本类声明的方法，不保证完整。查询和结果仅在内存中，不写日志、不上传；分享仅由你手动操作。";
     if(section==4) return @"来源为静态候选及手工证据；未关联或未加载为未知，不代表永久不可用。暂缓功能仅诊断，绝不启用；报告只在明确分享时交给系统分享面板。";
     return @"不读取消息、联系人、账号或凭证；不能据此判定卡死原因。";

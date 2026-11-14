@@ -143,10 +143,10 @@ class Guardrails(unittest.TestCase):
             self.assertIn('tests/theme_archive.m',publisher.read_text())
     def test_scoped_sunmoon(self):
         skin=(ROOT/'Sources/SunMoon.m').read_text()
-        self.assertEqual(skin.count('sendActionsForControlEvents:UIControlEventValueChanged'),1)
+        self.assertNotIn('sendActionsForControlEvents:',skin)
         self.assertNotIn('WUHook(@"UISwitch"',SRC)
-        self.assertIn('cancelTrackingWithEvent',skin)
-        self.assertIn('sw.on!=on',skin)
+        self.assertIn('self.userInteractionEnabled=NO',skin)
+        self.assertNotIn('beginTracking:',skin)
         self.assertIn('accessibilityElementsHidden=YES',skin)
         self.assertIn('removeTarget:skin',skin)
     def test_group_lifecycle_and_original_list(self):

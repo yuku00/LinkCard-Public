@@ -3,7 +3,7 @@
 #import "ThemePrimitives.h"
 #import <QuartzCore/QuartzCore.h>
 #include <math.h>
-static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入框",@"noticeBorder":@"聊天系统通知",@"searchSurface":@"搜索栏",@"referSurface":@"引用卡片（原共享样式）",@"referMessageSurface":@"文本消息内引用卡片覆盖",@"textPreviewSurface":@"聊天文本预览底部工具栏",@"hostPopupSurface":@"微信纯文字提示背景（限定页面）",@"quickReplySurface":@"微信顶部快速回复横幅",@"plusSurface":@"首页右上加号菜单",@"toastSurface":@"宿主Toast",@"timeSurface":@"聊天时间标签",@"swipeSurface":@"首页左滑菜单",@"textBubbleSurface":@"文本消息气泡",@"fileSurface":@"文件消息背景",@"emoticonSurface":@"表情消息背景",@"chatSendSurface":@"聊天发送按钮",@"chatAttachmentSurface":@"聊天附件按钮"}; }
+static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入框",@"noticeBorder":@"聊天系统通知",@"searchSurface":@"搜索栏",@"referSurface":@"引用卡片（原共享样式）",@"referMessageSurface":@"文本消息内引用卡片覆盖",@"textPreviewSurface":@"聊天文本预览底部工具栏",@"hostPopupSurface":@"微信纯文字提示背景（限定页面）",@"quickReplySurface":@"微信顶部快速回复横幅",@"plusSurface":@"首页右上加号菜单（暂停）",@"toastSurface":@"宿主Toast",@"timeSurface":@"聊天时间标签",@"swipeSurface":@"首页左滑菜单",@"textBubbleSurface":@"文本消息气泡",@"fileSurface":@"文件消息背景",@"emoticonSurface":@"表情消息背景",@"chatSendSurface":@"聊天发送按钮",@"chatAttachmentSurface":@"聊天附件按钮"}; }
 @interface WUSurfaceEditor : UITableViewController <UIColorPickerViewControllerDelegate>
 @property(nonatomic,copy) NSString *role;
 @property(nonatomic,strong) NSArray *fields;
@@ -50,14 +50,14 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s==0?@"仍受整合总开关控制。仅修改已确认的视图及其中实际文字控件；文件/表情背景没有文字时字体项不生效。":s==1?@"颜色使用 #RGB / #RGBA / #RRGGBB / #RRGGBBAA 或 transparent。留空恢复该项默认。深色未配置跟随浅色；显式设置优先于主题色表。字体不存在时保留原字体，修改字重时使用系统字体。聊天按钮不改点击行为；不修改聊天附件面板或系统键盘。":@"重置只删除本项样式，不删除主题、不修改业务开关。关闭后按逐属性所有权恢复，不覆盖宿主后来修改的值。"; }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil]; c.textLabel.numberOfLines=0;
-    if(p.section==0) { c.textLabel.text=@"启用本项美化"; UISwitch *s=[UISwitch new]; s.on=[WUValue(self.role) boolValue]; [s addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventValueChanged]; c.accessoryView=s; }
+    if(p.section==0) { c.textLabel.text=@"启用本项美化"; UISwitch *s=[UISwitch new]; s.on=[WUValue(self.role) boolValue]; if([self.role isEqual:@"plusSurface"]) s.enabled=s.on; [s addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventValueChanged]; c.accessoryView=s; }
     else if(p.section==2) c.textLabel.text=@"重置本项样式";
     else { NSArray *field=self.fields[p.row]; NSString *key=field[0]; c.textLabel.text=field[1]; c.detailTextLabel.text=[WUSurfaceStyle(self.role)[key] description]?:@"默认";
         if(![@[@"radius",@"borderWidth",@"opacity",@"fontSize",@"fontWeight",@"fontName"] containsObject:key]) { UIButton *button=[UIButton buttonWithType:UIButtonTypeSystem]; [button setTitle:@"选色" forState:UIControlStateNormal]; button.frame=CGRectMake(0,0,52,44); button.tag=p.row; button.accessibilityLabel=[field[1] stringByAppendingString:@"选色"]; [button addTarget:self action:@selector(colorButton:) forControlEvents:UIControlEventTouchUpInside]; c.accessoryView=button; }
     } return c;
 }
 - (void)error:(NSString *)text { UIAlertController *a=[UIAlertController alertControllerWithTitle:@"未保存" message:text preferredStyle:UIAlertControllerStyleAlert]; [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]]; [self presentViewController:a animated:YES completion:nil]; }
-- (void)toggle:(UISwitch *)s { if(!WUSave(self.role,@(s.on))) { s.on=[WUValue(self.role) boolValue]; [self error:@"业务开关保存失败"]; } }
+- (void)toggle:(UISwitch *)s { if([self.role isEqual:@"plusSurface"] && s.on) { s.on=NO; return; } if(!WUSave(self.role,@(s.on))) { s.on=[WUValue(self.role) boolValue]; [self error:@"业务开关保存失败"]; } else if([self.role isEqual:@"plusSurface"]) s.enabled=NO; }
 - (BOOL)saveStyle:(NSDictionary *)style {
     id old=WUValue(@"surfaceStyles"); NSMutableDictionary *all=[(WUValidSurfaceStyles(old)?old:@{}) mutableCopy];
     if(style.count) all[self.role]=style; else [all removeObjectForKey:self.role];
