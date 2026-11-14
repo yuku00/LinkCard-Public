@@ -126,7 +126,7 @@ static NSArray<NSString *> *WUEventSnapshot(void) {
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
-    if(indexPath.section!=3 || indexPath.row>=self.results.count) return;
+    if(indexPath.section!=3 || (NSUInteger)indexPath.row>=self.results.count) return;
     NSString *selected=[self.results[indexPath.row] copy];
     UIAlertController *warning=[UIAlertController alertControllerWithTitle:@"分享此条接口结果？" message:@"类名和方法名可能包含敏感的应用内部信息；仅分享你选择的这一条，结果本身可能包含搜索词。" preferredStyle:UIAlertControllerStyleAlert];
     [warning addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
