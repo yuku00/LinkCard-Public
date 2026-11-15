@@ -9,9 +9,11 @@
 @implementation MMInputToolView @end
 @interface InputToolContainerView : UIView @end
 @implementation InputToolContainerView @end
-@interface InputToolViewBar : UIView @end
+@interface InputToolViewBar : UIView
+@property(nonatomic) BOOL throwOnFrame;
+@end
 @implementation InputToolViewBar
-- (CGRect)frame { @throw [NSException exceptionWithName:@"synthetic" reason:nil userInfo:nil]; }
+- (CGRect)frame { if(self.throwOnFrame) @throw [NSException exceptionWithName:@"synthetic" reason:nil userInfo:nil]; return [super frame]; }
 @end
 @interface EmoticonMessageCellView : UIView @end
 @implementation EmoticonMessageCellView
@@ -35,7 +37,8 @@
     XCTAssertTrue([out containsString:@"frame=(1.00,2.00,30.00,40.00)"]);
     XCTAssertTrue([out containsString:@"bounds=("]);
     [out setString:@""]; WUPageAppendGeometry(out,[InputToolContainerView new]); XCTAssertTrue([out containsString:@"bounds=("]);
-    [out setString:@""]; WUPageAppendGeometry(out,[InputToolViewBar new]); XCTAssertTrue([out containsString:@"getter 异常"]);
+    InputToolViewBar *throwing=[InputToolViewBar new]; throwing.throwOnFrame=YES;
+    [out setString:@""]; WUPageAppendGeometry(out,throwing); XCTAssertTrue([out containsString:@"getter 异常"]);
     [out setString:@""]; WUPageAppendGeometry(out,[EmoticonMessageCellView new]); XCTAssertTrue([out containsString:@"非有限数值"]);
     [out setString:@""]; WUPageAppendGeometry(out,[AppEmoticonMessageCellView new]); XCTAssertTrue([out containsString:@"不是 UIView"]);
     [out setString:@""]; WUPageAppendGeometry(out,[NotWhitelistedView new]); XCTAssertEqual(out.length,0u);
