@@ -161,7 +161,8 @@ static NSData *Wave(NSData *data) {
     }]]; [self presentViewController:a animated:YES completion:nil];
 }
 - (void)use:(NSDictionary *)row sending:(BOOL)sending {
-    if(self.busy || ![self current]) return;
+    if(![self current]) return;
+    if(self.busy) { [self notice:@"正在处理语音包，请稍后再试；未请求发送。"]; return; }
     if(sending && (![row[@"version"] isEqual:self.binding.version] || [self.submitted containsObject:row[@"id"]])) { [self notice:@"来源版本不同或本页已提交过此资源；未请求发送。跨重启不保证恰好一次。"]; return; }
     [self stop]; self.busy=YES;
     dispatch_async(Queue(),^{ NSError *error=nil; NSDictionary *held=[self.store acquire:row[@"id"] error:&error];
@@ -179,14 +180,14 @@ static NSData *Wave(NSData *data) {
             if(!WUVoicePackMatches(held,self.binding.version) || !operation.milliseconds) { [self stop]; [self notice:@"配对版本、格式或完整解码无效，拒绝发送"]; return; }
             UIAlertController *a=[UIAlertController alertControllerWithTitle:@"确认单次发送" message:[NSString stringWithFormat:@"来源：%@（版本 %@）\n名称：%@\n编码后时长：%u毫秒\n账号：%@\n当前会话收件人：%@\n只请求一次，不保证送达，无自动重试；无跨重启恰好一次保证。",[held[@"source"] isEqual:@"external-encoded-silk-v1"]?@"外部音频，本机编码腾讯SILK":@"所选微信语音",held[@"version"],held[@"name"],operation.milliseconds,self.binding.account,self.binding.target] preferredStyle:UIAlertControllerStyleAlert];
             [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action){ [self stop]; }]];
-            __block BOOL consumed=NO;
+            __weak UIAlertController *sendAlert=a; __block BOOL consumed=NO;
             [a addAction:[UIAlertAction actionWithTitle:@"向此会话请求发送一次" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){
                 if(consumed) return; consumed=YES;
                 if(![self current] || ![self.playing isEqual:held[@"id"]] || [self.submitted containsObject:held[@"id"]]) { [self stop]; return; }
                 [self.submitted addObject:held[@"id"]]; NSString *result=@"失败：未提交";
                 @try { if(self.binding.send) result=self.binding.send(operation); } @catch(NSException *e) { result=@"未知：调用异常，不自动重试"; }
                 [self stop];
-                [self dismissViewControllerAnimated:YES completion:^{ [self notice:result]; }];
+                [sendAlert dismissViewControllerAnimated:YES completion:^{ [self notice:result ?: @"失败：发送接口未返回结果，未确认送达"]; }];
             }]]; [self presentViewController:a animated:YES completion:nil];
         });
     });
@@ -197,8 +198,9 @@ static NSData *Wave(NSData *data) {
     [tableView deselectRowAtIndexPath:path animated:YES]; if(self.busy || ![self current]) return;
     NSDictionary *row=self.rows[path.row];
     UIAlertController *a=[UIAlertController alertControllerWithTitle:row[@"name"] message:@"本账号手动保存/导入的离线音频。导出包含原音频，请自行选择保存位置；导入的format声明不等于真实配对。" preferredStyle:UIAlertControllerStyleAlert];
-    [a addAction:[UIAlertAction actionWithTitle:@"离线试听" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self use:row sending:NO]; }]];
-    if(WUVoicePackMatches(row,self.binding.version)) [a addAction:[UIAlertAction actionWithTitle:@"确认发送至当前会话" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self use:row sending:YES]; }]];
+    __weak UIAlertController *menu=a;
+    [a addAction:[UIAlertAction actionWithTitle:@"离线试听" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [menu dismissViewControllerAnimated:YES completion:^{ [self use:row sending:NO]; }]; }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"确认发送至当前会话" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [menu dismissViewControllerAnimated:YES completion:^{ if(!WUVoicePackMatches(row,self.binding.version)) [self notice:@"语音包版本、格式或配对校验不匹配，仅可试听；未请求发送。"]; else [self use:row sending:YES]; }]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"停止试听" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self stop]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"与所选微信语音逐字节核对" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self dismissViewControllerAnimated:YES completion:^{ [self pairRow:row]; }]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"导出 .wuvoice 文件" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self dismissViewControllerAnimated:YES completion:^{ [self exportRow:row]; }]; }]];

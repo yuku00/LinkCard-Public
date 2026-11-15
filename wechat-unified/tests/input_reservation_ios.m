@@ -42,6 +42,8 @@ static BOOL WUHook(NSString *cls, NSString *sel, BOOL meta, const char *ret, NSA
     UIWindow *window=[[UIWindow alloc] initWithFrame:CGRectMake(0,0,320,640)];
     WUMockInputOwner *owner=[WUMockInputOwner new]; owner.reserves=reserves; window.rootViewController=owner; [window makeKeyAndVisible];
     owner.tool=[MMInputToolView new]; owner.container=[InputToolContainerView new];
+    UIImageView *background=[[UIImageView alloc] initWithFrame:owner.view.bounds];
+    [owner.view addSubview:background];
     owner.tool.panel=owner.container; [owner.view addSubview:owner.tool]; [owner.tool addSubview:owner.container];
     InputToolViewBar *bar=[[InputToolViewBar alloc] initWithFrame:CGRectMake(0,0,320,50)]; [owner.container addSubview:bar];
     [owner.view setNeedsLayout]; [owner.view layoutIfNeeded]; *outWindow=window; return owner;

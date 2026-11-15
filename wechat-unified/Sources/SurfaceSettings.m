@@ -119,4 +119,6 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p { UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil]; c.textLabel.text=RoleTitles()[WUSurfaceRoles()[p.row]]; c.accessoryType=UITableViewCellAccessoryDisclosureIndicator; return WUNeoCell(c,@"paintpalette"); }
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p { [t deselectRowAtIndexPath:p animated:YES]; WUSurfaceEditor *v=[[WUSurfaceEditor alloc] initWithStyle:UITableViewStyleInsetGrouped]; v.role=WUSurfaceRoles()[p.row]; [self.navigationController pushViewController:v animated:YES]; }
 @end
+NSString *WUSurfaceTitle(NSString *role) { return RoleTitles()[role]; }
+void WUShowSurfaceEditor(UIViewController *owner, NSString *role) { if(![WUSurfaceRoles() containsObject:role] || !owner.navigationController) return; WUSurfaceEditor *v=[[WUSurfaceEditor alloc] initWithStyle:UITableViewStyleInsetGrouped]; v.role=role; [owner.navigationController pushViewController:v animated:YES]; }
 void WUShowSurfaceSettings(UIViewController *owner) { WUSurfaceSettings *v=[[WUSurfaceSettings alloc] initWithStyle:UITableViewStyleInsetGrouped]; if(owner.navigationController) [owner.navigationController pushViewController:v animated:YES]; }

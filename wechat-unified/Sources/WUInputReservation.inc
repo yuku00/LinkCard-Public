@@ -57,6 +57,8 @@ static BOOL WUInputInstall(void) {
 static BOOL WUInputClear(UIView *container, UIView *except, CGRect strip) {
     for(UIView *child in container.subviews) {
         if(child==except || child.hidden || child.alpha<=0.01) continue;
+        // A noninteractive image behind the input is decoration, not a list or control.
+        if(except && [child isKindOfClass:UIImageView.class] && !child.userInteractionEnabled && [container.subviews indexOfObjectIdenticalTo:child]<[container.subviews indexOfObjectIdenticalTo:except]) continue;
         CGRect r=[child convertRect:child.bounds toView:container];
         if(!CGRectIsNull(r) && !CGRectIsInfinite(r) && CGRectIntersectsRect(CGRectInset(strip,0,0.5),r)) return NO;
     }

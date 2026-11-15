@@ -10,6 +10,9 @@ static void run(Mock *m, int enabled, int compatible, int result, int push, int 
     if (WUCardShouldFallback(1,result,!push,presented,transition)) m->originalCalls++;
 }
 int main(void) {
+    assert(WUCardRouteKind(1,0)==1); /* void */
+    assert(WUCardRouteKind(0,1)==2); /* BOOL */
+    assert(WUCardRouteKind(0,0)==0); /* incompatible: never call */
     Mock m={0}; run(&m,0,1,1,1,0,0); assert(m.originalCalls==1 && !m.routeCalls);
     m=(Mock){0}; run(&m,1,0,1,1,0,0); assert(m.originalCalls==1 && !m.routeCalls);
     m=(Mock){0}; run(&m,1,1,1,1,0,0); assert(!m.originalCalls && m.pushes==1);

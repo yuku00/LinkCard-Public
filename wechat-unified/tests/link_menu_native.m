@@ -9,7 +9,10 @@
 #include <stdlib.h>
 #include "menu_matches.inc"
 static BOOL enabled=YES, opened=NO, saved=NO;
-id WUValue(NSString *k) { return nil; }
+id WUValue(NSString *k) { return [k isEqual:@"enabled"]?@YES:nil; }
+static BOOL imageOpened=NO;
+BOOL WUImageEntryOwnsNavigation(UIViewController *owner) { return NO; }
+void WUOpenMessageImageEditor(UIViewController *owner,id wrap,BOOL (^current)(void)) { imageOpened=current(); }
 BOOL WUValidMD5(NSString *v) { return [v isKindOfClass:NSString.class] && v.length==32; }
 static void WUSaveEmoticonForWrap(UIViewController *owner,id wrap,BOOL (^current)(void),BOOL verifyDigest) { saved=verifyDigest && current(); }
 @interface EmoticonUtil : NSObject
@@ -30,10 +33,16 @@ static BOOL Has(id o,NSString *name,const char *result,NSArray *args) { return o
 static id Obj(id o,NSString *name) { return Has(o,name,"@",@[])?((id(*)(id,SEL))objc_msgSend)(o,NSSelectorFromString(name)):nil; }
 static NSString *Str(id o,NSString *name) { id x=Obj(o,name); return [x isKindOfClass:NSString.class]?[x copy]:nil; }
 @interface MockMessage : NSObject
-@property(nonatomic,copy) NSString *m_nsFromUsr,*m_nsToUsr,*m_nsRealChatUsr,*m_nsContent,*m_nsEmoticonMD5;
+@property(nonatomic,copy) NSString *m_nsFromUsr,*m_nsToUsr,*m_nsRealChatUsr,*m_nsContent,*m_nsEmoticonMD5,*m_nsImagePath;
 @property(nonatomic) unsigned m_n64MesSvrID,m_uiMesLocalID,m_uiCreateTime,m_uiMessageType;
 @end
 @implementation MockMessage @end
+@interface EmoticonPickViewController : UIViewController
+- (void)setM_image:(id)image;
+@end
+@implementation EmoticonPickViewController
+- (void)setM_image:(id)image {}
+@end
 @interface MockModel : NSObject
 @property(nonatomic,strong) MockMessage *messageWrap;
 @end
@@ -82,6 +91,8 @@ int main(void) { @autoreleasepool {
     assert(wuLinkMenuOriginal);
     NSArray *host=@[@"host"]; NSArray *menu=[cell filteredMenuItems:host]; assert(calls==1 && menu.count==2 && menu[0]==host[0]);
     MMMenuItem *first=menu[1]; Activate(testOwner,first,cell); assert(opened);
+    opened=NO; menu=[cell filteredMenuItems:host]; ((void(*)(id,SEL,id))objc_msgSend)(cell,((MMMenuItem *)menu[1]).action,menu[1]); assert(opened);
+    opened=NO; menu=[cell filteredMenuItems:host]; ((void(*)(id,SEL,id))objc_msgSend)(testOwner,((MMMenuItem *)menu[1]).action,menu[1]); assert(opened);
     opened=NO; menu=[cell filteredMenuItems:host]; MMMenuItem *obsolete=menu[1]; menu=[cell filteredMenuItems:menu]; assert(menu.count==2 && menu[0]==host[0]); Activate(testOwner,obsolete,cell); assert(!opened); Activate(testOwner,menu[1],cell); assert(opened);
     opened=NO; menu=[cell filteredMenuItems:host]; MMMenuItem *cancelled=menu[1]; menu=[cell filteredMenuItems:host]; Activate(testOwner,cancelled,cell); assert(!opened); Activate(testOwner,menu[1],cell); assert(opened);
     opened=NO; menu=[cell filteredMenuItems:host]; cell.viewModel=[MockModel new]; cell.viewModel.messageWrap=msg; Activate(testOwner,menu[1],cell); assert(!opened);
@@ -89,6 +100,9 @@ int main(void) { @autoreleasepool {
     menu=[cell filteredMenuItems:host]; account=@"other"; Activate(testOwner,menu[1],cell); assert(!opened); account=@"me";
     enabled=NO; assert([cell filteredMenuItems:host]==host); enabled=YES;
     msg.m_nsContent=@"no links"; assert([cell filteredMenuItems:host]==host);
+    msg.m_uiMessageType=3; menu=[cell filteredMenuItems:host]; assert(menu.count==2 && menu[0]==host[0]);
+    ((void(*)(id,SEL,id))objc_msgSend)(cell,((MMMenuItem *)menu[1]).action,menu[1]); assert(imageOpened);
+    imageOpened=NO; menu=[cell filteredMenuItems:host]; generation++; Activate(testOwner,menu[1],cell); assert(!imageOpened);
     msg.m_uiMessageType=47; msg.m_nsEmoticonMD5=@"0123456789abcdef0123456789abcdef";
     menu=[cell filteredMenuItems:host]; assert(menu.count==2 && menu[0]==host[0]);
     MMMenuItem *old=menu[1]; menu=[cell filteredMenuItems:menu]; assert(menu.count==2); Activate(testOwner,old,cell); assert(!saved); Activate(testOwner,menu[1],cell); assert(saved);

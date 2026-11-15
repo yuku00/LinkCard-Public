@@ -92,6 +92,7 @@ static void Notice(UIViewController *owner, NSString *text) {
 @property(nonatomic,strong) NSTimer *timer;
 @property(nonatomic) BOOL stopped, consumed, pushing;
 @property(nonatomic,copy) BOOL (^dataCurrent)(BOOL editing);
+@property(nonatomic,copy) BOOL (^menuCurrent)(void);
 - (BOOL)current;
 - (void)stop;
 - (void)fail:(NSString *)message;
@@ -111,14 +112,15 @@ static NSMutableSet<WUImageEntry *> *entries;
             if(self.editor) return self.pushing || ([nav.viewControllers containsObject:self.editor] && [nav.viewControllers indexOfObjectIdenticalTo:owner]<[nav.viewControllers indexOfObjectIdenticalTo:self.editor]);
             return nav.topViewController==owner && owner.viewIfLoaded.window && !owner.presentedViewController;
         }
-        if(self.stopped || !owner || !nav || owner.navigationController!=nav || ![nav.viewControllers containsObject:owner] || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![self.account isEqual:WUCurrentAccount()] || self.generation!=WUContextGeneration() || ![self.session isEqual:WUChatSession(owner)] || ![WUToolbarActions(WUAccountOptions(self.account)[@"toolbar"]) containsObject:@"imageEmoji"]) return NO;
+        if(self.stopped || !owner || !nav || owner.navigationController!=nav || ![nav.viewControllers containsObject:owner] || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue] || ![self.account isEqual:WUCurrentAccount()] || self.generation!=WUContextGeneration() || ![self.session isEqual:WUChatSession(owner)] || (!self.menuCurrent && ![WUToolbarActions(WUAccountOptions(self.account)[@"toolbar"]) containsObject:@"imageEmoji"])) return NO;
         if(self.editor) { if(!self.pushing && (![nav.viewControllers containsObject:self.editor] || [nav.viewControllers indexOfObjectIdenticalTo:owner]>=[nav.viewControllers indexOfObjectIdenticalTo:self.editor])) return NO; }
         else if(nav.topViewController!=owner || !owner.viewIfLoaded.window || (owner.presentedViewController && owner.presentedViewController!=self.prompt)) return NO;
         if(![self.identity isEqual:Identity(self.wrap,self.account,self.session)] || ![self.paths isEqual:Paths(self.wrap)]) return NO;
         // Once our editor was pushed, the host may legitimately clear multi-select.
         // Keep the already-confirmed image snapshot; still invalidate account/session,
         // generation, source identity, path changes and navigation ownership above.
-        if(self.editor && !self.pushing) return YES;
+        if(self.editor && !self.pushing) return !self.menuCurrent || self.menuCurrent();
+        if(self.menuCurrent) return self.menuCurrent();
         id selected=Object(owner,@"getSelectedMsgs");
         return [selected isKindOfClass:NSArray.class] && [selected count]==1 && [selected firstObject]==self.wrap;
     } @catch(__unused NSException *e) { return NO; }
@@ -138,7 +140,7 @@ static NSMutableSet<WUImageEntry *> *entries;
     @try { if(ownsImage && Has(editor,@"setM_image:","v",@[@"@"])) ((void(*)(id,SEL,id))objc_msgSend)(editor,NSSelectorFromString(@"setM_image:"),nil); } @catch(__unused NSException *e) {}
     @try { if(self.prompt && self.owner.presentedViewController==self.prompt && !self.prompt.presentedViewController) [self.prompt dismissViewControllerAnimated:NO completion:nil]; } @catch(__unused NSException *e) {}
     self.pushing=NO; self.editor=nil; self.prompt=nil; self.image=nil; self.wrap=nil; self.identity=nil; self.paths=nil;
-    self.account=nil; self.session=nil; self.owner=nil; self.nav=nil; self.dataCurrent=nil;
+    self.account=nil; self.session=nil; self.owner=nil; self.nav=nil; self.dataCurrent=nil; self.menuCurrent=nil;
     [entries removeObject:self];
 }
 - (void)fail:(NSString *)message {
@@ -243,6 +245,24 @@ BOOL WUOpenConfirmedImageDataEditor(UIViewController *owner, NSData *data, BOOL 
         [NSRunLoop.mainRunLoop addTimer:op.timer forMode:NSRunLoopCommonModes];
         [op open]; return !op.stopped && op.editor!=nil;
     } @catch(__unused NSException *e) { WUCancelImageDataEditor(owner); return NO; }
+}
+void WUOpenMessageImageEditor(UIViewController *owner, id wrap, BOOL (^current)(void)) {
+    if(!NSThread.isMainThread || !current || !current()) return;
+    @try {
+        if(!owner.viewIfLoaded.window || owner.presentedViewController || !owner.navigationController || owner.navigationController.topViewController!=owner || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue]) return;
+        for(WUImageEntry *live in entries) if(live.owner==owner) return;
+        NSString *account=WUCurrentAccount(), *session=WUChatSession(owner);
+        if(!account.length || !session.length) return;
+        NSDictionary *identity=Identity(wrap,account,session); NSArray *paths=identity?Paths(wrap):nil;
+        if(!identity || !paths.count) { Notice(owner,@"图片身份或缓存路径不可核验。请先在微信加载图片；未读取其他图片。"); return; }
+        EnsureEntries();
+        WUImageEntry *op=[WUImageEntry new]; op.owner=owner; op.nav=owner.navigationController; op.account=account; op.session=session; op.generation=WUContextGeneration(); op.wrap=wrap; op.identity=identity; op.paths=paths; op.menuCurrent=current;
+        [entries addObject:op];
+        __weak WUImageEntry *weak=op;
+        op.timer=[NSTimer timerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *timer){ WUImageEntry *live=weak; if(![live current]) [live stop]; }];
+        [NSRunLoop.mainRunLoop addTimer:op.timer forMode:NSRunLoopCommonModes];
+        if([op current]) [op prepare]; else [op stop];
+    } @catch(__unused NSException *e) { Notice(owner,@"图片上下文读取失败，未打开编辑器。"); }
 }
 void WUOpenSelectedImageEditor(UIViewController *owner) {
     if(!NSThread.isMainThread) return;

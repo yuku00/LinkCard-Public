@@ -9,6 +9,11 @@ static NSUInteger generation=1;
 static id service, oldMessage;
 static unsigned originalCalls, lookups;
 static BOOL switchAccount;
+static unsigned notices;
+static void WURevokeNoticeInsert(id mgr, NSString *a, NSString *s, uint64_t mid, NSUInteger gen, NSString *from, NSString *to, uint32_t time, BOOL (^valid)(void)) {
+    assert([a isEqual:@"me"] && [s isEqual:@"peer"] && mid==42 && gen==1);
+    assert([from isEqual:@"peer"] && [to isEqual:@"me"] && valid()); notices++;
+}
 static BOOL WUEnabled(NSString *key) { return YES; }
 static NSString *Account(void) { return account; }
 static NSString *Str(id o, NSString *key) { return @"notice"; }
@@ -38,7 +43,7 @@ int main(void) { @autoreleasepool {
     revokeOriginal=(IMP)Original;
     oldMessage=@{@"id":@42,@"from":@"peer",@"to":@"me",@"real":@""};
     CMessageMgr *mgr=[CMessageMgr new]; service=[MessageProxy target:mgr bad:NO];
-    assert(LookupReady(service)); Revoke(nil,NULL,nil); assert(lookups==1 && originalCalls==0);
+    assert(LookupReady(service)); Revoke(nil,NULL,nil); assert(lookups==1 && originalCalls==0 && notices==1);
     service=[MessageProxy target:mgr bad:YES]; assert(!LookupReady(service)); Revoke(nil,NULL,nil); assert(lookups==1 && originalCalls==1);
     service=[MessageProxy target:mgr bad:NO]; switchAccount=YES; Revoke(nil,NULL,nil); assert(lookups==2 && originalCalls==2);
     switchAccount=NO; account=@"me"; oldMessage=nil; Revoke(nil,NULL,nil); assert(lookups==3 && originalCalls==3);

@@ -17,6 +17,18 @@ def main():
     command=[str(loader),str(exe)] if loader.is_file() else [str(exe)]
     subprocess.run(command,cwd=ROOT,check=True)
     exe.unlink()
+    exe=BUILD/'voice-geometry-tests'
+    subprocess.run([cc,'-std=c11','-Wall','-Wextra','-Werror','-I','Sources',
+                    'tests/voice_geometry.c','-lm','-o',str(exe)],cwd=ROOT,check=True)
+    subprocess.run([str(loader),str(exe)] if loader.is_file() else [str(exe)],cwd=ROOT,check=True)
+    exe.unlink()
+    voice=(ROOT/'Sources/Voice.m').read_text()
+    settings=(ROOT/'Sources/Settings.m').read_text()
+    assert 'WUVoicePlace(' in voice and 'VoiceObstacles(' in voice
+    assert 'if(WUVoiceOverlayReady() && installed' in voice
+    assert 'if(!WUVoiceOverlayReady() || !installed) return NO;' in voice
+    assert '原显示接口不可用' not in voice and '原气泡布局未读取时长' not in voice
+    assert '单条不满足条件则保持微信原样' in settings
     if not shutil.which('xcrun'):
         print('NOT RUN: Apple SDK/Foundation hostmock and iOS UIKit syntax checks')
         if os.environ.get('WU_REQUIRE_APPLE_TESTS')=='1': raise SystemExit(2)

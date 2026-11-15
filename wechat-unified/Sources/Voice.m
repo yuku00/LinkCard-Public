@@ -3,6 +3,7 @@
 #import "VoiceLogic.h"
 #import "VoiceAudio.h"
 #import "VoiceDisplay.h"
+#import "VoiceGeometry.h"
 #import "WUHostService.h"
 #import <QuartzCore/QuartzCore.h>
 #include <math.h>
@@ -91,6 +92,21 @@ static WUVoiceClock *clockOwner;
 static NSHashTable<WUVoiceBinding *> *bindings;
 static dispatch_queue_t audioQueue;
 static BOOL Foreground(void) { return UIApplication.sharedApplication.applicationState==UIApplicationStateActive; }
+/* Unknown visible leaves are obstacles too; an uninspectable tree gets no overlay. */
+static BOOL VoiceObstacles(UIView *view, UIView *cell, UIView *bg, UIView *overlay, WUVoiceRect *rects, size_t *count, unsigned depth) {
+    if(view==overlay || view.hidden || view.alpha<0.01) return YES;
+    if(depth>32) return NO;
+    BOOL leaf=view.subviews.count==0;
+    if(view!=cell && view!=bg && (leaf || [view isKindOfClass:UILabel.class] || [view isKindOfClass:UIImageView.class])) {
+        CGRect r=[view convertRect:view.bounds toView:cell];
+        if(!CGRectIsEmpty(r)) {
+            if(*count>=128) return NO;
+            rects[(*count)++]=(WUVoiceRect){r.origin.x,r.origin.y,r.size.width,r.size.height};
+        }
+    }
+    for(UIView *child in view.subviews) if(!VoiceObstacles(child,cell,bg,overlay,rects,count,depth+1)) return NO;
+    return YES;
+}
 @implementation WUVoiceWave
 - (instancetype)initWithFrame:(CGRect)frame {
     if((self=[super initWithFrame:frame])) {
@@ -101,15 +117,21 @@ static BOOL Foreground(void) { return UIApplication.sharedApplication.applicatio
         pan.maximumNumberOfTouches=1; pan.delegate=self; pan.cancelsTouchesInView=NO; [self addGestureRecognizer:pan];
     } return self;
 }
-- (void)layoutSubviews { [super layoutSubviews]; self.time.frame=CGRectMake(0,0,self.bounds.size.width,12); }
-- (BOOL)pointInside:(CGPoint)p withEvent:(UIEvent *)event { return [self.binding canSeek] && [super pointInside:p withEvent:event]; }
+- (CGFloat)waveWidth { return MAX(0,self.bounds.size.width-(self.time.hidden?0:self.time.bounds.size.width+3)); }
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGFloat needed=ceil([self.time sizeThatFits:CGSizeMake(CGFLOAT_MAX,self.bounds.size.height)].width);
+    self.time.hidden=!self.time.text.length || self.bounds.size.width-needed-3<32;
+    self.time.frame=CGRectMake(self.bounds.size.width-needed,0,needed,self.bounds.size.height);
+}
+- (BOOL)pointInside:(CGPoint)p withEvent:(UIEvent *)event { return self.peaks.count>0 && p.x<[self waveWidth] && [self.binding canSeek] && [super pointInside:p withEvent:event]; }
 - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)g {
     CGPoint v=[(UIPanGestureRecognizer *)g velocityInView:self]; return [self.binding canSeek] && fabs(v.x)>fabs(v.y);
 }
 - (void)pan:(UIPanGestureRecognizer *)g {
     if(![self.binding canSeek]) { self.dragging=NO; [self setNeedsDisplay]; return; }
     if(g.state==UIGestureRecognizerStateBegan || g.state==UIGestureRecognizerStateChanged) {
-        self.dragging=YES; self.preview=fmax(0,fmin(1,[g locationInView:self].x/fmax(1,self.bounds.size.width)));
+        self.dragging=YES; self.preview=fmax(0,fmin(1,[g locationInView:self].x/fmax(1,[self waveWidth])));
     } else {
         BOOL commit=g.state==UIGestureRecognizerStateEnded && self.dragging; self.dragging=NO;
         if(commit) [self.binding seek:self.preview];
@@ -119,8 +141,8 @@ static BOOL Foreground(void) { return UIApplication.sharedApplication.applicatio
 - (void)accessibilityDecrement { if([self.binding canSeek]) [self.binding seek:self.progress-0.05]; }
 - (void)drawRect:(CGRect)rect {
     CGContextRef c=UIGraphicsGetCurrentContext(); if(!c) return;
-    CGFloat w=self.bounds.size.width, h=self.bounds.size.height-14;
-    if(h<=0) return;
+    CGFloat w=[self waveWidth], h=self.bounds.size.height;
+    if(h<=0 || w<=0) return;
     for(NSUInteger i=0;i<self.peaks.count;i++) {
         double a=self.peaks[i].doubleValue;
         // Pulse changes only the measured bar's scale; silence remains silence.
@@ -128,11 +150,11 @@ static BOOL Foreground(void) { return UIApplication.sharedApplication.applicatio
         CGFloat x=(i+0.5)*w/self.peaks.count, height=a*h;
         UIColor *color=((i+0.5)/self.peaks.count<=self.progress)?UIColor.systemGreenColor:UIColor.secondaryLabelColor;
         CGContextSetStrokeColorWithColor(c,color.CGColor); CGContextSetLineWidth(c,2);
-        CGContextMoveToPoint(c,x,14+(h-height)/2); CGContextAddLineToPoint(c,x,14+(h+height)/2); CGContextStrokePath(c);
+        CGContextMoveToPoint(c,x,(h-height)/2); CGContextAddLineToPoint(c,x,(h+height)/2); CGContextStrokePath(c);
     }
     if(self.dragging) {
         CGContextSetStrokeColorWithColor(c,UIColor.systemOrangeColor.CGColor); CGContextSetLineWidth(c,1);
-        CGContextMoveToPoint(c,self.preview*w,12); CGContextAddLineToPoint(c,self.preview*w,self.bounds.size.height); CGContextStrokePath(c);
+        CGContextMoveToPoint(c,self.preview*w,0); CGContextAddLineToPoint(c,self.preview*w,self.bounds.size.height); CGContextStrokePath(c);
     }
 }
 @end
@@ -199,10 +221,17 @@ static BOOL Foreground(void) { return UIApplication.sharedApplication.applicatio
     if(![self valid]) { [self clear]; return; }
     UIView *bg=Object(self.cell,@"m_bgImageView");
     if(![bg isKindOfClass:UIView.class] || ![bg isDescendantOfView:self.cell] || bg.bounds.size.width<60 || bg.bounds.size.height<32) { [self clear]; return; }
+    CGRect area=[bg convertRect:bg.bounds toView:self.cell];
+    WUVoiceRect obstacles[128], safe; size_t count=0;
+    if(!VoiceObstacles(self.cell,self.cell,bg,self.wave,obstacles,&count,0) ||
+       !WUVoicePlace((WUVoiceRect){area.origin.x,area.origin.y,area.size.width,area.size.height},obstacles,count,&safe)) {
+        [self clear]; return;
+    }
     if(!self.wave) { self.wave=[[WUVoiceWave alloc] initWithFrame:CGRectZero]; self.wave.binding=self; }
     if(self.wave.superview!=self.cell) [self.cell addSubview:self.wave];
-    CGRect area=[bg convertRect:bg.bounds toView:self.cell];
-    self.wave.frame=CGRectMake(area.origin.x+8,CGRectGetMaxY(area)-30,MAX(0,area.size.width-16),28);
+    self.wave.frame=CGRectMake(safe.x,safe.y,safe.w,safe.h);
+    UILabel *host=Object(self.cell,@"m_secLabel");
+    if([host isKindOfClass:UILabel.class] && host.font) self.wave.time.font=[host.font fontWithSize:MIN(10,host.font.pointSize)];
     id path=CallObject(self.message,@"getVoicePath");
     if(![path isKindOfClass:NSString.class]) path=nil;
     if(![self.path isEqual:path] && (self.path || path)) {
@@ -241,7 +270,8 @@ static BOOL Foreground(void) { return UIApplication.sharedApplication.applicatio
             });
         }});
     }
-    [self refreshDisplay];
+    // Keep native duration and layout untouched; PCM duration is shown only in the safe strip.
+    [self clearDisplay];
     BOOL active=clockOwner.model==self.model && Playing(self.model) && clockOwner.facade==Facade();
     double current=active?ClockMS(clockOwner.facade):0, total=[self.audio[@"duration"] doubleValue];
     if(current<0 || current>180000) { active=NO; current=0; }
@@ -252,14 +282,10 @@ static BOOL Foreground(void) { return UIApplication.sharedApplication.applicatio
     if(total>0 && Option(@"voiceRealDuration")) {
         double shown=Option(@"voiceCountdown") && active?fmax(0,total-current):current;
         text=active?[NSString stringWithFormat:@"%@ / %@",WUVoiceTime(shown,Option(@"voiceCarry")),WUVoiceTime(total,Option(@"voiceCarry"))]:WUVoiceTime(total,Option(@"voiceCarry"));
-    } else text=active?[NSString stringWithFormat:@"%@ · 总时长未解码",WUVoiceTime(current,Option(@"voiceCarry"))]:(self.loading?@"采样中…":@"此编码波形不可用");
+    } else text=active?WUVoiceTime(current,Option(@"voiceCarry")):@"";
     if(!Option(@"voiceRealDuration") && total>0) text=active?WUVoiceTime(current,Option(@"voiceCarry")):@"";
-    if(total>0 && Option(@"voiceRealDuration")) {
-        if(!self.appliedText) text=[text stringByAppendingString:@" · 原显示接口不可用"];
-        else if(self.display.layoutObserved && !self.display.layoutConsumedDuration)
-            text=[text stringByAppendingString:@" · 原气泡布局未读取时长"];
-    }
     self.wave.time.text=text;
+    [self.wave setNeedsLayout]; [self.wave layoutIfNeeded];
     self.wave.accessibilityLabel=@"语音真实播放进度"; self.wave.accessibilityValue=text;
     self.wave.accessibilityTraits=[self canSeek]?UIAccessibilityTraitAdjustable:UIAccessibilityTraitStaticText;
     self.wave.accessibilityHint=[self canSeek]?@"左右拖动，松手定位；上下轻扫调整5%":@"当前不可拖动";
@@ -282,7 +308,7 @@ static BOOL Foreground(void) { return UIApplication.sharedApplication.applicatio
 static void Bind(UIView *cell) {
     if(!NSThread.isMainThread) return;
     WUVoiceBinding *b=objc_getAssociatedObject(cell,&bindingKey);
-    if(!WUEnabled(@"voiceProgress") || !Foreground() || !cell.window) { [b clear]; return; }
+    if(!WUVoiceOverlayReady() || !WUEnabled(@"voiceProgress") || !Foreground() || !cell.window) { [b clear]; return; }
     id vm=Object(cell,@"viewModel"), msg=Object(vm,@"messageWrap");
     NSString *account=WUCurrentAccount(); NSUInteger gen=WUContextGeneration();
     if(!vm || !msg || !account.length) { [b clear]; return; }
@@ -312,7 +338,7 @@ static void SetPlaying(id vm, SEL cmd, BOOL value) {
     else {
         [clockOwner stop];
         id f=Facade();
-        if(installed && WUEnabled(@"voiceProgress") && Foreground() && ClockReady(f) && Playing(vm)) {
+        if(WUVoiceOverlayReady() && installed && WUEnabled(@"voiceProgress") && Foreground() && ClockReady(f) && Playing(vm)) {
             clockOwner.account=WUCurrentAccount(); clockOwner.generation=WUContextGeneration();
             if(clockOwner.account.length) {
                 clockOwner.model=vm; clockOwner.facade=f;
@@ -328,8 +354,8 @@ void WUCancelVoice(void) {
     [clockOwner stop]; for(WUVoiceBinding *b in bindings.allObjects) [b clear];
 }
 BOOL WUVoiceAvailable(NSString *key) {
-    if(!installed) return NO;
-    id f=Facade(); return ClockReady(f) && (![key isEqual:@"voiceSeek"] || SeekReady(f));
+    if(!WUVoiceOverlayReady() || !installed) return NO;
+    id f=Facade(); return ![key isEqual:@"voiceSeek"] || (ClockReady(f) && SeekReady(f));
 }
 void WUInstallVoice(void) {
     static dispatch_once_t once; dispatch_once(&once,^{
@@ -338,7 +364,7 @@ void WUInstallVoice(void) {
             WUCancelVoice(); if([n.name isEqual:WUChanged] && Foreground() && WUEnabled(@"voiceProgress")) for(WUVoiceBinding *b in bindings.allObjects) Bind(b.cell);
         }];
     });
-    WUInstallVoiceDisplay();
+    // No host duration projection is needed for the separate safe strip.
     if(installed) return;
     Class cell=NSClassFromString(@"VoiceMessageCellView"), vm=NSClassFromString(@"VoiceMessageViewModel");
     if(!WUMatches(class_getInstanceMethod(cell,@selector(layoutSubviews)),"v",@[]) ||

@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
 // Manual chat-toolbar entry only. Opening is not an add/upload receipt.
 void WUOpenSelectedImageEditor(UIViewController *owner);
+void WUOpenMessageImageEditor(UIViewController *owner, id wrap, BOOL (^current)(void));
 BOOL WUImageEntryOwnsNavigation(UIViewController *owner);
 // Article callers have already shown source + preview and obtained user confirmation.
 // The guard is main-thread only; editing=YES after our editor is allocated.

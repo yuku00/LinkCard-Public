@@ -9,6 +9,10 @@ static char cardBusy;
 static BOOL Has(id obj, NSString *name, const char *ret, NSArray *args) {
     return obj && WUMatches(class_getInstanceMethod(object_getClass(obj), NSSelectorFromString(name)), ret, args);
 }
+static int RouteKind(Class route) {
+    return WUCardRouteKind(Has(route,@"openLegacyCardHomePageWithNavigationController:","v",@[@"@"]),
+                           Has(route,@"openLegacyCardHomePageWithNavigationController:",@encode(BOOL),@[@"@"]));
+}
 static void CardJump(id service, SEL sel, id from, id session) {
     if (!WUEnabled(@"cardDirect") || !NSThread.isMainThread || object_getClass(from)!=NSClassFromString(@"MoreViewController") || ![from isKindOfClass:UIViewController.class]) {
         ((void(*)(id,SEL,id,id))cardOriginal)(service,sel,from,session); return;
@@ -16,14 +20,16 @@ static void CardJump(id service, SEL sel, id from, id session) {
     UIViewController *vc=from; UINavigationController *nav=vc.navigationController;
     Class route=NSClassFromString(@"MMUIRouteRegistry"); SEL open=NSSelectorFromString(@"openLegacyCardHomePageWithNavigationController:");
     if (nav && objc_getAssociatedObject(nav,&cardBusy)) return;
-    if (!vc.isViewLoaded || !vc.view.window || !nav || nav.topViewController!=vc || vc.presentedViewController || nav.transitionCoordinator || !Has(route,NSStringFromSelector(open),@encode(BOOL),@[@"@"])) {
+    int routeKind=RouteKind(route);
+    if (!vc.isViewLoaded || !vc.view.window || !nav || nav.topViewController!=vc || vc.presentedViewController || nav.transitionCoordinator || !routeKind) {
         ((void(*)(id,SEL,id,id))cardOriginal)(service,sel,from,session); return;
     }
     NSArray *before=[nav.viewControllers copy]; BOOL handled=NO, attempted=NO;
     objc_setAssociatedObject(nav,&cardBusy,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     @try {
         attempted=YES;
-        handled=((BOOL(*)(id,SEL,id))objc_msgSend)(route,open,nav);
+        if(routeKind==1) ((void(*)(id,SEL,id))objc_msgSend)(route,open,nav);
+        else handled=((BOOL(*)(id,SEL,id))objc_msgSend)(route,open,nav);
     } @catch (NSException *e) {
         // Once invoked, an exception does not prove that navigation was not scheduled.
         handled=YES;
@@ -33,7 +39,7 @@ static void CardJump(id service, SEL sel, id from, id session) {
 }
 void WUInstallCardDirect(void) {
     Class route=NSClassFromString(@"MMUIRouteRegistry");
-    cardReady=Has(route,@"openLegacyCardHomePageWithNavigationController:",@encode(BOOL),@[@"@"]) && NSClassFromString(@"MoreViewController") &&
+    cardReady=RouteKind(route) && NSClassFromString(@"MoreViewController") &&
         WUHook(@"EcsOrderService",@"jumpOrderAndCardCenterFromVc:clickSessionId:",NO,"v",@[@"@",@"@"],(IMP)CardJump,&cardOriginal) && cardOriginal;
 }
 BOOL WUCardDirectAvailable(void) { return cardReady; }

@@ -50,6 +50,18 @@ static WUHomeSnapshot *Snapshot(id m) {
     if(!s) {
         s=[WUHomeSnapshot new]; s.manager=m; s.account=WUCurrentAccount(); s.source=[NSMutableArray array];
         for(NSString *name in getNames) { id a=Obj(m,name); [s.source addObject:[a isKindOfClass:NSArray.class] && [a count]<=20000?[a copy]:NSNull.null]; }
+        // The hook may be installed after the host's initial setter calls.
+        SEL countSel=NSSelectorFromString(@"totalTopSessionCount");
+        Method countGetter=class_getInstanceMethod(object_getClass(m),countSel);
+        if(countSigned && WUMatches(countGetter,"q",@[])) {
+            s.signedTopCount=((long long(*)(id,SEL))objc_msgSend)(m,countSel);
+            s.countUsable=s.signedTopCount>=0 && (unsigned long long)s.signedTopCount<=NSUIntegerMax;
+            s.topCount=s.countUsable?(NSUInteger)s.signedTopCount:0; s.countKnown=YES;
+        } else if(!countSigned && WUMatches(countGetter,"Q",@[])) {
+            s.unsignedTopCount=((unsigned long long(*)(id,SEL))objc_msgSend)(m,countSel);
+            s.countUsable=s.unsignedTopCount<=NSUIntegerMax;
+            s.topCount=s.countUsable?(NSUInteger)s.unsignedTopCount:0; s.countKnown=YES;
+        }
         objc_setAssociatedObject(m,&managerKey,s,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [managers addObject:s];
     }
     return s;
@@ -241,6 +253,13 @@ static BOOL SearchOnlyHeader(UIView *header) {
         t.tableHeaderView=self.searchPlaceholder;
     }
     NSString *a=WUCurrentAccount(); NSDictionary *state=State(a); BOOL available=NO;
+    // Register an already-populated manager even when no setter fired after installation.
+    id manager=ready && a.length?CurrentManager():nil;
+    if(manager) {
+        WUHomeSnapshot *prior=objc_getAssociatedObject(manager,&managerKey);
+        if(prior && !prior.filtered && ![prior.account isEqual:a]) objc_setAssociatedObject(manager,&managerKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        (void)Snapshot(manager);
+    }
     for(WUHomeSnapshot *s in managers.allObjects) if([s current] && !s.invalid && s.countKnown && ![s.source containsObject:NSNull.null]) { [s apply]; available=s.filtered; }
     if(!ready || !available || ![state[@"enabled"] boolValue] || ![WUValue(@"enabled") boolValue]) { [self restoreGroup]; return; }
     if(![a isEqual:self.account]) [self restoreGroup];

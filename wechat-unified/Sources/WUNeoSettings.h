@@ -55,7 +55,7 @@ static inline UIView *WUNeoCardBackground(UIColor *color) {
     UIView *card=[[UIView alloc] initWithFrame:CGRectInset(container.bounds,16,4)];
     card.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
     card.backgroundColor=color;
-    card.layer.cornerRadius=20;
+    card.layer.cornerRadius=16;
     card.layer.cornerCurve=kCACornerCurveContinuous;
     card.userInteractionEnabled=NO;
     [container addSubview:card];
@@ -69,6 +69,13 @@ static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol
     cell.backgroundView=WUNeoCardBackground(UIColor.secondarySystemGroupedBackgroundColor);
     cell.selectedBackgroundView=WUNeoCardBackground(UIColor.tertiarySystemFillColor);
     cell.directionalLayoutMargins=NSDirectionalEdgeInsetsMake(14,34,14,34);
+    // Keep a short row rectangular without constraining larger Dynamic Type rows.
+    if (![cell.contentView.constraints filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"identifier == %@", @"WUNeoMinimumRowHeight"]].count) {
+        NSLayoutConstraint *minimum=[cell.contentView.heightAnchor constraintGreaterThanOrEqualToConstant:64];
+        minimum.identifier=@"WUNeoMinimumRowHeight";
+        minimum.priority=999;
+        minimum.active=YES;
+    }
     cell.tintColor=WUNeoAccentColor();
     if(symbol.length) cell.textLabel.font=[UIFontMetrics.defaultMetrics scaledFontForFont:[UIFont systemFontOfSize:17 weight:UIFontWeightSemibold]];
     cell.textLabel.adjustsFontForContentSizeCategory=YES;

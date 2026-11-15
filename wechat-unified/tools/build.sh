@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 mkdir -p build
 python3 tools/generate_candidates.py
 python3 tests/test_candidate_manifest.py
+python3 tests/test_release_closure.py
 python3 tests/test_card_settings_contract.py
 xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/card_policy.c -o build/card-policy-tests
 build/card-policy-tests
@@ -40,6 +41,10 @@ python3 tests/test_wrapper_diagnostics.py
 sh tools/test_host_service.sh
 sh tools/test_message_service_compatibility.sh
 sh tools/test_message_revoke_proxy.sh
+python3 tests/test_revoke_notice_contract.py
+xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/revoke_notice_mock.m Sources/WURevokeNotice.m Sources/MessageConstruction.m -framework Foundation -o build/revoke-notice-tests
+build/revoke-notice-tests
+rm build/revoke-notice-tests
 xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/diagnostic_ring.c -o build/diagnostic-ring-tests
 build/diagnostic-ring-tests
 rm build/diagnostic-ring-tests
@@ -52,6 +57,7 @@ WU_REQUIRE_APPLE_TESTS=1 python3 tests/miniads/run.py | tee build/miniads-tests.
 rm -r build/miniads
 bash tools/test_message_entries.sh
 sh tools/test_link_menu_native.sh
+python3 tests/test_menu_runtime_wiring.py
 sh tools/test_emoticon_library.sh
 python3 tests/make_theme_fixtures.py > build/theme-fixtures.json
 bash tests/run_ui_tests.sh

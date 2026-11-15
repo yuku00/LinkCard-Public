@@ -18,6 +18,7 @@
 #import "WUHostService.h"
 #import "WUVerifiedServiceProxy.h"
 #import "WUMessageServiceCompatibility.h"
+#import "WURevokeNotice.h"
 #import <CommonCrypto/CommonHMAC.h>
 #import <CommonCrypto/CommonDigest.h>
 static void OpenEmoticonLibrary(UIViewController *owner);
@@ -139,12 +140,16 @@ static void Revoke(id self, SEL cmd, id notice) {
     @try {
         if(WUEnabled(@"antiRevoke")) {
             NSDictionary *fields=WURevokeFields(Str(notice,@"m_nsContent")); NSString *a=Account(), *s=fields[@"session"]; NSUInteger g=generation;
-            id old=fields && a.length?Lookup(Service(@"CMessageMgr"),s,[fields[@"id"] unsignedLongLongValue]):nil;
+            id mgr=Service(@"CMessageMgr");
+            id old=fields && a.length?Lookup(mgr,s,[fields[@"id"] unsignedLongLongValue]):nil;
             NSDictionary *m=Info(old);
             protect=old && [m[@"id"] isEqual:fields[@"id"]] && [a isEqual:Account()] && g==generation && InSession(m,a,s) && !WUOwnMessage(a,s,m[@"from"],m[@"real"]) && [m[@"from"] length] && (![s hasSuffix:@"@chatroom"] || [m[@"real"] length]);
+            if(protect) WURevokeNoticeInsert(mgr,a,s,[fields[@"id"] unsignedLongLongValue],g,m[@"from"],m[@"to"],[m[@"time"] unsignedIntValue],^BOOL{
+                return WUEnabled(@"antiRevoke") && [a isEqual:Account()] && g==generation;
+            });
         }
     } @catch(NSException *e) { protect=NO; }
-    // No local insertion; duplicate notices are idempotent and cannot cause a second write.
+    // Insertion is best effort and cannot change the protection decision.
     if(!protect) ((void(*)(id,SEL,id))revokeOriginal)(self,cmd,notice);
 }
 static IMP callbackOriginal;
@@ -341,7 +346,17 @@ static IMP chatAppearOriginal, chatDisappearOriginal, chatLayoutOriginal;
 static char chatKey;
 static void ChatLayout(UIViewController *v,SEL s) {
     ((void(*)(id,SEL))chatLayoutOriginal)(v,s);
-    @try { [((WUChatActions *)objc_getAssociatedObject(v,&chatKey)) syncInputToolbar]; } @catch(__unused NSException *e) {}
+    @try {
+        WUChatActions *actions=objc_getAssociatedObject(v,&chatKey);
+        [actions syncInputToolbar];
+        // The host may replace navigation items when entering multi-select.
+        if(actions.recall && WUEnabled(@"multiRevoke") && Has(v,@"getSelectedMsgs","@",@[]) && RevokeSelector(Service(@"CMessageMgr"))) {
+            id selected=Obj(v,@"getSelectedMsgs");
+            NSArray *items=v.navigationItem.rightBarButtonItems ?: @[];
+            if([selected isKindOfClass:NSArray.class] && [selected count] && ![items containsObject:actions.recall])
+                v.navigationItem.rightBarButtonItems=[items arrayByAddingObject:actions.recall];
+        }
+    } @catch(__unused NSException *e) {}
 }
 static void ChatAppeared(UIViewController *v,SEL s,BOOL animated) {
     ((void(*)(id,SEL,BOOL))chatAppearOriginal)(v,s,animated);

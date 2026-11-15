@@ -172,6 +172,13 @@ int main(int argc, const char *argv[]) { @autoreleasepool {
             CHECK(entries.count==0 && nav.changes==changes && clearCalls==0 && editor.accepted!=nil);
             CHECK([WUEmoticonRead(path) isEqual:image]);
         }
+        // Single-message menu uses the same cache validation without host multi-select or toolbar membership.
+        Setup(png); selectedTool=NO; chat.selection=@[]; __block BOOL menuCurrent=YES;
+        WUOpenMessageImageEditor(chat,wrap,^BOOL { return menuCurrent; });
+        Wait(^BOOL { return chat.presentedViewController!=nil || entries.count==0; });
+        CHECK([chat.presentedViewController isKindOfClass:UIAlertController.class]);
+        Accept((id)chat.presentedViewController); CHECK(nav.pushes==1 && imageCalls==1);
+        menuCurrent=NO; Tick(); CHECK(entries.count==0 && nav.topViewController==chat);
         // Source selection is frozen before confirmation, not a lifetime lease on host multi-select UI.
         Setup(png); nav.duringPush=^{ chat.selection=@[]; }; Open(); Tick();
         CHECK(entries.count==1 && ((ImageEditorBase *)nav.topViewController).accepted!=nil);

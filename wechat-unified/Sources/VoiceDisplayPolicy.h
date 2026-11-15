@@ -3,6 +3,8 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+/* Per-message host geometry and ABI checks decide whether an overlay is safe. */
+static inline bool WUVoiceOverlayReady(void) { return true; }
 /* PCM is milliseconds; only the host's bubble projection saturates at 60s. */
 static inline uint32_t WUVoiceDisplayMS(double ms) {
     if(!isfinite(ms) || ms<=0 || ms>180000) return 0;

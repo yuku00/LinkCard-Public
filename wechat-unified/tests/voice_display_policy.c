@@ -18,6 +18,8 @@ static void layout(Host *h) {
     h->scoped=false;
 }
 int main(void) {
+    /* Availability is refined by host ABI and each message's safe geometry. */
+    assert(WUVoiceOverlayReady());
     const double bad[]={0,-1,NAN,INFINITY,180000.01};
     for(unsigned i=0;i<sizeof(bad)/sizeof(*bad);i++) assert(!WUVoiceDisplayMS(bad[i]));
     assert(WUVoiceDisplayMS(.1)==1 && WUVoiceDisplayMS(999.99)==999);
