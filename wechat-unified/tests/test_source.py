@@ -300,7 +300,19 @@ class Guardrails(unittest.TestCase):
         self.assertLess(logic.index('self.consumed=YES'), logic.index('NSString *insert=VoiceServiceInvoke'))
         self.assertEqual(logic.count('NSString *insert=VoiceServiceInvoke'), 1)
         self.assertEqual(logic.count('NSString *send=VoiceServiceInvoke'), 1)
-        for word in ['ForwardMsg:', 'ResendMsg:', 'writeTo', 'removeItem', 'NSURLSession']:
+        # WCPulse's nil-AudioSender branch is chosen before any host side effect,
+        # not a retry after an AudioSender call or ABI failure.
+        choice='id sender=audio ?: manager;'
+        selector='NSString *sendSelector=audio?@"ResendVoiceMsg:MsgWrap:":@"ResendMsg:MsgWrap:";'
+        invoke='NSString *send=VoiceServiceInvoke(sender,senderClass,sendSelector,self.target,message);'
+        self.assertEqual(logic.count('ResendMsg:'),1)
+        self.assertNotIn('ResendMsg:',ui)
+        self.assertIn(selector,logic)
+        self.assertLess(logic.index(choice),logic.index('NSString *insert=VoiceServiceInvoke'))
+        self.assertLess(logic.index(selector),logic.index('NSString *insert=VoiceServiceInvoke'))
+        self.assertIn(invoke,logic)
+        self.assertNotIn('VoiceServiceInvoke(',logic[logic.index(invoke)+len(invoke):])
+        for word in ['ForwardMsg:', 'writeTo', 'removeItem', 'NSURLSession']:
             self.assertNotIn(word,logic+ui)
         self.assertIn('tests/voice_send_logic.m',(ROOT/'tools/build.sh').read_text())
         self.assertIn('@"voiceForward"',(ROOT/'Sources/GroupLogic.m').read_text())

@@ -1,3 +1,4 @@
+#import "WUMessageServiceCompatibility.h"
 // UIKit styling is imported only alongside the iOS controller below.
 #import "WUStats.h"
 #import "WUStatsHostProfile.h"
@@ -182,13 +183,7 @@ static BOOL WUUInt32(id n) { return [n isKindOfClass:NSNumber.class] && isfinite
 // The sample writes w3/w4/w5. Runtime may widen integer parameters; marshal
 // each independently at its actual width, never reinterpret pointers/objects.
 NSString *WUStatsAppMethodEncoding(id manager) {
-    if(!WUHostIs(manager,@"CMessageMgr")) return nil;
-    Method m=class_getInstanceMethod(object_getClass(manager),NSSelectorFromString(@"GetAppMsgList:FromID:CreateTime:Limit:"));
-    if(!m) return nil;
-    NSMethodSignature *s=[NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(m)];
-    if(s.numberOfArguments!=6 || strcmp(WUUnqualified(s.methodReturnType),"@") || strcmp(WUUnqualified([s getArgumentTypeAtIndex:2]),"@")) return nil;
-    for(NSUInteger i=3;i<6;i++) { const char *t=WUUnqualified([s getArgumentTypeAtIndex:i]); if(strlen(t)!=1 || !strchr("iIqQ",*t)) return nil; }
-    return [NSString stringWithUTF8String:method_getTypeEncoding(m)];
+    return WUMessageServiceEncoding(manager,WUMessageServiceStatsAppPage);
 }
 static NSArray *WUReadAppPage(WUStatsBinding *b, NSDictionary *cursor, NSString **failure) {
     NSString *encoding=WUStatsAppMethodEncoding(b.messageManager);
@@ -270,12 +265,9 @@ NSDictionary *WUStatsDecodeHostPage(NSArray *page, uint32_t left, NSString *acco
 }
 static NSArray *WUReadPage(WUStatsBinding *b,NSDictionary *cursor,uint32_t *left,NSString **failure) {
     SEL sel=NSSelectorFromString(@"GetMsgByCreateTime:FromID:FromCreateTime:Limit:LeftCount:");
-    Class cls=NSClassFromString(@"CMessageMgr");
-    if (!cls || ![b.messageManager isKindOfClass:cls] || !b.verifiedEncoding.length) { *failure=@"尚未接入：缺少经核验的 CMessageMgr 签名"; return nil; }
-    Method method=class_getInstanceMethod(object_getClass(b.messageManager),sel);
-    const char *encoding=method ? method_getTypeEncoding(method) : NULL;
-    if (!encoding || strcmp(encoding,b.verifiedEncoding.UTF8String)!=0) { *failure=@"不可用：宿主签名与核验版本不匹配"; return nil; }
-    NSMethodSignature *sig=[NSMethodSignature signatureWithObjCTypes:encoding];
+    NSString *encoding=WUMessageServiceEncoding(b.messageManager,WUMessageServiceStatsPage);
+    if (!encoding || !b.verifiedEncoding.length || ![encoding isEqual:b.verifiedEncoding]) { *failure=@"不可用：宿主签名与核验版本不匹配"; return nil; }
+    NSMethodSignature *sig=[NSMethodSignature signatureWithObjCTypes:encoding.UTF8String];
     BOOL ok=sig.numberOfArguments==7 && strcmp(WUUnqualified(sig.methodReturnType),"@")==0;
     if (ok) ok=strcmp(WUUnqualified([sig getArgumentTypeAtIndex:2]),"@")==0;
     for (NSUInteger i=3;ok && i<=5;i++) { const char *t=WUUnqualified([sig getArgumentTypeAtIndex:i]); ok=!strcmp(t,"I") || !strcmp(t,"i"); }

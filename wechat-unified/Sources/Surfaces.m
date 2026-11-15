@@ -276,6 +276,7 @@ void WUInstallSurfaces(void) {
             for(UIView *view in quickReplies.allObjects) { RestoreQuickReply(view); [view setNeedsLayout]; }
         }];
     });
+    WUInstallEmoticonCorners();
     Class quick=NSClassFromString(@"QuickReplyMsgNotifyView");
     if(quick && [quick isSubclassOfClass:UIView.class] && WUHook(@"QuickReplyMsgNotifyView",@"didMoveToWindow",NO,"v",@[],(IMP)QuickReplyWindow,&quickReplyWindow))
         WUHook(@"QuickReplyMsgNotifyView",@"layoutSubviews",NO,"v",@[],(IMP)QuickReplyLayout,&quickReplyLayout);

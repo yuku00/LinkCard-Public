@@ -5,6 +5,7 @@
 #import <CommonCrypto/CommonDigest.h>
 #import <stdatomic.h>
 #import "WUHostService.h"
+#import "WUVerifiedServiceProxy.h"
 #import "WUDiagnosticRing.h"
 #include <assert.h>
 #include <string.h>
@@ -49,8 +50,25 @@ static id active, current, legacy;
 @implementation Contact @end
 @interface MainSessionMgr : NSObject @end
 @implementation MainSessionMgr @end
-@interface MMNewSessionMgr : NSObject @end
-@implementation MMNewSessionMgr @end
+@interface MMNewSessionMgr : NSObject
+- (id)GetUserNamesOnSessionList;
+- (id)GetSessionByUserName:(id)name;
+@end
+@implementation MMNewSessionMgr
+- (id)GetUserNamesOnSessionList { return @[@"alice"]; }
+- (id)GetSessionByUserName:(id)name { return name; }
+@end
+@interface SessionProxy : NSProxy
+@property(nonatomic,strong) MMNewSessionMgr *target;
+@property(nonatomic) BOOL badLookup;
+@end
+@implementation SessionProxy
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector {
+    if(self.badLookup && selector==@selector(GetSessionByUserName:)) return [NSMethodSignature signatureWithObjCTypes:"i@:@"];
+    return [self.target methodSignatureForSelector:selector];
+}
+- (void)forwardInvocation:(NSInvocation *)invocation { [invocation invokeWithTarget:self.target]; }
+@end
 @interface Provider : NSObject
 @property(nonatomic,strong) id manager;
 @property(nonatomic,strong) id homeManager;
@@ -130,6 +148,14 @@ int main(int argc, const char **argv) { @autoreleasepool {
         }
         return 0;
     }
+    SessionProxy *sessionProxy=[SessionProxy alloc]; sessionProxy.target=[MMNewSessionMgr new];
+    assert(WUVerifiedProxyMethod(sessionProxy,WUVerifiedSessionNames));
+    assert(WUVerifiedProxyMethod(sessionProxy,WUVerifiedSessionLookup));
+    assert([((id(*)(id,SEL))objc_msgSend)(sessionProxy,@selector(GetUserNamesOnSessionList)) isEqual:@[@"alice"]]);
+    assert([((id(*)(id,SEL,id))objc_msgSend)(sessionProxy,@selector(GetSessionByUserName:),@"alice") isEqual:@"alice"]);
+    sessionProxy.badLookup=YES;
+    assert(!WUVerifiedProxyMethod(sessionProxy,WUVerifiedSessionLookup));
+    assert(!WUVerifiedProxyMethod([NSObject new],WUVerifiedSessionNames));
     legacy=Make(@"legacy"); current=Make(@"current"); active=Make(@"active");
     ((Provider *)current).homeManager=[MainSessionMgr new];
     ((Provider *)current).sessionManager=[MMNewSessionMgr new];

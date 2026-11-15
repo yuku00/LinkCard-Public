@@ -4,9 +4,19 @@ cd "$(dirname "$0")/.."
 mkdir -p build
 python3 tools/generate_candidates.py
 python3 tests/test_candidate_manifest.py
+python3 tests/test_card_settings_contract.py
+xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/card_policy.c -o build/card-policy-tests
+build/card-policy-tests
+rm build/card-policy-tests
+xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/emoticon_corner_state.c -o build/emoticon-corner-state-tests
+build/emoticon-corner-state-tests
+rm build/emoticon-corner-state-tests
 xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/menu_signature.c -o build/menu-signature-tests
 build/menu-signature-tests
 rm build/menu-signature-tests
+xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/input_reservation_geometry.c -lm -o build/input-reservation-geometry-tests
+build/input-reservation-geometry-tests
+rm build/input-reservation-geometry-tests
 python3 tests/test_capture_contract.py
 python3 tests/test_feature_diagnostics.py
 for test in tests/test_incremental_safety.py tests/test_chat_layout.py tests/test_chat_surface.py tests/test_child_surface_refresh.py tests/test_home_service_resolution.py tests/test_host_popup_surface.py tests/test_keyboard_playback_contract.py tests/test_neo_search_tiles.py tests/test_plus_switch_safety.py tests/test_quick_reply_surface.py tests/test_red_reminder_wiring.py tests/test_reply_surface.py tests/test_text_bubble_surface.py; do
@@ -16,6 +26,7 @@ python3 tests/test_source.py
 python3 tests/test_home_count_abi.py
 python3 tests/test_theme_svg_abi.py
 python3 tests/test_account_generation_regression.py
+python3 tests/test_chat_input_toolbar_safety.py
 python3 tests/test_github_transport.py
 python3 tests/miniads/contract.py
 python3 tests/test_settings_search.py
@@ -27,6 +38,8 @@ python3 tests/test_link_diagnostics.py
 python3 tests/test_diagnostics_integration.py
 python3 tests/test_wrapper_diagnostics.py
 sh tools/test_host_service.sh
+sh tools/test_message_service_compatibility.sh
+sh tools/test_message_revoke_proxy.sh
 xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/diagnostic_ring.c -o build/diagnostic-ring-tests
 build/diagnostic-ring-tests
 rm build/diagnostic-ring-tests
@@ -38,6 +51,7 @@ python3 tools/test_hook_ownership.py | tee build/hook-ownership-tests.txt
 WU_REQUIRE_APPLE_TESTS=1 python3 tests/miniads/run.py | tee build/miniads-tests.txt
 rm -r build/miniads
 bash tools/test_message_entries.sh
+sh tools/test_link_menu_native.sh
 sh tools/test_emoticon_library.sh
 python3 tests/make_theme_fixtures.py > build/theme-fixtures.json
 bash tests/run_ui_tests.sh

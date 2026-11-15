@@ -4,7 +4,7 @@
 #import "ThemePrimitives.h"
 #import <QuartzCore/QuartzCore.h>
 #include <math.h>
-static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入框",@"noticeBorder":@"聊天系统通知",@"searchSurface":@"搜索栏",@"referSurface":@"引用卡片（原共享样式）",@"referMessageSurface":@"文本消息内引用卡片覆盖",@"textPreviewSurface":@"聊天文本预览底部工具栏",@"hostPopupSurface":@"微信纯文字提示背景（限定页面）",@"quickReplySurface":@"微信顶部快速回复横幅",@"plusSurface":@"首页右上加号菜单（暂停）",@"toastSurface":@"宿主Toast",@"timeSurface":@"聊天时间标签",@"swipeSurface":@"首页左滑菜单",@"textBubbleSurface":@"文本消息气泡",@"fileSurface":@"文件消息背景",@"emoticonSurface":@"表情消息背景",@"chatSendSurface":@"聊天发送按钮",@"chatAttachmentSurface":@"聊天附件按钮"}; }
+static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入框",@"noticeBorder":@"聊天系统通知",@"searchSurface":@"搜索栏",@"referSurface":@"引用卡片（原共享样式）",@"referMessageSurface":@"文本消息内引用卡片覆盖",@"textPreviewSurface":@"聊天文本预览底部工具栏",@"hostPopupSurface":@"微信纯文字提示背景（限定页面）",@"quickReplySurface":@"微信顶部快速回复横幅",@"plusSurface":@"首页右上加号菜单（暂停）",@"toastSurface":@"宿主Toast",@"timeSurface":@"聊天时间标签",@"swipeSurface":@"首页左滑菜单",@"textBubbleSurface":@"文本消息气泡",@"fileSurface":@"文件消息背景",@"emoticonSurface":@"表情消息背景",@"emoticonContentCorner":@"聊天表情本体圆角",@"chatSendSurface":@"聊天发送按钮",@"chatAttachmentSurface":@"聊天附件按钮"}; }
 @interface WUSurfaceEditor : UITableViewController <UIColorPickerViewControllerDelegate>
 @property(nonatomic,copy) NSString *role;
 @property(nonatomic,strong) NSArray *fields;
@@ -16,7 +16,7 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
 - (void)refreshPreview;
 @end
 @implementation WUSurfaceEditor
-- (void)viewDidLoad { [super viewDidLoad]; WUNeoPrepareTable(self); self.title=RoleTitles()[self.role]; self.fields=@[@[@"radius",@"圆角 (0–80pt)"],@[@"borderWidth",@"描边尺寸 (0–8pt)"],@[@"opacity",@"背景视图透明度 (0–1)"],@[@"fontSize",@"字体尺寸 (8–48pt)"],@[@"fontWeight",@"系统字体粗细 (-1–1)"],@[@"fontName",@"已安装字体 PostScript 名"],@[@"background",@"浅色背景"],@[@"backgroundDark",@"深色背景"],@[@"text",@"浅色文字"],@[@"textDark",@"深色文字"],@[@"tint",@"浅色图标"],@[@"tintDark",@"深色图标"],@[@"border",@"浅色描边"],@[@"borderDark",@"深色描边"]]; if([@[@"textBubbleSurface",@"fileSurface",@"emoticonSurface"] containsObject:self.role]) self.fields=[@[@[@"widthScale",@"背景宽度比例 (0.7–1.3)"],@[@"heightScale",@"背景高度比例 (0.7–1.3)"]] arrayByAddingObjectsFromArray:self.fields]; [self installPreview]; }
+- (void)viewDidLoad { [super viewDidLoad]; WUNeoPrepareTable(self); self.title=RoleTitles()[self.role]; self.fields=@[@[@"radius",@"圆角 (0–80pt)"],@[@"borderWidth",@"描边尺寸 (0–8pt)"],@[@"opacity",@"背景视图透明度 (0–1)"],@[@"fontSize",@"字体尺寸 (8–48pt)"],@[@"fontWeight",@"系统字体粗细 (-1–1)"],@[@"fontName",@"已安装字体 PostScript 名"],@[@"background",@"浅色背景"],@[@"backgroundDark",@"深色背景"],@[@"text",@"浅色文字"],@[@"textDark",@"深色文字"],@[@"tint",@"浅色图标"],@[@"tintDark",@"深色图标"],@[@"border",@"浅色描边"],@[@"borderDark",@"深色描边"]]; if([@[@"textBubbleSurface",@"fileSurface",@"emoticonSurface"] containsObject:self.role]) self.fields=[@[@[@"widthScale",@"背景宽度比例 (0.7–1.3)"],@[@"heightScale",@"背景高度比例 (0.7–1.3)"]] arrayByAddingObjectsFromArray:self.fields]; if([self.role isEqual:@"emoticonContentCorner"]) self.fields=@[@[@"radius",@"表情本体圆角 (0–80pt，默认12)"]]; [self installPreview]; }
 - (void)installPreview {
     UIView *header=[[UIView alloc] initWithFrame:CGRectMake(0,0,320,160)];
     UIStackView *stack=[UIStackView new]; stack.axis=UILayoutConstraintAxisHorizontal; stack.spacing=12; stack.distribution=UIStackViewDistributionFillEqually; stack.translatesAutoresizingMaskIntoConstraints=NO;
@@ -51,6 +51,8 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 3; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==1?self.fields.count:1; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
+    if([self.role isEqual:@"emoticonContentCorner"]) return s==0?@"默认关闭，同时受总开关控制。":(s==1?@"仅修改聊天中匹配视图链的表情本体显示层；不修改图片、动画或发送。预览为示意，实际效果及触摸和播放尚未真机验证。":@"重置只清除本项圆角参数，不改变开关。");
+    if([self.role isEqual:@"emoticonSurface"] && s==1) return @"本项只调整消息背景，不对表情本体裁圆角；本体圆角另有独立设置。宽高比例仅缩放非交互背景，不改变触控或微信布局。预览为示意。";
     if(s==0) return @"同时受总开关控制。";
     if(s==1) return [@[@"textBubbleSurface",@"fileSurface",@"emoticonSurface"] containsObject:self.role] ? @"宽高比例仅缩放已识别的非交互消息背景，不改变文字、表情、触控区域或微信布局；可能与内容不完全贴合。留空恢复默认。预览为示意。" : @"留空恢复默认；深色未设置时跟随浅色。部分项目不含文字，字体设置不会生效。该项目暂不支持宽高调整。";
     return @"重置只清除本项样式，不改变开关或主题。";

@@ -62,7 +62,8 @@ void WUStatsReadSessionCandidates(BOOL (^current)(void), void (^done)(NSArray *,
         Class cls=NSClassFromString(@"MMNewSessionMgr");
         id manager=WUHostService(@"MMNewSessionMgr");
         SEL lookup=NSSelectorFromString(@"GetSessionByUserName:");
-        if(![manager isKindOfClass:cls] || !(WUMatches(class_getInstanceMethod(object_getClass(manager),lookup),"@",@[@"@"]) || WUVerifiedProxyMethod(manager,WUVerifiedSessionLookup))) { done(nil,YES); return; }
+        BOOL verifiedProxy=WUVerifiedProxyMethod(manager,WUVerifiedSessionNames) && WUVerifiedProxyMethod(manager,WUVerifiedSessionLookup);
+        if(!cls || (!verifiedProxy && ![manager isKindOfClass:cls]) || !(WUMatches(class_getInstanceMethod(object_getClass(manager),lookup),"@",@[@"@"]) || verifiedProxy)) { done(nil,YES); return; }
         id raw=WUVerifiedProxyMethod(manager,WUVerifiedSessionNames)?((id(*)(id,SEL))objc_msgSend)(manager,NSSelectorFromString(@"GetUserNamesOnSessionList")):Obj(manager,@"GetUserNamesOnSessionList");
         if(![raw isKindOfClass:NSArray.class]) { done(nil,YES); return; }
         BOOL limited=[raw count]>20000;
@@ -252,7 +253,7 @@ static BOOL SearchOnlyHeader(UIView *header) {
     UIScrollView *scroll=(id)[self.header viewWithTag:7184]; if(!scroll) { scroll=[[UIScrollView alloc] initWithFrame:CGRectMake(0,0,t.bounds.size.width,44)]; scroll.tag=7184; scroll.autoresizingMask=UIViewAutoresizingFlexibleWidth; [self.header addSubview:scroll]; }
     self.tabs=[[UISegmentedControl alloc] initWithItems:titles]; self.tabs.frame=CGRectMake(8,4,MAX(t.bounds.size.width-16,ids.count*76),36); scroll.contentSize=CGSizeMake(self.tabs.bounds.size.width+16,44); self.tabs.selectedSegmentIndex=[ids indexOfObject:state[@"selected"]]; [self.tabs addTarget:self action:@selector(select:) forControlEvents:UIControlEventValueChanged]; [scroll addSubview:self.tabs];
 }
-- (void)select:(UISegmentedControl *)sender { NSInteger index=sender.selectedSegmentIndex; if(index<0 || (NSUInteger)index>=self.ids.count || self.generation!=WUContextGeneration() || ![self.account isEqual:WUCurrentAccount()] || !self.owner.viewIfLoaded.window || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) { [self restore]; return; } NSMutableDictionary *s=[State(self.account) mutableCopy]; s[@"selected"]=self.ids[index]; (void)WUSaveAccountOption(self.account,@"home",s); }
+- (void)select:(UISegmentedControl *)sender { NSInteger index=sender.selectedSegmentIndex; if(index<0 || (NSUInteger)index>=self.ids.count || self.generation!=WUContextGeneration() || ![self.account isEqual:WUCurrentAccount()] || !self.owner.viewIfLoaded.window || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) { [self restore]; return; } NSMutableDictionary *s=[State(self.account) mutableCopy]; s[@"selected"]=self.ids[index]; if(!WUSaveAccountOption(self.account,@"home",s)) { sender.selectedSegmentIndex=[self.ids indexOfObject:State(self.account)[@"selected"]]; UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"切换失败" message:@"账号变化或配置写入失败，原分组保持不变。" preferredStyle:UIAlertControllerStyleAlert]; [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]]; if(!self.owner.presentedViewController) [self.owner presentViewController:alert animated:YES completion:nil]; } }
 @end
 void WURefreshHome(UIViewController *owner) {
     if(!NSThread.isMainThread) return;

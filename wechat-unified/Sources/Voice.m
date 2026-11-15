@@ -6,6 +6,7 @@
 #import "WUHostService.h"
 #import <QuartzCore/QuartzCore.h>
 #include <math.h>
+#include <string.h>
 extern void WUNativePlaybackCall(id model, BOOL playing, void (^original)(void));
 static BOOL installed;
 static IMP layoutOriginal, playingOriginal, windowOriginal;
@@ -15,7 +16,19 @@ static id Object(id obj, NSString *key) {
     @try { return obj ? [obj valueForKey:key] : nil; } @catch(NSException *e) { return nil; }
 }
 static BOOL Signature(id obj, NSString *name, const char *ret, NSArray *args) {
-    return obj && WUMatches(class_getInstanceMethod(object_getClass(obj),NSSelectorFromString(name)),ret,args);
+    SEL sel=NSSelectorFromString(name); Class cls=obj?object_getClass(obj):Nil;
+    Method actual=cls?class_getInstanceMethod(cls,sel):NULL;
+    if(actual) return WUMatches(actual,ret,args);
+    // Only the observed playback service may use forwarding; verify both host ABI and proxy signature.
+    if(![name isEqual:@"currentPlayTime"] && ![name isEqual:@"seekToTime:"]) return NO;
+    BOOL proxy=NO; for(Class c=cls;c;c=class_getSuperclass(c)) if(c==objc_getClass("NSProxy")) { proxy=YES; break; }
+    if(!proxy || !WUMatches(class_getInstanceMethod(NSClassFromString(@"MsgPlayingFacade"),sel),ret,args)) return NO;
+    @try {
+        NSMethodSignature *sig=[obj methodSignatureForSelector:sel];
+        if(!sig || sig.numberOfArguments!=args.count+2 || strcmp(sig.methodReturnType,ret) || strcmp([sig getArgumentTypeAtIndex:0],"@") || strcmp([sig getArgumentTypeAtIndex:1],":")) return NO;
+        for(NSUInteger i=0;i<args.count;i++) if(strcmp([sig getArgumentTypeAtIndex:i+2],[args[i] UTF8String])) return NO;
+        return YES;
+    } @catch(NSException *e) { return NO; }
 }
 static id CallObject(id obj, NSString *name) {
     if(!Signature(obj,name,"@",@[])) return nil;

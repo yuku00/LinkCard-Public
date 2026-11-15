@@ -30,7 +30,18 @@ static inline void WUNeoPreparePage(UIViewController *owner) {
 
 static inline void WUNeoPrepareTable(UITableViewController *owner) {
     WUNeoPreparePage(owner);
+    // Plain tables do not wrap an entire section in a single rounded clipping view.
+    // Every caller invokes this immediately after super viewDidLoad, before setup.
+    if (owner.tableView.style != UITableViewStylePlain) {
+        UITableView *oldTable=owner.tableView;
+        UITableView *plain=[[UITableView alloc] initWithFrame:oldTable.frame style:UITableViewStylePlain];
+        plain.autoresizingMask=oldTable.autoresizingMask;
+        owner.tableView=plain;
+        plain.dataSource=owner;
+        plain.delegate=owner;
+    }
     UITableView *table=owner.tableView;
+    table.backgroundColor=UIColor.systemGroupedBackgroundColor;
     table.rowHeight=UITableViewAutomaticDimension;
     table.estimatedRowHeight=72;
     table.cellLayoutMarginsFollowReadableWidth=YES;
@@ -38,15 +49,26 @@ static inline void WUNeoPrepareTable(UITableViewController *owner) {
     table.sectionHeaderTopPadding=16;
 }
 
+static inline UIView *WUNeoCardBackground(UIColor *color) {
+    UIView *container=[[UIView alloc] initWithFrame:CGRectMake(0,0,320,80)];
+    container.backgroundColor=UIColor.clearColor;
+    UIView *card=[[UIView alloc] initWithFrame:CGRectInset(container.bounds,16,4)];
+    card.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
+    card.backgroundColor=color;
+    card.layer.cornerRadius=20;
+    card.layer.cornerCurve=kCACornerCurveContinuous;
+    card.userInteractionEnabled=NO;
+    [container addSubview:card];
+    return container;
+}
+
 static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol) {
-    // A clear configuration avoids the grouped-cell joined-corner treatment.
-    // Vertical insets leave a visible gap while the full row remains tappable.
-    UIBackgroundConfiguration *background=[UIBackgroundConfiguration clearConfiguration];
-    background.backgroundColor=UIColor.secondarySystemGroupedBackgroundColor;
-    background.backgroundInsets=NSDirectionalEdgeInsetsMake(4,0,4,0);
-    background.cornerRadius=20;
-    cell.backgroundConfiguration=background;
-    cell.directionalLayoutMargins=NSDirectionalEdgeInsetsMake(14,18,14,18);
+    // The cell and its selected state each own a complete, independently rounded card.
+    cell.backgroundConfiguration=nil;
+    cell.backgroundColor=UIColor.clearColor;
+    cell.backgroundView=WUNeoCardBackground(UIColor.secondarySystemGroupedBackgroundColor);
+    cell.selectedBackgroundView=WUNeoCardBackground(UIColor.tertiarySystemFillColor);
+    cell.directionalLayoutMargins=NSDirectionalEdgeInsetsMake(14,34,14,34);
     cell.tintColor=WUNeoAccentColor();
     if(symbol.length) cell.textLabel.font=[UIFontMetrics.defaultMetrics scaledFontForFont:[UIFont systemFontOfSize:17 weight:UIFontWeightSemibold]];
     cell.textLabel.adjustsFontForContentSizeCategory=YES;

@@ -24,10 +24,21 @@ static NSUInteger checks;
 - (void)ResendVoiceMsg:(id)target MsgWrap:(id)wrap { self.sends++; CHECK(self.last==wrap); CHECK([self.target isEqual:target]); if(self.sendRaises) [NSException raise:@"fixture" format:@"after request"]; }
 @end
 // Real NSProxy forwarding, not an NSObject that merely impersonates a proxy.
-@interface CMessageMgr : VoiceHost @end
-@implementation CMessageMgr @end
-@interface AudioSender : VoiceHost @end
-@implementation AudioSender @end
+@interface CMessageMgr : VoiceHost
+- (void)ResendMsg:(id)target MsgWrap:(id)wrap;
+@end
+@implementation CMessageMgr
+- (void)ResendMsg:(id)target MsgWrap:(id)wrap { [self ResendVoiceMsg:target MsgWrap:wrap]; }
+@end
+@interface AudioSender : VoiceHost
+@property(nonatomic,strong) VoiceHost *manager;
+@end
+@implementation AudioSender
+- (void)ResendVoiceMsg:(id)target MsgWrap:(id)wrap {
+    self.sends++; CHECK(self.manager.last==wrap); CHECK([self.manager.target isEqual:target]);
+    if(self.sendRaises) [NSException raise:@"fixture" format:@"after audio request"];
+}
+@end
 @interface VoiceProxy : NSProxy
 @property(nonatomic,strong) VoiceHost *target;
 @property(nonatomic) BOOL badSignature;
@@ -88,6 +99,32 @@ int main(void) { @autoreleasepool {
     host=[VoiceHost new]; op=Operation([NSData data]); CHECK([Submit(op,host,^BOOL{ return YES; }) hasPrefix:@"失败"]); CHECK(host.inserts==0);
     op=[[WUVoiceForwardOperation alloc] initWithData:amr account:@"" target:@"recipient"]; CHECK([Submit(op,host,^BOOL{ return YES; }) hasPrefix:@"失败"]); CHECK(host.inserts==0);
     NSMutableData *mutable=[amr mutableCopy]; op=Operation(mutable); [mutable resetBytesInRange:NSMakeRange(0,mutable.length)]; CHECK([Submit(op,host,^BOOL{ return YES; }) hasPrefix:@"已请求"]); CHECK([host.last.m_dtVoice isEqual:amr]);
+    CMessageMgr *separateManager=[CMessageMgr new]; AudioSender *separateAudio=[AudioSender new]; separateAudio.manager=separateManager; separateAudio.sendRaises=YES; op=Operation(tencent);
+    CHECK([[op submitWithManager:separateManager audioSender:separateAudio messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"未知"]);
+    CHECK(separateManager.inserts==1 && separateManager.sends==0 && separateAudio.sends==1);
+    [op submitWithManager:separateManager audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }];
+    CHECK(separateManager.inserts==1 && separateManager.sends==0 && separateAudio.sends==1);
+    separateManager=[CMessageMgr new]; op=Operation(amr);
+    CHECK([[op submitWithManager:separateManager audioSender:[BooleanSender new] messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"失败"]);
+    CHECK(separateManager.inserts==0 && separateManager.sends==0);
+    __block NSString *activeAccount=@"self"; __block NSUInteger accountChecks=0; separateManager=[CMessageMgr new]; op=Operation(amr);
+    CHECK([[op submitWithManager:separateManager audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ if(++accountChecks==2) activeAccount=@"other"; return [activeAccount isEqual:@"self"]; }] hasPrefix:@"失败"]);
+    [op submitWithManager:separateManager audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }];
+    CHECK(separateManager.inserts==0 && separateManager.sends==0);
+    CMessageMgr *fallback=[CMessageMgr new]; op=Operation(tencent);
+    CHECK([[op submitWithManager:fallback audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
+    CHECK(fallback.inserts==1 && fallback.sends==1);
+    [op submitWithManager:fallback audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }]; CHECK(fallback.inserts==1 && fallback.sends==1);
+    fallback=[CMessageMgr new]; op=Operation(tencent);
+    VoiceProxy *fallbackProxy=[VoiceProxy proxy:fallback bad:NO];
+    CHECK([[op submitWithManager:fallbackProxy audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
+    CHECK(fallback.inserts==1 && fallback.sends==1);
+    fallback=[CMessageMgr new]; op=Operation(tencent); calls=0;
+    CHECK([[op submitWithManager:fallback audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return ++calls<3; }] hasPrefix:@"未知"]);
+    [op submitWithManager:fallback audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }]; CHECK(fallback.inserts==1 && fallback.sends==0);
+    fallback=[CMessageMgr new]; fallback.sendRaises=YES; op=Operation(tencent);
+    CHECK([[op submitWithManager:fallback audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"未知"]);
+    [op submitWithManager:fallback audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }]; CHECK(fallback.inserts==1 && fallback.sends==1);
     host=[VoiceHost new]; op=Operation(tencent);
     VoiceProxy *proxy=[VoiceProxy proxy:host bad:NO];
     CHECK([[op submitWithManager:proxy audioSender:proxy messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);

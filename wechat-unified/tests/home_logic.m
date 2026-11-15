@@ -28,6 +28,14 @@ int main(void) { @autoreleasepool {
     NSString *gid=@"11111111-1111-4111-8111-111111111111"; s[@"groups"]=@[@{@"id":gid,@"name":@"Family"}]; s[@"membership"]=@{@"alice":gid}; s[@"selected"]=gid;
     assert(WUValidHomeGroups(s)); p=WUHomeProjection(sources,rows,s,9); assert(p[@"arrays"][0][0]==pa); assert([p[@"arrays"][1] count]==1);
     NSDictionary *removed=WURemoveHomeGroup(s,gid); assert([removed[@"selected"] isEqual:@"all"]); assert([removed[@"membership"] count]==0); assert([s[@"membership"] count]==1);
+    // The same native objects retain their order when membership changes or a tab is disabled.
+    s[@"membership"]=@{@"alice":gid,@"gh_test":gid}; p=WUHomeProjection(sources,rows,s,9);
+    assert(p[@"arrays"][0][0]==pa && p[@"arrays"][2][0]==po);
+    s[@"membership"]=@{@"gh_test":gid}; p=WUHomeProjection(sources,rows,s,9);
+    assert([p[@"arrays"][0] count]==0 && p[@"arrays"][2][0]==po);
+    s[@"enabled"]=@NO; p=WUHomeProjection(sources,rows,s,9);
+    assert([p[@"arrays"] isEqual:sources] && [p[@"topCount"] unsignedIntegerValue]==9);
+    s[@"enabled"]=@YES; s[@"membership"]=@{@"alice":gid};
     NSDictionary *accounts=@{@"A":@{@"home":s},@"B":@{@"home":base}}; assert(WUValidAccountOptions(accounts)); assert([WUHomeProjection(sources,rows,accounts[@"B"][@"home"],9)[@"arrays"] isEqual:sources]);
     assert(WUHomeIndexes(@[a,a],s)==nil); assert(WUHomeIndexes(@[@{@"username":@"",@"kind":@"private"}],s)==nil);
     assert(WUHomeProjection(sources,@[@[g],@[a],@[o]],s,9)==nil);

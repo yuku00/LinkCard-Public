@@ -7,9 +7,15 @@ class ToolbarSafety(unittest.TestCase):
     def test_no_chat_overlay_without_reserved_host_space(self):
         src = (R / 'Sources/Messages.m').read_text()
         sync = src.split('- (void)syncInputToolbar {', 1)[1].split('\n- (void)refresh {', 1)[0]
-        self.assertIn('[self removeInputToolbar]', sync)
+        self.assertIn('WUInputSyncChecked(owner,entries', sync)
+        self.assertIn('WUInputRemove(owner)', sync)
+        for guard in ('[account isEqual:Account()]', 'gen==generation', '[session isEqual:Session(v)]'):
+            self.assertIn(guard, sync)
         self.assertNotIn('addSubview:toolbar', sync)
         self.assertNotIn('constraintEqualToAnchor:bar.topAnchor', sync)
+        reservation = (R / 'Sources/WUInputReservation.inc').read_text()
+        self.assertIn('WUInputReserved(', reservation)
+        self.assertIn('WUInputStillSafe(s)', reservation)
         refresh = src.split('- (void)refresh {', 1)[1].split('\n- (void)openGrid {', 1)[0]
         self.assertIn('[items addObject:self.tools]', refresh)
 

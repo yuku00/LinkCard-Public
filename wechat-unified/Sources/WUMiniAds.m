@@ -23,7 +23,7 @@ BOOL WUMiniAdsAvailable(NSString *key) {
 NSString *WUMiniAdsStatus(void) {
     if(!atomic_load(&ready)) return @"WA脚本过滤已暂停，避免小程序进入异常；重启微信后生效。Banner/插屏暂不拦截。";
     unsigned d=WUMiniAdsDiagnostics();
-    return [NSString stringWithFormat:@"仅当前WA→JSC realm；接口仍需逐对象核验。%@%@%@",
+    return [NSString stringWithFormat:@"仅当前WA→JSC realm；本地拒绝累计64次后此realm原路（需重建realm恢复过滤），无法保证入口兼容。%@%@%@",
         d&4 ? @" 已遇到不支持或累计拦截达上限的对象；该对象原路，广告可能显示。" : @"",
         d&8 ? @" 已遇到第三方覆盖；不抢回。" : @"",
         d&48 ? @" 已遇到缺接口或安装异常；原路执行。" : @""];

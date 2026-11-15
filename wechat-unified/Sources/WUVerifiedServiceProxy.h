@@ -6,7 +6,8 @@
 extern BOOL WUMatches(Method method, const char *result, NSArray<NSString *> *arguments);
 typedef NS_ENUM(NSUInteger, WUVerifiedServiceMethod) {
     WUVerifiedEmoticonSend, WUVerifiedMessageLocalID,
-    WUVerifiedSessionNames, WUVerifiedSessionLookup
+    WUVerifiedSessionNames, WUVerifiedSessionLookup,
+    WUVerifiedMessageServerIDSigned, WUVerifiedMessageServerIDUnsigned
 };
 static inline BOOL WUVerifiedProxyMethod(id service, WUVerifiedServiceMethod method) {
     if(!service) return NO;
@@ -14,6 +15,8 @@ static inline BOOL WUVerifiedProxyMethod(id service, WUVerifiedServiceMethod met
     switch(method) {
         case WUVerifiedEmoticonSend: name=@"AddEmoticonMsg:MsgWrap:"; result=@"v"; args=@[@"@",@"@"]; break;
         case WUVerifiedMessageLocalID: name=@"GetMsg:LocalID:"; result=@"@"; args=@[@"@",@"I"]; break;
+        case WUVerifiedMessageServerIDSigned: name=@"GetMsg:n64SvrID:"; result=@"@"; args=@[@"@",@"q"]; break;
+        case WUVerifiedMessageServerIDUnsigned: name=@"GetMsg:n64SvrID:"; result=@"@"; args=@[@"@",@"Q"]; break;
         case WUVerifiedSessionNames: name=@"GetUserNamesOnSessionList"; result=@"@"; args=@[]; break;
         case WUVerifiedSessionLookup: name=@"GetSessionByUserName:"; result=@"@"; args=@[@"@"]; break;
         default: return NO;
@@ -22,7 +25,7 @@ static inline BOOL WUVerifiedProxyMethod(id service, WUVerifiedServiceMethod met
     for(Class c=cls; c; c=class_getSuperclass(c)) if(c==objc_getClass("NSProxy")) { proxy=YES; break; }
     SEL sel=NSSelectorFromString(name);
     if(!proxy || class_getInstanceMethod(cls,sel)) return NO;
-    NSString *hostName=(method==WUVerifiedEmoticonSend || method==WUVerifiedMessageLocalID)?@"CMessageMgr":@"MMNewSessionMgr";
+    NSString *hostName=(method==WUVerifiedEmoticonSend || method==WUVerifiedMessageLocalID || method==WUVerifiedMessageServerIDSigned || method==WUVerifiedMessageServerIDUnsigned)?@"CMessageMgr":@"MMNewSessionMgr";
     Class host=NSClassFromString(hostName);
     if(!host || !WUMatches(class_getInstanceMethod(host,sel),result.UTF8String,args)) return NO;
     @try {
