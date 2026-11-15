@@ -2,7 +2,7 @@
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import <dispatch/dispatch.h>
-@class UIWindow, UIViewController, UINavigationController, UIEvent, UITouch, UIPopoverPresentationController, UIBarButtonItem;
+@class UIWindow, UIViewController, UINavigationController, UIEvent, UITouch, UIPopoverPresentationController, UIBarButtonItem, UIImage;
 @interface UIResponder : NSObject
 @property(nonatomic,weak) UIResponder *nextResponder;
 @end
