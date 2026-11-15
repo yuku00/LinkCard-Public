@@ -39,10 +39,20 @@ jobs:
           python3 tests/test_incremental_safety.py
           python3 tests/test_emoticon_library_contract.py
           python3 tests/test_chat_layout.py
+          python3 tests/test_link_runner_reporting.py
       - name: Link flow UIKit simulator regression
+        id: link_flow
         if: ${{ !contains(github.event.head_commit.message, '[targeted-pluginhub]') }}
         working-directory: wechat-unified
         run: python3 tools/test_link_flow_ios.py "$RUNNER_TEMP/wu-link-flow"
+      - name: Upload failed link flow test log
+        if: ${{ failure() && steps.link_flow.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: link-flow-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/wu-link-flow/xcodebuild.log
+          if-no-files-found: warn
+          retention-days: 7
       - name: Upload build product and verification
         if: ${{ !contains(github.event.head_commit.message, '[targeted-pluginhub]') }}
         uses: actions/upload-artifact@v4
