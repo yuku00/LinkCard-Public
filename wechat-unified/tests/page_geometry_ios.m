@@ -23,9 +23,11 @@
 @implementation AppEmoticonMessageCellView @end
 @interface UnknownToolSubclass : MMInputToolView @end
 @implementation UnknownToolSubclass @end
-@interface NotWhitelistedView : UIView @end
+@interface NotWhitelistedView : UIView
+@property(nonatomic) BOOL throwOnFrame;
+@end
 @implementation NotWhitelistedView
-- (CGRect)frame { @throw [NSException exceptionWithName:@"must not call" reason:nil userInfo:nil]; }
+- (CGRect)frame { if(self.throwOnFrame) @throw [NSException exceptionWithName:@"must not call" reason:nil userInfo:nil]; return [super frame]; }
 @end
 #import "../Sources/WUPageGeometry.inc"
 @interface WUPageGeometryTests : XCTestCase @end
@@ -41,7 +43,8 @@
     [out setString:@""]; WUPageAppendGeometry(out,throwing); XCTAssertTrue([out containsString:@"getter 异常"]);
     [out setString:@""]; WUPageAppendGeometry(out,[EmoticonMessageCellView new]); XCTAssertTrue([out containsString:@"非有限数值"]);
     [out setString:@""]; WUPageAppendGeometry(out,[AppEmoticonMessageCellView new]); XCTAssertTrue([out containsString:@"不是 UIView"]);
-    [out setString:@""]; WUPageAppendGeometry(out,[NotWhitelistedView new]); XCTAssertEqual(out.length,0u);
+    NotWhitelistedView *unknown=[NotWhitelistedView new]; unknown.throwOnFrame=YES;
+    [out setString:@""]; WUPageAppendGeometry(out,unknown); XCTAssertEqual(out.length,0u);
     [out setString:@""]; WUPageAppendGeometry(out,[UnknownToolSubclass new]); XCTAssertEqual(out.length,0u);
     MMTableView *table=[[MMTableView alloc] initWithFrame:CGRectMake(1,2,30,40)];
     table.contentSize=CGSizeMake(500,500); table.contentOffset=CGPointMake(77,88); table.contentInset=UIEdgeInsetsMake(1,2,3,4);
