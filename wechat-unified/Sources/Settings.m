@@ -215,7 +215,8 @@ NSString *WUSurfaceTitle(NSString *role);
 }
 - (void)change:(UISwitch *)sender {
     NSString *key=sender.accessibilityIdentifier;
-    if(([key isEqual:@"plusSurface"] || ([key hasPrefix:@"voice"] && !WUVoiceAvailable(key))) && sender.on) { sender.on=NO; return; }
+    if([key isEqual:@"plusSurface"] && sender.on) { sender.on=NO; return; }
+    if([key hasPrefix:@"voice"] && !WUVoiceAvailable(key) && sender.on) { sender.on=NO; return; }
     if(!WUSave(key,@(sender.on))) { sender.on=[WUValue(key) boolValue]; [self alert:@"保存失败，原配置保留。请检查可用空间；未以开关动画冒充保存成功。"]; }
 }
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p {
