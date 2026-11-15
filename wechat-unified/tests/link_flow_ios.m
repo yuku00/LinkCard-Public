@@ -17,6 +17,7 @@ void WURecordDiagnosticEvent(WUDiagnosticEvent event) {}
 
 static NSMapTable *handlers;
 static NSURL *opened;
+static NSUInteger openCount;
 static void (^openReply)(BOOL);
 @interface UIAlertAction (WULinkTest)
 + (instancetype)wu_action:(NSString *)title style:(UIAlertActionStyle)style handler:(void (^)(UIAlertAction *))handler;
@@ -33,7 +34,7 @@ static void (^openReply)(BOOL);
 @end
 @implementation UIApplication (WULinkTest)
 - (void)wu_open:(NSURL *)url options:(NSDictionary *)options completionHandler:(void (^)(BOOL))completion {
-    opened=url; openReply=[completion copy];
+    opened=url; openCount++; openReply=[completion copy];
 }
 @end
 static void Pump(NSTimeInterval t) { [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:t]]; }
@@ -59,7 +60,7 @@ static void Swap(Class c, SEL a, SEL b, BOOL classMethod) {
     handlers=nil; [super tearDown];
 }
 - (void)setUp {
-    [super setUp]; opened=nil; openReply=nil;
+    [super setUp]; opened=nil; openCount=0; openReply=nil;
     self.owner=[UIViewController new]; self.nav=[[UINavigationController alloc] initWithRootViewController:self.owner];
     self.window=[[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds]; self.window.rootViewController=self.nav;
     [self.window makeKeyAndVisible]; Pump(.1);
@@ -84,13 +85,18 @@ static void Swap(Class c, SEL a, SEL b, BOOL classMethod) {
     XCTAssertNotNil(handler); if(handler) handler(chosen); Pump(.7);
 }
 - (void)testMultipleAndCancel {
-    [self start]; XCTAssertEqual([self alert].actions.count,3u);
-    [self choose:@"example.org/b"]; XCTAssertTrue([[self alert].message containsString:@"example.org"]);
+    [self start]; XCTAssertEqual([self alert].preferredStyle,UIAlertControllerStyleAlert); XCTAssertEqual([self alert].actions.count,3u);
     [self choose:@"取消"]; XCTAssertNil(self.owner.presentedViewController); XCTAssertNil(opened);
+    [self start]; [self choose:@"example.org/b"]; XCTAssertEqual([self alert].preferredStyle,UIAlertControllerStyleAlert); XCTAssertTrue([[self alert].message containsString:@"example.org"]);
+    [self choose:@"取消"]; XCTAssertNil(self.owner.presentedViewController); XCTAssertNil(opened); XCTAssertEqual(openCount,0u);
 }
 - (void)testSystemAcceptedAndRejected {
-    [self start]; [self choose:@"example.com/a"]; [self choose:@"系统默认浏览器"];
-    XCTAssertEqualObjects(opened.absoluteString,@"https://example.com/a"); XCTAssertNotNil(openReply);
+    [self start]; [self choose:@"example.com/a"];
+    UIAlertController *confirmation=[self alert]; UIAlertAction *system=nil;
+    for(UIAlertAction *item in confirmation.actions) if([item.title containsString:@"系统默认浏览器"]) { system=item; break; }
+    XCTAssertNotNil(system); void (^activate)(UIAlertAction *)=[handlers objectForKey:system]; XCTAssertNotNil(activate);
+    if(activate) { activate(system); activate(system); } Pump(.7);
+    XCTAssertEqual(openCount,1u); XCTAssertEqualObjects(opened.absoluteString,@"https://example.com/a"); XCTAssertNotNil(openReply);
     if(openReply) openReply(NO); Pump(.7); XCTAssertTrue([[self alert].message containsString:@"未接受"]);
     [self choose:@"好"]; XCTAssertNil(self.owner.presentedViewController);
     opened=nil; openReply=nil; [self start]; [self choose:@"example.org/b"]; [self choose:@"系统默认浏览器"];
@@ -113,10 +119,23 @@ static void Swap(Class c, SEL a, SEL b, BOOL classMethod) {
     [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
 }
 - (void)testLeavingOwnerAndDismissDelegate {
-    [self start]; UIAlertController *a=[self alert]; id<UIAdaptivePresentationControllerDelegate> delegate=a.presentationController.delegate;
-    XCTAssertNotNil(delegate); [delegate presentationControllerDidDismiss:a.presentationController]; Pump(.3);
-    XCTAssertNil(self.owner.presentedViewController);
+    [self start]; [self choose:@"example.com/a"]; [self choose:@"内置 Safari"];
+    SFSafariViewController *safari=(id)self.owner.presentedViewController;
+    XCTAssertTrue([safari isKindOfClass:SFSafariViewController.class]);
+    id<UIAdaptivePresentationControllerDelegate> delegate=safari.presentationController.delegate;
+    XCTAssertNotNil(delegate); [delegate presentationControllerDidDismiss:safari.presentationController]; Pump(.3);
+    XCTAssertNil(self.owner.presentedViewController); XCTAssertFalse(WUMessageEntriesOwnsController(safari));
     [self start]; [self.nav pushViewController:[UIViewController new] animated:NO]; Pump(.5);
     XCTAssertNil(self.owner.presentedViewController);
+}
+- (void)testAccountInvalidationBlocksStaleConfirmation {
+    __block BOOL current=YES;
+    WUOpenSelectedLinks(self.owner,@[@{@"type":@1,@"content":@"https://example.com/a"}],^BOOL{ return current; }); Pump(.7);
+    [self choose:@"example.com/a"];
+    UIAlertController *confirmation=[self alert]; UIAlertAction *system=nil;
+    for(UIAlertAction *item in confirmation.actions) if([item.title containsString:@"系统默认浏览器"]) { system=item; break; }
+    XCTAssertNotNil(system); void (^activate)(UIAlertAction *)=[handlers objectForKey:system]; XCTAssertNotNil(activate);
+    current=NO; if(activate) activate(system); Pump(.5);
+    XCTAssertEqual(openCount,0u); XCTAssertNil(self.owner.presentedViewController);
 }
 @end

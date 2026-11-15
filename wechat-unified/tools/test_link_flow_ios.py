@@ -8,7 +8,7 @@ sys.path.insert(0,str(ROOT/'tools/ui-harness'))
 import generate as harness
 from run import choose_device, capture
 
-EXPECTED={"testMultipleAndCancel","testSystemAcceptedAndRejected","testSafariDelegateAndNestedPresentation","testResignAndLateSystemReply","testLeavingOwnerAndDismissDelegate"}
+EXPECTED={"testMultipleAndCancel","testSystemAcceptedAndRejected","testSafariDelegateAndNestedPresentation","testResignAndLateSystemReply","testLeavingOwnerAndDismissDelegate","testAccountInvalidationBlocksStaleConfirmation"}
 
 def generate(out):
     harness.PRODUCTION=("MessageEntries.m","LinkLogic.m")

@@ -5,6 +5,8 @@ flow = (root/'Sources/MessageEntries.m').read_text()
 diag = (root/'Sources/WUDiagnostics.m').read_text()
 binding = (root/'Sources/MessageEntryBindings.inc').read_text()
 header = (root/'Sources/WUDiagnosticRing.h').read_text()
+# UIAlertController owns its presentation-controller delegate; only non-alert sheets may use ours.
+assert 'if(![controller isKindOfClass:UIAlertController.class]) controller.presentationController.delegate=weak;' in flow
 # Only enum constants or the boolean completion mapping may reach the recorder.
 calls = re.findall(r'WURecordDiagnosticEvent\(([^;]+?)\);', flow)
 assert len(calls) >= 15
