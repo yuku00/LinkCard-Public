@@ -64,7 +64,7 @@ static WUMessageEntryFlow *Begin(UIViewController *owner,BOOL (^current)(void)) 
     if(self.finished) return; self.finished=YES;
     if(self.linkFlow) WURecordDiagnosticEvent(WUDiagFlowFinished);
     UIViewController *controller=self.controller; self.controller=nil;
-    if(controller && self.owner.presentedViewController==controller) [controller dismissViewControllerAnimated:NO completion:nil];
+    if(controller && self.owner.presentedViewController==controller) [self.owner dismissViewControllerAnimated:NO completion:nil];
     if(self.staging) [NSFileManager.defaultManager removeItemAtURL:self.staging error:NULL]; self.staging=nil;
     [flows removeObject:self]; if(!flows.count) { [poll invalidate]; poll=nil; }
     self.current=nil;

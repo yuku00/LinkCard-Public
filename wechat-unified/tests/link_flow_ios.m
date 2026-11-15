@@ -16,6 +16,18 @@ BOOL WUThemeValidImage(NSData *data) { return NO; }
 void WURecordDiagnosticEvent(WUDiagnosticEvent event) {}
 
 static NSMapTable *handlers;
+static NSHashTable *completedPresentations;
+@interface UIViewController (WULinkTestPresentation)
+- (void)wu_present:(UIViewController *)controller animated:(BOOL)animated completion:(void (^)(void))completion;
+@end
+@implementation UIViewController (WULinkTestPresentation)
+- (void)wu_present:(UIViewController *)controller animated:(BOOL)animated completion:(void (^)(void))completion {
+    [self wu_present:controller animated:animated completion:^{
+        if(completion) completion();
+        [completedPresentations addObject:controller];
+    }];
+}
+@end
 static NSURL *opened;
 static NSUInteger openCount;
 static void (^openReply)(BOOL);
@@ -50,14 +62,16 @@ static void Swap(Class c, SEL a, SEL b, BOOL classMethod) {
 @end
 @implementation WULinkFlowTests
 + (void)setUp {
-    [super setUp]; handlers=[NSMapTable weakToStrongObjectsMapTable];
+    [super setUp]; handlers=[NSMapTable weakToStrongObjectsMapTable]; completedPresentations=[NSHashTable weakObjectsHashTable];
+    Swap(UIViewController.class,@selector(presentViewController:animated:completion:),@selector(wu_present:animated:completion:),NO);
     Swap(UIAlertAction.class,@selector(actionWithTitle:style:handler:),@selector(wu_action:style:handler:),YES);
     Swap(UIApplication.class,@selector(openURL:options:completionHandler:),@selector(wu_open:options:completionHandler:),NO);
 }
 + (void)tearDown {
     Swap(UIApplication.class,@selector(openURL:options:completionHandler:),@selector(wu_open:options:completionHandler:),NO);
     Swap(UIAlertAction.class,@selector(actionWithTitle:style:handler:),@selector(wu_action:style:handler:),YES);
-    handlers=nil; [super tearDown];
+    Swap(UIViewController.class,@selector(presentViewController:animated:completion:),@selector(wu_present:animated:completion:),NO);
+    completedPresentations=nil; handlers=nil; [super tearDown];
 }
 - (void)setUp {
     [super setUp]; opened=nil; openCount=0; openReply=nil;
@@ -76,6 +90,9 @@ static void Swap(Class c, SEL a, SEL b, BOOL classMethod) {
 - (UIAlertController *)alert {
     UIViewController *c=self.owner.presentedViewController;
     XCTAssertTrue([c isKindOfClass:UIAlertController.class]);
+    NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:5];
+    while(c && ![completedPresentations containsObject:c] && deadline.timeIntervalSinceNow>0) Pump(.01);
+    XCTAssertTrue([completedPresentations containsObject:c], @"Alert presentation completion did not fire");
     return (UIAlertController *)c;
 }
 - (void)choose:(NSString *)title {
@@ -108,6 +125,7 @@ static void Swap(Class c, SEL a, SEL b, BOOL classMethod) {
     XCTAssertTrue([safari isKindOfClass:SFSafariViewController.class]);
     XCTAssertNotNil(safari.delegate); XCTAssertTrue(WUMessageEntriesOwnsController(safari));
     UIViewController *nested=[UIViewController new]; [safari presentViewController:nested animated:NO completion:nil]; Pump(.2);
+    XCTAssertEqual(safari.presentedViewController,nested);
     [safari.delegate safariViewControllerDidFinish:safari]; Pump(.3);
     XCTAssertNil(self.owner.presentedViewController); XCTAssertFalse(WUMessageEntriesOwnsController(safari));
 }
@@ -132,7 +150,8 @@ static void Swap(Class c, SEL a, SEL b, BOOL classMethod) {
     __block BOOL current=YES;
     WUOpenSelectedLinks(self.owner,@[@{@"type":@1,@"content":@"https://example.com/a"}],^BOOL{ return current; }); Pump(.7);
     [self choose:@"example.com/a"];
-    UIAlertController *confirmation=[self alert]; UIAlertAction *system=nil;
+    UIAlertController *confirmation=[self alert]; XCTAssertTrue([confirmation.message containsString:@"example.com"]);
+    UIAlertAction *system=nil;
     for(UIAlertAction *item in confirmation.actions) if([item.title containsString:@"系统默认浏览器"]) { system=item; break; }
     XCTAssertNotNil(system); void (^activate)(UIAlertAction *)=[handlers objectForKey:system]; XCTAssertNotNil(activate);
     current=NO; if(activate) activate(system); Pump(.5);
