@@ -1,5 +1,5 @@
 // Only the observed direct-child chain is accepted; ambiguous or foreign owners fall back to the navigation menu.
-static UIView *WUInputBarForOwner(UIViewController *owner) {
+static __attribute__((unused)) UIView *WUInputBarForOwner(UIViewController *owner) {
     UIView *root=owner.viewIfLoaded; if(!root) return nil;
     Class toolClass=NSClassFromString(@"MMInputToolView"), containerClass=NSClassFromString(@"InputToolContainerView"), barClass=NSClassFromString(@"InputToolViewBar");
     if(!toolClass || !containerClass || !barClass) return nil;
