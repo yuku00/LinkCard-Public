@@ -810,7 +810,7 @@ static void WUSaveEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^conte
             operations[identity]=@(gen);
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
                 NSData *data=WUEmoticonRead(path);
-                if(verifyDigest && data) { unsigned char digest[CC_MD5_DIGEST_LENGTH]; CC_MD5(data.bytes,(CC_LONG)data.length,digest); NSMutableString *hex=[NSMutableString stringWithCapacity:32]; for(unsigned i=0;i<CC_MD5_DIGEST_LENGTH;i++) [hex appendFormat:@"%02x",digest[i]]; if(![hex isEqualToString:md5.lowercaseString]) data=nil; }
+                if(verifyDigest && data) { unsigned char digest[CC_MD5_DIGEST_LENGTH]; _Pragma("clang diagnostic push") _Pragma("clang diagnostic ignored \"-Wdeprecated-declarations\"") CC_MD5(data.bytes,(CC_LONG)data.length,digest); _Pragma("clang diagnostic pop") NSMutableString *hex=[NSMutableString stringWithCapacity:32]; for(unsigned i=0;i<CC_MD5_DIGEST_LENGTH;i++) [hex appendFormat:@"%02x",digest[i]]; if(![hex isEqualToString:md5.lowercaseString]) data=nil; } // Host identifier is MD5.
                 dispatch_async(dispatch_get_main_queue(),^{
                     [save startData:data current:current permission:^(void (^reply)(BOOL)){
                         // Missing privacy declaration must not terminate the host process.

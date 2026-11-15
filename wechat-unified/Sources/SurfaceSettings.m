@@ -52,7 +52,7 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==1?self.fields.count:1; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
     if([self.role isEqual:@"emoticonContentCorner"]) return s==0?@"默认关闭，同时受总开关控制。":(s==1?@"仅修改聊天中匹配视图链的表情本体显示层；不修改图片、动画或发送。预览为示意，实际效果及触摸和播放尚未真机验证。":@"重置只清除本项圆角参数，不改变开关。");
-    if([self.role isEqual:@"emoticonSurface"] && s==1) return @"本项只调整消息背景，不对表情本体裁圆角；本体圆角另有独立设置。宽高比例仅缩放非交互背景，不改变触控或微信布局。预览为示意。";
+    if([self.role isEqual:@"emoticonSurface"] && s==1) return @"本项只调整消息背景，不对表情本体裁圆角，不覆盖表情面板；本体圆角另有独立设置。宽高比例仅缩放非交互背景，不改变触控或微信布局。预览为示意。";
     if(s==0) return @"同时受总开关控制。";
     if(s==1) return [@[@"textBubbleSurface",@"fileSurface",@"emoticonSurface"] containsObject:self.role] ? @"宽高比例仅缩放已识别的非交互消息背景，不改变文字、表情、触控区域或微信布局；可能与内容不完全贴合。留空恢复默认。预览为示意。" : @"留空恢复默认；深色未设置时跟随浅色。部分项目不含文字，字体设置不会生效。该项目暂不支持宽高调整。";
     return @"重置只清除本项样式，不改变开关或主题。";
