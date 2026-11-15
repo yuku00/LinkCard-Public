@@ -11,7 +11,8 @@ class SettingsLayoutTests(unittest.TestCase):
         keys = re.findall(r'@\[(@"[^"]+"|WUDictation\w+),', rows)
         ranges = re.search(r'NSRange ranges\[\] = \{([^;]+)\};', SOURCE).group(1)
         ranges = [(int(a), int(b)) for a, b in re.findall(r'\{(\d+),(\d+)\}', ranges)]
-        self.assertEqual(len(keys), 54)
+        self.assertEqual(len(keys), 55)
+        self.assertIn('@"emoticonContentCorner"', keys)
         self.assertEqual(len(set(keys)), len(keys))
         self.assertEqual([i for start, count in ranges for i in range(start, start + count)], list(range(len(keys))))
         self.assertEqual([keys[start] for start, _ in ranges], ['@"enabled"', '@"voiceProgress"', '@"ads"', '@"inputBorder"', '@"hideHomeSearch"', '@"convenientMoments"', '@"themes"'])
