@@ -40,6 +40,9 @@ int main(void) { @autoreleasepool {
     assert(WUValidSurfaceStyles(@{@"referMessageSurface":@{@"radius":@12,@"backgroundDark":@"#123456"},@"textPreviewSurface":@{@"radius":@14}}));
     NSMutableDictionary *allStyles=[NSMutableDictionary dictionary]; for(NSString *role in WUSurfaceRoles()) allStyles[role]=@{};
     assert(allStyles.count==17 && WUValidSurfaceStyles(allStyles));
+    assert(WUValidSurfaceStyles(@{@"textBubbleSurface":@{@"widthScale":@0.7,@"heightScale":@1.3}}));
+    assert(!WUValidSurfaceStyles(@{@"fileSurface":@{@"widthScale":@0.69}}));
+    assert(!WUValidSurfaceStyles(@{@"fileSurface":@{@"heightScale":@(NAN)}}));
     assert(!WUValidSurfaceStyles(@{@"inputBorder":@{@"radius":@(NAN)}}));
     assert(!WUValidSurfaceStyles(@{@"inputBorder":@{@"background":@"url(http://x)"}}));
     assert(!WUValidSurfaceStyles(@{@"guessedSendButton":@{@"radius":@12}}));

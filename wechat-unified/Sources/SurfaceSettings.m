@@ -16,7 +16,7 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
 - (void)refreshPreview;
 @end
 @implementation WUSurfaceEditor
-- (void)viewDidLoad { [super viewDidLoad]; WUNeoPrepareTable(self); self.title=RoleTitles()[self.role]; self.fields=@[@[@"radius",@"圆角 (0–80pt)"],@[@"borderWidth",@"描边尺寸 (0–8pt)"],@[@"opacity",@"背景视图透明度 (0–1)"],@[@"fontSize",@"字体尺寸 (8–48pt)"],@[@"fontWeight",@"系统字体粗细 (-1–1)"],@[@"fontName",@"已安装字体 PostScript 名"],@[@"background",@"浅色背景"],@[@"backgroundDark",@"深色背景"],@[@"text",@"浅色文字"],@[@"textDark",@"深色文字"],@[@"tint",@"浅色图标"],@[@"tintDark",@"深色图标"],@[@"border",@"浅色描边"],@[@"borderDark",@"深色描边"]]; [self installPreview]; }
+- (void)viewDidLoad { [super viewDidLoad]; WUNeoPrepareTable(self); self.title=RoleTitles()[self.role]; self.fields=@[@[@"radius",@"圆角 (0–80pt)"],@[@"borderWidth",@"描边尺寸 (0–8pt)"],@[@"opacity",@"背景视图透明度 (0–1)"],@[@"fontSize",@"字体尺寸 (8–48pt)"],@[@"fontWeight",@"系统字体粗细 (-1–1)"],@[@"fontName",@"已安装字体 PostScript 名"],@[@"background",@"浅色背景"],@[@"backgroundDark",@"深色背景"],@[@"text",@"浅色文字"],@[@"textDark",@"深色文字"],@[@"tint",@"浅色图标"],@[@"tintDark",@"深色图标"],@[@"border",@"浅色描边"],@[@"borderDark",@"深色描边"]]; if([@[@"textBubbleSurface",@"fileSurface",@"emoticonSurface"] containsObject:self.role]) self.fields=[@[@[@"widthScale",@"背景宽度比例 (0.7–1.3)"],@[@"heightScale",@"背景高度比例 (0.7–1.3)"]] arrayByAddingObjectsFromArray:self.fields]; [self installPreview]; }
 - (void)installPreview {
     UIView *header=[[UIView alloc] initWithFrame:CGRectMake(0,0,320,160)];
     UIStackView *stack=[UIStackView new]; stack.axis=UILayoutConstraintAxisHorizontal; stack.spacing=12; stack.distribution=UIStackViewDistributionFillEqually; stack.translatesAutoresizingMaskIntoConstraints=NO;
@@ -39,9 +39,11 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
         label.layer.cornerRadius=style[@"radius"]?[style[@"radius"] doubleValue]:12; label.clipsToBounds=YES;
         label.layer.borderWidth=[style[@"borderWidth"] doubleValue]; label.layer.borderColor=WUSurfaceColor(self.role,@"border",traits,UIColor.separatorColor).CGColor;
         label.alpha=style[@"opacity"]?[style[@"opacity"] doubleValue]:1;
+        CGFloat w=style[@"widthScale"]?[style[@"widthScale"] doubleValue]:1, h=style[@"heightScale"]?[style[@"heightScale"] doubleValue]:1;
+        label.transform=CGAffineTransformMakeScale(w,h);
         CGFloat size=style[@"fontSize"]?[style[@"fontSize"] doubleValue]:17;
         UIFont *font=[style[@"fontName"] length]?[UIFont fontWithName:style[@"fontName"] size:size]:nil;
-        label.font=font?:[UIFont systemFontOfSize:size weight:[style[@"fontWeight"] doubleValue]];
+        label.font=[[UIFontMetrics defaultMetrics] scaledFontForFont:(font?:[UIFont systemFontOfSize:size weight:[style[@"fontWeight"] doubleValue]]) compatibleWithTraitCollection:label.traitCollection];
         label.accessibilityLabel=dark?@"深色样式示意，不代表微信实际布局":@"浅色样式示意，不代表微信实际布局";
     }
 }
@@ -50,7 +52,7 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==1?self.fields.count:1; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s {
     if(s==0) return @"同时受总开关控制。";
-    if(s==1) return [self.role isEqual:@"emoticonSurface"] ? @"仅对已识别的聊天消息背景生效，不对表情本体裁圆角，也不覆盖表情面板。留空恢复默认；深色未设置时跟随浅色。为避免破坏微信布局，不提供宽高调整。" : @"留空恢复默认；深色未设置时跟随浅色。部分项目不含文字，字体设置不会生效。为避免破坏微信布局，不提供宽高调整。";
+    if(s==1) return [@[@"textBubbleSurface",@"fileSurface",@"emoticonSurface"] containsObject:self.role] ? @"宽高比例仅缩放已识别的非交互消息背景，不改变文字、表情、触控区域或微信布局；可能与内容不完全贴合。留空恢复默认。预览为示意。" : @"留空恢复默认；深色未设置时跟随浅色。部分项目不含文字，字体设置不会生效。该项目暂不支持宽高调整。";
     return @"重置只清除本项样式，不改变开关或主题。";
 }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
@@ -58,13 +60,13 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
     if(p.section==0) { c.textLabel.text=@"启用本项美化"; UISwitch *s=[UISwitch new]; s.on=[WUValue(self.role) boolValue]; if([self.role isEqual:@"plusSurface"]) s.enabled=s.on; [s addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventValueChanged]; c.accessoryView=s; }
     else if(p.section==2) c.textLabel.text=@"重置本项样式";
     else { NSArray *field=self.fields[p.row]; NSString *key=field[0]; c.textLabel.text=field[1]; c.detailTextLabel.text=[WUSurfaceStyle(self.role)[key] description]?:@"默认";
-        if(![@[@"radius",@"borderWidth",@"opacity",@"fontSize",@"fontWeight",@"fontName"] containsObject:key]) { UIButton *button=[UIButton buttonWithType:UIButtonTypeSystem]; [button setTitle:@"选色" forState:UIControlStateNormal]; button.frame=CGRectMake(0,0,52,44); button.tag=p.row; button.accessibilityLabel=[field[1] stringByAppendingString:@"选色"]; [button addTarget:self action:@selector(colorButton:) forControlEvents:UIControlEventTouchUpInside]; c.accessoryView=button; }
+        if(![@[@"radius",@"borderWidth",@"opacity",@"fontSize",@"fontWeight",@"fontName",@"widthScale",@"heightScale"] containsObject:key]) { UIButton *button=[UIButton buttonWithType:UIButtonTypeSystem]; [button setTitle:@"选色" forState:UIControlStateNormal]; button.frame=CGRectMake(0,0,52,44); button.tag=p.row; button.accessibilityLabel=[field[1] stringByAppendingString:@"选色"]; [button addTarget:self action:@selector(colorButton:) forControlEvents:UIControlEventTouchUpInside]; c.accessoryView=button; }
     } return WUNeoCell(c,@"slider.horizontal.3");
 }
 - (void)error:(NSString *)text { UIAlertController *a=[UIAlertController alertControllerWithTitle:@"未保存" message:text preferredStyle:UIAlertControllerStyleAlert]; [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]]; [self presentViewController:a animated:YES completion:nil]; }
 - (void)toggle:(UISwitch *)s { if([self.role isEqual:@"plusSurface"] && s.on) { s.on=NO; return; } if(!WUSave(self.role,@(s.on))) { s.on=[WUValue(self.role) boolValue]; [self error:@"业务开关保存失败"]; } else if([self.role isEqual:@"plusSurface"]) s.enabled=NO; }
 - (BOOL)saveStyle:(NSDictionary *)style {
-    id old=WUValue(@"surfaceStyles"); NSMutableDictionary *all=[(WUValidSurfaceStyles(old)?old:@{}) mutableCopy];
+    id old=WUValue(@"surfaceStyles"); if(old && !WUValidSurfaceStyles(old)) { [self error:@"原样式数据无效，未作更改。"]; return NO; } NSMutableDictionary *all=[(old?:@{}) mutableCopy];
     if(style.count) all[self.role]=style; else [all removeObjectForKey:self.role];
     if(!WUValidSurfaceStyles(all)||!WUSave(@"surfaceStyles",all)) { [self error:@"数值/颜色无效或文件保存失败，原设置保留。"]; return NO; }
     [self refreshPreview]; [self.tableView reloadData]; return YES;
@@ -100,7 +102,7 @@ static NSDictionary *RoleTitles(void) { return @{@"inputBorder":@"聊天输入�
         [confirm addAction:[UIAlertAction actionWithTitle:@"重置" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *x){ [self saveStyle:@{}]; }]];
         [self presentViewController:confirm animated:YES completion:nil]; return;
     }
-    NSArray *field=self.fields[p.row]; NSString *key=field[0]; BOOL numeric=[@[@"radius",@"borderWidth",@"opacity",@"fontSize",@"fontWeight"] containsObject:key];
+    NSArray *field=self.fields[p.row]; NSString *key=field[0]; BOOL numeric=[@[@"radius",@"borderWidth",@"opacity",@"fontSize",@"fontWeight",@"widthScale",@"heightScale"] containsObject:key];
     UIAlertController *a=[UIAlertController alertControllerWithTitle:field[1] message:@"留空恢复默认值" preferredStyle:UIAlertControllerStyleAlert];
     [a addTextFieldWithConfigurationHandler:^(UITextField *f){ f.text=[WUSurfaceStyle(self.role)[key] description]; f.autocorrectionType=UITextAutocorrectionTypeNo; f.autocapitalizationType=UITextAutocapitalizationTypeNone; f.placeholder=numeric?@"输入数值":([key isEqual:@"fontName"]?@"例如 HelveticaNeue":@"#RRGGBB 或 #RRGGBBAA"); if(numeric && ![key isEqual:@"fontWeight"]) f.keyboardType=UIKeyboardTypeDecimalPad; }];
     [a addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x){ NSString *text=[a.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]; NSMutableDictionary *style=[WUSurfaceStyle(self.role) mutableCopy];

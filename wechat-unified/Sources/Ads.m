@@ -37,7 +37,8 @@ static id Plugins(id o,SEL s) {
     return [out copy];
 }
 void WUInstallAds(void) {
-    WUInstallMiniAds();
+    // Disabled pending a verified host lifecycle: JS show() rejection can block mini-app entry.
+    // Keep the independent native splash gates below; no JS bridge interception is installed.
     // Dedicated validation only: no storage, push, serialization or normal feed interception.
     momentsReady=WUHook(@"WCAdvertiseDataHelper",@"IsAdvertiseDataValid:dataItem:",NO,@encode(BOOL),@[@"@",@"@"],(IMP)MomentsValid,&momentsValid);
     // Preserve all JS callbacks, content state and reward paths. Both gates must be present.

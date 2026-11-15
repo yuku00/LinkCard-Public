@@ -42,9 +42,13 @@ jobs:
           python3 tests/test_link_runner_reporting.py
       - name: Link flow UIKit simulator regression
         id: link_flow
-        if: ${{ !contains(github.event.head_commit.message, '[targeted-pluginhub]') }}
+        if: ${{ !contains(github.event.head_commit.message, '[targeted-pluginhub]') && !contains(github.event.head_commit.message, '[capture-only]') }}
         working-directory: wechat-unified
         run: python3 tools/test_link_flow_ios.py "$RUNNER_TEMP/wu-link-flow"
+      - name: Capture geometry UIKit regression
+        if: ${{ contains(github.event.head_commit.message, '[capture-only]') }}
+        working-directory: wechat-unified
+        run: python3 tools/test_page_geometry_ios.py "$RUNNER_TEMP/wu-capture-geometry"
       - name: Upload failed link flow test log
         if: ${{ failure() && steps.link_flow.outcome == 'failure' }}
         uses: actions/upload-artifact@v4

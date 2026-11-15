@@ -181,6 +181,7 @@ static void RequestRevoke(id mgr, NSString *s, NSString *session, id wrap, UIVie
     [v invoke];
 }
 #import "ChatGrid.inc"
+#import "ChatInputToolbar.inc"
 @interface WUChatActions : NSObject
 @property(nonatomic,weak) UIViewController *owner;
 @property(nonatomic,strong) UIBarButtonItem *search;
@@ -192,11 +193,23 @@ static void RequestRevoke(id mgr, NSString *s, NSString *session, id wrap, UIVie
 @property(nonatomic,strong) NSMutableSet *requested;
 @property(nonatomic,copy) NSString *account;
 @property(nonatomic,copy) NSString *session;
+@property(nonatomic,strong) WUInputToolbar *inputToolbar;
+@property(nonatomic,weak) UIView *inputAnchor;
+@property(nonatomic,copy) NSString *inputAccount;
+@property(nonatomic,copy) NSString *inputSession;
+@property(nonatomic) NSUInteger inputGeneration;
+- (void)syncInputToolbar;
+- (void)removeInputToolbar;
 - (void)refresh;
 @end
 static NSHashTable *chatActions;
 @implementation WUChatActions
 - (instancetype)init { if((self=[super init])) { _requested=[NSMutableSet set]; } return self; }
+- (void)removeInputToolbar { [self.inputToolbar removeFromSuperview]; self.inputToolbar=nil; self.inputAnchor=nil; }
+- (void)syncInputToolbar {
+    // The capture does not establish reserved space above the input bar; use navigation instead.
+    [self removeInputToolbar];
+}
 - (void)refresh {
     UIViewController *v=self.owner; if(!v) return;
     NSMutableArray *items=[v.navigationItem.rightBarButtonItems mutableCopy]?:[NSMutableArray array];
@@ -206,6 +219,7 @@ static NSHashTable *chatActions;
     if(WUEnabled(@"chatSearch") && Has(v,@"onSearchItem","v",@[])) { if(!self.search) self.search=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"magnifyingglass"] style:UIBarButtonItemStylePlain target:self action:@selector(openSearch)]; self.search.accessibilityLabel=@"搜索当前会话聊天记录"; [items addObject:self.search]; }
     if(WUEnabled(@"multiRevoke") && Has(v,@"getSelectedMsgs","@",@[]) && RevokeSelector(Service(@"CMessageMgr"))) { if(!self.recall) self.recall=[[UIBarButtonItem alloc] initWithTitle:@"撤回所选" style:UIBarButtonItemStylePlain target:self action:@selector(recallSelected)]; [items addObject:self.recall]; }
     NSString *account=Account(), *session=Session(v); NSUInteger gen=generation;
+    self.inputAccount=account; self.inputSession=session; self.inputGeneration=gen;
     NSArray *selected=WUToolbarActions(WUAccountOptions(account)[@"toolbar"]);
     NSMutableArray *menu=[NSMutableArray array], *grid=[NSMutableArray array]; __weak WUChatActions *weak=self;
     self.gridEntries=@[];
@@ -245,6 +259,7 @@ static NSHashTable *chatActions;
         if([selected containsObject:@"search"] && self.search) [items removeObject:self.search];
     } else self.tools.menu=nil;
     v.navigationItem.rightBarButtonItems=items;
+    [self removeInputToolbar]; [self syncInputToolbar];
     WURefreshMomentsInput(v);
 }
 - (void)openGrid {
@@ -315,8 +330,12 @@ static void RecordStatsVisit(UIViewController *owner) {
         [StatsVisitStore(account) recordSession:session kind:kind time:time active:YES enabled:YES current:^BOOL { return gen==WUContextGenerationSnapshot(); }];
     });
 }
-static IMP chatAppearOriginal, chatDisappearOriginal;
+static IMP chatAppearOriginal, chatDisappearOriginal, chatLayoutOriginal;
 static char chatKey;
+static void ChatLayout(UIViewController *v,SEL s) {
+    ((void(*)(id,SEL))chatLayoutOriginal)(v,s);
+    @try { [((WUChatActions *)objc_getAssociatedObject(v,&chatKey)) syncInputToolbar]; } @catch(__unused NSException *e) {}
+}
 static void ChatAppeared(UIViewController *v,SEL s,BOOL animated) {
     ((void(*)(id,SEL,BOOL))chatAppearOriginal)(v,s,animated);
     WUCaptureObserve(v,1);
@@ -324,6 +343,7 @@ static void ChatAppeared(UIViewController *v,SEL s,BOOL animated) {
     @try { WUChatActions *a=objc_getAssociatedObject(v,&chatKey); if(!a) { a=[WUChatActions new]; a.owner=v; objc_setAssociatedObject(v,&chatKey,a,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [chatActions addObject:a]; } [a refresh]; } @catch(NSException *e) {}
 }
 static void ChatDisappeared(UIViewController *v,SEL s,BOOL animated) {
+    [((WUChatActions *)objc_getAssociatedObject(v,&chatKey)) removeInputToolbar];
     UIViewController *presented=v.presentedViewController;
     BOOL ownStats=[presented isKindOfClass:UINavigationController.class] && [[(UINavigationController *)presented topViewController] isKindOfClass:NSClassFromString(@"WUStatsController")];
     BOOL ownGrid=[presented isKindOfClass:UINavigationController.class] && [[(UINavigationController *)presented topViewController] isKindOfClass:WUChatGridController.class];
@@ -565,6 +585,7 @@ void WUInstallMessages(void) {
         [NSNotificationCenter.defaultCenter addObserverForName:UIKeyboardDidShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(WUChatActions *a in chatActions.allObjects) WURefreshMomentsInput(a.owner); }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ CancelPending(); }];
     });
+    WUHook(@"BaseMsgContentViewController",@"viewDidLayoutSubviews",NO,"v",@[],(IMP)ChatLayout,&chatLayoutOriginal);
     WUHook(@"BaseMsgContentViewController",@"viewDidAppear:",NO,"v",@[@"B"],(IMP)ChatAppeared,&chatAppearOriginal);
     WUHook(@"BaseMsgContentViewController",@"viewDidDisappear:",NO,"v",@[@"B"],(IMP)ChatDisappeared,&chatDisappearOriginal);
     WUHook(@"MessageRevokeMgr",@"onRevokeMsg:",NO,"v",@[@"@"],(IMP)Revoke,&revokeOriginal);

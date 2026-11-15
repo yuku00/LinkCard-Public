@@ -27,7 +27,9 @@ settings=(root/'Sources/Settings.m').read_text()
 for key in ('miniBannerAds','miniInterstitialAds'):
     assert core.count('@"'+key+'"')==2 and key in settings and key in native
 ads=(root/'Sources/Ads.m').read_text()
-assert 'WUInstallMiniAds();' in ads and 'return WUMiniAdsAvailable(key);' in ads
+assert 'WUInstallMiniAds();' not in ads and 'return WUMiniAdsAvailable(key);' in ads
+# User-reported entry failure: production must not inject WA JS until lifecycle is verified.
+assert 'WUInstallMiniAds(' not in ads
 build=(root/'tools/build.sh').read_text()
 assert 'WU_REQUIRE_APPLE_TESTS=1 python3 tests/miniads/run.py' in build
 assert build.count('-framework JavaScriptCore')==2

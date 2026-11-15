@@ -115,6 +115,15 @@ static NSString *WUMenuSignatureReport(Class cls, SEL sel, BOOL filter) {
         BOOL match=WUMenuFilterSignatureMatches(count,result,a,b,c);
         free(a); free(b); free(c);
         assessment=match?@"形状匹配对象返回及一个对象参数；仅元数据，不能授权接入":@"形状未匹配或无法确定；拒绝接入";
+    } else {
+        char *a=count>0?method_copyArgumentType(m,0):NULL;
+        char *b=count>1?method_copyArgumentType(m,1):NULL;
+        char *c=count>2?method_copyArgumentType(m,2):NULL;
+        char *d=count>3?method_copyArgumentType(m,3):NULL;
+        char *e=count>4?method_copyArgumentType(m,4):NULL;
+        BOOL match=WUMenuInitializerSignatureMatches(count,result,a,b,c,d,e);
+        free(a); free(b); free(c); free(d); free(e);
+        assessment=match?@"初始化器形状匹配对象、对象、SEL；仅元数据，不能授权调用":@"初始化器形状未匹配或无法确定；拒绝调用";
     }
     NSString *report=[NSString stringWithFormat:@"菜单签名：返回 %@；参数数 %u；参数编码 %@%@；%@",WUWrapperString(result),count,[types componentsJoinedByString:@", "],count>8?@"（截断）":@"",assessment];
     free(result); return report;

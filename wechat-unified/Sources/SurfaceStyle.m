@@ -17,6 +17,7 @@ UIColor *WUSurfaceColor(NSString *role,NSString *property,UITraitCollection *tra
     return color?:WUThemeColor(token,traits)?:[fallback resolvedColorWithTraitCollection:traits];
 }
 static id Current(UIView *v,NSString *k) {
+    if([k isEqual:@"layerTransform"]) return [NSValue valueWithCATransform3D:v.layer.transform];
     if([k isEqual:@"radius"]) return @(v.layer.cornerRadius);
     if([k isEqual:@"borderWidth"]) return @(v.layer.borderWidth);
     if([k isEqual:@"border"]) return v.layer.borderColor?[UIColor colorWithCGColor:v.layer.borderColor]:NSNull.null;
@@ -30,7 +31,8 @@ static id Current(UIView *v,NSString *k) {
 }
 static void Set(UIView *v,NSString *k,id x) {
     if(x==NSNull.null) x=nil;
-    if([k isEqual:@"radius"]) v.layer.cornerRadius=[x doubleValue];
+    if([k isEqual:@"layerTransform"]) v.layer.transform=[x CATransform3DValue];
+    else if([k isEqual:@"radius"]) v.layer.cornerRadius=[x doubleValue];
     else if([k isEqual:@"borderWidth"]) v.layer.borderWidth=[x doubleValue];
     else if([k isEqual:@"border"]) v.layer.borderColor=[x CGColor];
     else if([k isEqual:@"clip"]) v.clipsToBounds=[x boolValue];
@@ -62,6 +64,11 @@ void WUApplyConfiguredSurface(UIView *v,NSString *role,CGFloat radius,BOOL backg
     WURestoreConfiguredSurface(v); if(!WUEnabled(role)||!v.window||CGRectIsEmpty(v.bounds)) return;
     NSDictionary *s=WUSurfaceStyle(role); CGFloat r=s[@"radius"]?[s[@"radius"] doubleValue]:radius;
     NSMutableDictionary *values=[@{@"radius":@(MIN(r,MIN(v.bounds.size.width,v.bounds.size.height)/2)),@"clip":@YES} mutableCopy];
+    // Only the verified message background image, never a host control or its layout.
+    if([v isKindOfClass:UIImageView.class] && !v.userInteractionEnabled && [@[@"textBubbleSurface",@"fileSurface",@"emoticonSurface"] containsObject:role] && (s[@"widthScale"]||s[@"heightScale"])) {
+        CGFloat w=s[@"widthScale"]?[s[@"widthScale"] doubleValue]:1, h=s[@"heightScale"]?[s[@"heightScale"] doubleValue]:1;
+        values[@"layerTransform"]=[NSValue valueWithCATransform3D:CATransform3DScale(v.layer.transform,w,h,1)];
+    }
     if(background||s[@"background"]||s[@"backgroundDark"]) values[@"background"]=WUSurfaceColor(role,@"background",v.traitCollection,UIColor.secondarySystemGroupedBackgroundColor);
     if(s[@"opacity"]) values[@"opacity"]=s[@"opacity"];
     if(s[@"borderWidth"]||[role isEqual:@"inputBorder"]||[role isEqual:@"noticeBorder"]) { values[@"borderWidth"]=s[@"borderWidth"]?:@1; values[@"border"]=WUSurfaceColor(role,@"border",v.traitCollection,UIColor.systemTealColor); }

@@ -37,8 +37,55 @@ class CaptureContract(unittest.TestCase):
             self.assertIn(token,page)
         for forbidden in ('valueForKey','performSelector','objc_msgSend','text','URL','NSUserDefaults','UIPasteboard','NSLog','class_copyMethodList'):
             self.assertNotIn(forbidden,page)
-        for token in ('允许并开始倒计时','10*NSEC_PER_SEC','MMMenuWindow','finishedReport=report','UIActivityViewController'):
+        for token in ('允许并开始倒计时','10*NSEC_PER_SEC','MMMenuWindow','finishedReport=combined','UIActivityViewController'):
             self.assertIn(token,S)
+    def test_page_merge_and_geometry_contract(self):
+        page=S.split('static void WUPageSnapshot',1)[1].split('static NSString *pageStatus',1)[0]
+        self.assertIn('if(!n.controller) WUPageAppendGeometry(out,obj)',page)
+        geometry=(R/'Sources/WUPageGeometry.inc').read_text()
+        for token in ('type==UIView.class','type==UIScrollView.class','type==UITableView.class','type==UICollectionView.class','view.frame','view.bounds','b.size.width','s.contentInset','s.adjustedContentInset','isKindOfClass:UIView.class','isKindOfClass:UIScrollView.class','@catch','isfinite','截断'):
+            self.assertIn(token,geometry)
+        for token in ('MMTableView','NSKVONotifying_MMTableView','MMInputToolView','InputToolContainerView','InputToolViewBar','EmoticonMessageCellView','AppEmoticonMessageCellView'):
+            self.assertIn('"'+token+'"',geometry)
+        for token in ('contentOffset','valueForKey','performSelector','objc_msgSend','text','NSUserDefaults','UIPasteboard','NSURLSession'):
+            self.assertNotIn(token,geometry)
+        self.assertLess(geometry.index('if(scroll) [out appendFormat:'),geometry.index('else [out appendFormat:'))
+        controller=S.split('- (void)pageSnapshot',1)[1].split('- (void)share:',1)[0]
+        for token in ('WUPageCanAppend(pageReports.count,pageReportLength,report.length)','[pageReports addObject:report]','pageReportsDropped++','[pageReports copy]','Report(copy,stop)','pages[i]','finishedReport=combined'):
+            self.assertIn(token,controller)
+        self.assertNotIn('finishedReport=report',controller)
+    def test_geometry_privacy_and_package_contract(self):
+        release=(R/'tools/release.py').read_text()
+        for path in ('Sources/WUPageGeometry.inc','tests/page_geometry_ios.m','tools/test_page_geometry_ios.py'):
+            self.assertIn(path,release)
+        self.assertIn('#import "WUPageGeometry.inc"',S)
+        self.assertIn('Sources/*.m',(R/'tools/build.sh').read_text())
+        for section in (S.split('static void WUPageSnapshot',1)[1].split('NSMutableArray<WUPageNode',1)[0], S.split('- (void)pageSnapshot',1)[1].split('[a addAction:',1)[0], S.split('- (void)share:',1)[1].split('[a addAction:',1)[0]):
+            self.assertIn('间接',section)
+            self.assertIn('滚动位置',section)
+        self.assertIn('不等于无法推断滚动位置',(R/'CAPTURE-GUIDE.md').read_text())
+    def test_actual_page_budget(self):
+        start=S.index('#define PAGE_REPORT_COUNT_LIMIT')
+        end=S.index('static NSString *finishedReport;',start)
+        budget=S[start:end]
+        program='''#include <stddef.h>
+#include <stdbool.h>
+#include <assert.h>
+'''+budget+'''
+int main(void) {
+ assert(WUPageCanAppend(0,0,262144));
+ assert(!WUPageCanAppend(0,0,262145));
+ assert(WUPageCanAppend(3,262143,1));
+ assert(!WUPageCanAppend(4,0,1));
+ assert(!WUPageCanAppend(1,262144,1));
+ assert(!WUPageCanAppend(1,262145,0));
+ return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/'budget.c'; p.write_text(program)
+            subprocess.run(['cc','-std=c11',str(p),'-o',str(Path(d)/'budget')],check=True)
+            subprocess.run([str(Path(d)/'budget')],check=True)
     def test_page_budget_mock(self):
         # Model the same per-batch queue admission and report limits, not UIKit behavior.
         queue=[('root',0)]; index=0; truncated=False; batches=[]

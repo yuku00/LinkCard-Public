@@ -103,7 +103,7 @@ NSDictionary *WUThemeReadDescriptor(NSData *d,NSError **error) {
 NSArray *WUSurfaceRoles(void) { return @[@"inputBorder",@"noticeBorder",@"searchSurface",@"referSurface",@"referMessageSurface",@"textPreviewSurface",@"hostPopupSurface",@"quickReplySurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"textBubbleSurface",@"fileSurface",@"emoticonSurface",@"chatSendSurface",@"chatAttachmentSurface"]; }
 BOOL WUValidSurfaceStyles(id v) {
     if(![v isKindOfClass:NSDictionary.class]||[v count]>WUSurfaceRoles().count) return NO;
-    NSDictionary *ranges=@{@"radius":@[@0,@80],@"borderWidth":@[@0,@8],@"fontSize":@[@8,@48],@"fontWeight":@[@(-1),@1],@"opacity":@[@0,@1]};
+    NSDictionary *ranges=@{@"radius":@[@0,@80],@"borderWidth":@[@0,@8],@"fontSize":@[@8,@48],@"fontWeight":@[@(-1),@1],@"opacity":@[@0,@1],@"widthScale":@[@0.7,@1.3],@"heightScale":@[@0.7,@1.3]};
     for(NSString *role in v) {
         id style=v[role]; if(![WUSurfaceRoles() containsObject:role]||![style isKindOfClass:NSDictionary.class]) return NO;
         for(NSString *k in style) {

@@ -12,5 +12,17 @@ int main(void) {
     assert(!WUMenuFilterSignatureMatches(3,NULL,"@",":","@"));
     assert(!WUMenuFilterSignatureMatches(3,"@",NULL,":","@"));
     assert(!WUMenuFilterSignatureMatches(3,"@","@",":",NULL));
+    assert(WUMenuInitializerSignatureMatches(5,"@","@",":","@","@",":"));
+    assert(!WUMenuInitializerSignatureMatches(4,"@","@",":","@","@",":"));
+    assert(!WUMenuInitializerSignatureMatches(6,"@","@",":","@","@",":"));
+    assert(!WUMenuInitializerSignatureMatches(5,"v","@",":","@","@",":"));
+    assert(!WUMenuInitializerSignatureMatches(5,"@","@",":","@","@","@?"));
+    assert(!WUMenuInitializerSignatureMatches(5,"@","@",":","@","@","@"));
+    assert(!WUMenuInitializerSignatureMatches(5,"@","@",":","@","@",NULL));
+    assert(!WUMenuInitializerSignatureMatches(5,"@","@",":","@",NULL,":"));
+    assert(!WUMenuInitializerSignatureMatches(5,"@","@",":",NULL,"@",":"));
+    assert(!WUMenuInitializerSignatureMatches(5,"@","@",NULL,"@","@",":"));
+    assert(!WUMenuInitializerSignatureMatches(5,"@",NULL,":","@","@",":"));
+    assert(!WUMenuInitializerSignatureMatches(5,NULL,"@",":","@","@",":"));
     puts("menu signature conservative gate: OK");
 }

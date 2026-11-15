@@ -20,6 +20,14 @@ static _Atomic(bool) active=false;
 static _Atomic(unsigned long) contended=0;
 static CaptureSnapshot capture;
 static BOOL building;
+// Main-thread session storage; reject whole snapshots once either budget is full.
+static NSMutableArray<NSString *> *pageReports;
+static NSUInteger pageReportLength, pageReportsDropped;
+#define PAGE_REPORT_COUNT_LIMIT 4
+#define PAGE_REPORT_LENGTH_LIMIT 262144
+static bool WUPageCanAppend(size_t count, size_t length, size_t incoming) {
+    return count<PAGE_REPORT_COUNT_LIMIT && length<=PAGE_REPORT_LENGTH_LIMIT && incoming<=PAGE_REPORT_LENGTH_LIMIT-length;
+}
 static NSString *finishedReport;
 static const char *scenes[]={"未标记","聊天","聊天工具栏","搜索","表情","语音","服务与卡包","小程序","朋友圈","其他"};
 static const char *points[]={"","聊天页 viewDidAppear: 原实现返回","聊天工具栏 didMoveToWindow 附着","搜索栏 layoutSubviews 在窗口","语音 setIsPlaying: 原实现返回","拍一拍回调入口","小程序 invokeInJsContext: 回调入口"};
@@ -95,6 +103,8 @@ static NSString *Report(const CaptureSnapshot *snapshot, BOOL stopped) {
     return out;
 }
 
+#import "WUPageGeometry.inc"
+
 // User-authorized one-shot hierarchy; all UIKit access stays on main.
 @interface WUPageNode : NSObject
 @property(nonatomic,strong) id object;
@@ -110,7 +120,7 @@ static void WUPageSnapshot(void (^done)(NSString *)) {
     UIApplication *app=UIApplication.sharedApplication;
     if(@available(iOS 13.0, *)) {
         if(app.applicationState!=UIApplicationStateActive) { done(nil); return; }
-        NSMutableString *out=[NSMutableString stringWithString:@"用户主动延迟页面类快照（本进程）\n场景和窗口序号仅为本次标记，不代表身份或目标。插件界面、系统在本应用内的窗口可能出现；可见性仅按 hidden/alpha 判断，不判断遮挡或屏幕位置；分批时层级可能变化。类名可能敏感，分享前审阅。仅类名与结构，不能推断调用或业务成功。\n"];
+        NSMutableString *out=[NSMutableString stringWithString:@"用户主动延迟页面类快照（本进程）\n场景和窗口序号仅为本次标记，不代表身份或目标。插件界面、系统在本应用内的窗口可能出现；可见性仅按 hidden/alpha 判断，不判断遮挡或屏幕位置；分批时层级可能变化。类名、层级与几何可能敏感：位置、尺寸和排列可间接暴露消息长度、数量、类型、界面状态及滚动位置，分享前审阅。精确 UIKit 及指定微信类名白名单记录 frame 与 bounds；宿主子类 getter 可能重写并产生副作用或异常，主线程分批采集可能卡顿；滚动视图仅记录 bounds.size 和边距，不记录滚动原点。不能推断调用或业务成功。\n"];
         NSMutableArray<WUPageNode *> *queue=[NSMutableArray array];
         __block NSUInteger sceneCount=0, windowCount=0, skipped=0;
         BOOL sceneCut=NO, windowCut=NO; NSUInteger scannedWindows=0;
@@ -144,6 +154,7 @@ static void WUPageSnapshot(void (^done)(NSString *)) {
                 if(!n.controller) { UIView *v=obj; if(v.hidden || v.alpha<=0.01 || (v!=w && v.window!=w)) { skipped++; continue; } }
                 NSString *tag=[NSString stringWithFormat:@"节点%lu",(unsigned long)++serial];
                 [out appendFormat:@"%@ <- %@ | %@ %@\n",tag,n.parent,n.controller?@"控制器":@"视图",RuntimeString(class_getName(object_getClass(obj)),NAME_LIMIT)];
+                if(!n.controller) WUPageAppendGeometry(out,obj);
                 NSArray *groups;
                 if(n.controller) { UIViewController *vc=obj; UIViewController *presented=vc.presentedViewController; groups=@[presented?@[presented]:@[],vc.childViewControllers]; }
                 else groups=@[((UIView *)obj).subviews];
@@ -168,7 +179,7 @@ static NSString *pageStatus;
     self.title=@"跨页面接口采集";
     self.navigationItem.leftItemsSupplementBackButton=YES;
     UIBarButtonItem *page=[[UIBarButtonItem alloc] initWithTitle:@"页面类" style:UIBarButtonItemStylePlain target:self action:@selector(pageSnapshot)];
-    page.enabled=!building; self.navigationItem.leftBarButtonItem=page;
+    page.enabled=running&&!building; self.navigationItem.leftBarButtonItem=page;
     ((UITextView *)self.view).text=pageStatus ?: finishedReport ?: (running?@"采集中：标记场景，操作后手动快照或停止；快照生成后可预览并手动存到文件。仅六个已有挂点。":@"类名、方法名和编码可能敏感。开始后标记场景，手动快照并选择存储到文件；未手动保存时进程退出会丢失。仅观察六个已有挂点，不自动上传。 ");
     UIBarButtonItem *toggle=[[UIBarButtonItem alloc] initWithTitle:running?@"停止":@"开始" style:UIBarButtonItemStylePlain target:self action:@selector(toggle)];
     UIBarButtonItem *mark=[[UIBarButtonItem alloc] initWithTitle:@"场景" style:UIBarButtonItemStylePlain target:self action:@selector(mark)];
@@ -181,7 +192,7 @@ static NSString *pageStatus;
 - (void)viewWillAppear:(BOOL)animated { [super viewWillAppear:animated]; [self refresh]; }
 - (void)begin {
     pthread_mutex_lock(&captureLock); memset(&capture,0,sizeof(capture)); atomic_store(&contended,0); atomic_store(&active,true); pthread_mutex_unlock(&captureLock);
-    finishedReport=nil; pageStatus=nil; [self refresh];
+    finishedReport=nil; pageStatus=nil; pageReports=[NSMutableArray array]; pageReportLength=0; pageReportsDropped=0; [self refresh];
 }
 - (void)toggle {
     if(building) return;
@@ -201,16 +212,20 @@ static NSString *pageStatus;
     a.popoverPresentationController.barButtonItem=self.navigationItem.rightBarButtonItems[1]; [self presentViewController:a animated:YES completion:nil];
 }
 - (void)pageSnapshot {
-    if(building) return;
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"10秒后采集页面类？" message:@"确认后请返回微信目标界面；10秒后仅在本应用前台采集所有前台活动场景的可见窗口（包括 MMMenuWindow），不保证目标出现，插件界面也可能出现。仅读公开层级和类名，不读文本、URL或业务值；结果会替换当前内存报告，请先保存。可回本页预览并手动分享。仅到计时结束及采集分批时应用仍处前台才继续；期间返回前台无法保证目标仍在。" preferredStyle:UIAlertControllerStyleAlert];
+    if(building || !atomic_load(&active)) return;
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"10秒后采集页面类和几何？" message:@"确认后请返回目标界面；10秒后采集前台可见窗口（包括 MMMenuWindow）。记录层级和类名，以及精确 UIKit 和指定微信类名白名单的 frame、bounds 和滚动视图边距；宿主子类 getter 可能重写、有副作用或异常，主线程采集可能卡顿；滚动视图仅记录 bounds.size，不直接记录滚动偏移；但坐标、尺寸及层级可间接暴露消息长度、数量、类型、界面状态或滚动位置，也不能保证类名不含敏感内容。不会主动读取文本、消息、URL、账号或控件值。每会话最多4份、合计262144字符，超限整份丢弃且保留旧快照；停止时与事件合并。仅在计时结束及每批执行时前台才继续；期间进入后台又返回不能保证目标仍在。" preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [a addAction:[UIAlertAction actionWithTitle:@"允许并开始倒计时" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *x){
         building=YES; pageStatus=@"页面类快照倒计时10秒，请返回目标界面；采集后重新打开本页。"; [self refresh];
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,10*NSEC_PER_SEC),dispatch_get_main_queue(),^{
             WUPageSnapshot(^(NSString *report){
-                if(report) { finishedReport=report; pageStatus=nil; }
-                else pageStatus=@"页面类快照取消：应用不在前台或系统不支持；原报告未覆盖。";
-                building=NO; [self refresh];
+                building=NO;
+                if(report && atomic_load(&active)) {
+                    if(WUPageCanAppend(pageReports.count,pageReportLength,report.length)) {
+                        [pageReports addObject:report]; pageReportLength+=report.length;
+                    } else { pageReportsDropped++; }
+                    pageStatus=nil; [self makeReport:NO];
+                } else { pageStatus=@"页面类快照取消：应用不在前台、系统不支持或会话已停止；已收集数据保留。"; [self refresh]; }
             });
         });
     }]];
@@ -223,11 +238,18 @@ static NSString *pageStatus;
     if(!copy) { UIAlertController *a=[UIAlertController alertControllerWithTitle:@"快照失败" message:@"内存不足，采集仍在运行。" preferredStyle:UIAlertControllerStyleAlert]; [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]]; [self presentViewController:a animated:YES completion:nil]; return; }
     pthread_mutex_lock(&captureLock); if(stop) atomic_store(&active,false); *copy=capture; copy->contended=atomic_load(&contended); pthread_mutex_unlock(&captureLock);
     building=YES; [self refresh];
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{ NSString *report=Report(copy,stop); free(copy); dispatch_async(dispatch_get_main_queue(), ^{ finishedReport=report; building=NO; [self refresh]; }); });
+    NSArray<NSString *> *pages=[pageReports copy]; NSUInteger dropped=pageReportsDropped;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY,0), ^{
+        NSMutableString *report=[Report(copy,stop) mutableCopy]; free(copy);
+        [report appendFormat:@"\n【本会话页面快照】%lu 份；超限整份丢弃 %lu；最多4份、合计262144字符。\n",(unsigned long)pages.count,(unsigned long)dropped];
+        for(NSUInteger i=0;i<pages.count;i++) [report appendFormat:@"\n【页面快照 %lu】\n%@\n",(unsigned long)(i+1),pages[i]];
+        NSString *combined=[report copy];
+        dispatch_async(dispatch_get_main_queue(), ^{ finishedReport=combined; building=NO; [self refresh]; });
+    });
 }
 - (void)share:(UIBarButtonItem *)sender {
     if(building||!finishedReport) return;
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"保存或分享已预览报告？" message:@"真实类名及可能存在的方法名、编码和模块名可能敏感。请先检查；选择“存储到文件”可手动保存，选择其他目的地可能发送。" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"保存或分享已预览报告？" message:@"真实类名、方法名、编码、模块名及页面层级、坐标和尺寸可能敏感；几何可能间接暴露消息长度、数量、类型、界面状态或滚动位置。请先检查；选择“存储到文件”可手动保存，选择其他目的地可能发送。" preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [a addAction:[UIAlertAction actionWithTitle:@"选择保存或分享方式" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action){
         NSString *filename=[NSString stringWithFormat:@"WUCapture-%@.txt",NSUUID.UUID.UUIDString];
