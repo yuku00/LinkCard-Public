@@ -1,5 +1,6 @@
 #import "RepositoryLogic.h"
 #import <objc/runtime.h>
+#import <objc/message.h>
 #include <string.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -75,4 +76,65 @@ NSString *WURepositoryInvoke(id receiver, NSString *selector, id first, id secon
         [v setArgument:&a atIndex:2]; [v setArgument:&b atIndex:3]; submitted=YES; [v invoke];
         return @"已请求（非送达）";
     } @catch(NSException *exception) { return submitted?@"未知：调用异常，请核对宿主，勿盲重发":@"失败：未提交"; }
+}
+
+// Verify both the declared host method and the live service signature.  The only
+// accepted forwarded services are the two named 8.0.79 service methods below.
+static BOOL RepoMethod(id object, NSString *selector, const char *result, NSArray<NSString *> *args, NSString *hostName) {
+    @try {
+        if(!object) return NO;
+        SEL sel=NSSelectorFromString(selector);
+        Method method=class_getInstanceMethod(object_getClass(object),sel);
+        if(!method && hostName) {
+            BOOL proxy=NO;
+            for(Class c=object_getClass(object); c; c=class_getSuperclass(c)) if(c==objc_getClass("NSProxy")) { proxy=YES; break; }
+            if(proxy) method=class_getInstanceMethod(NSClassFromString(hostName),sel);
+        }
+        NSMethodSignature *sig=[object methodSignatureForSelector:sel];
+        if(!method || !sig || method_getNumberOfArguments(method)!=args.count+2 || sig.numberOfArguments!=args.count+2) return NO;
+        char *r=method_copyReturnType(method); BOOL ok=r && !strcmp(r,result) && !strcmp(sig.methodReturnType,result); free(r);
+        for(NSUInteger i=0;i<args.count+2;i++) {
+            const char *expected=i==0?"@":i==1?":":args[i-2].UTF8String;
+            char *type=method_copyArgumentType(method,(unsigned)i); const char *actual=[sig getArgumentTypeAtIndex:i];
+            ok=ok && type && actual && !strcmp(type,expected) && !strcmp(actual,expected); free(type);
+        }
+        return ok;
+    } @catch(NSException *e) { return NO; }
+}
+id WURepositoryContact(id contacts, NSString *target) {
+    @try {
+        if(!Text(target,256) || !RepoMethod(contacts,@"getContactByName:","@",@[@"@"],@"CContactMgr")) return nil;
+        id contact=((id(*)(id,SEL,id))objc_msgSend)(contacts,NSSelectorFromString(@"getContactByName:"),target);
+        if(!RepoMethod(contact,@"m_nsUsrName","@",@[],nil)) return nil;
+        id username=((id(*)(id,SEL))objc_msgSend)(contact,NSSelectorFromString(@"m_nsUsrName"));
+        return [target isEqual:username]?contact:nil;
+    } @catch(NSException *e) { return nil; }
+}
+NSString *WURepositorySendText(id manager, id sessionManager, id wrap, NSString *account, NSString *target, NSString *text, BOOL (^current)(void)) {
+    BOOL submitted=NO;
+    @try {
+        if(!NSThread.isMainThread || !current || !current() || !Text(account,256) || !Text(target,256) || !Text(text,10000) ||
+           !RepoMethod(manager,@"AddMsg:MsgWrap:","v",@[@"@",@"@"],@"CMessageMgr") ||
+           !RepoMethod(sessionManager,@"GenSendMsgTime","I",@[],@"MMNewSessionMgr")) return @"失败：上下文或发送服务不可用，未提交";
+        NSArray *setters=@[@"setM_nsFromUsr:",@"setM_nsToUsr:",@"setM_nsContent:"];
+        NSArray *getters=@[@"m_nsFromUsr",@"m_nsToUsr",@"m_nsContent"];
+        for(NSString *name in setters) if(!RepoMethod(wrap,name,"v",@[@"@"],nil)) return @"失败：文本字段ABI不符，未提交";
+        for(NSString *name in getters) if(!RepoMethod(wrap,name,"@",@[],nil)) return @"失败：文本字段无法核验，未提交";
+        for(NSString *name in @[@"setM_uiStatus:",@"setM_uiCreateTime:"]) if(!RepoMethod(wrap,name,"v",@[@"I"],nil)) return @"失败：文本整数ABI不符，未提交";
+        for(NSString *name in @[@"m_uiMessageType",@"m_uiStatus",@"m_uiCreateTime"]) if(!RepoMethod(wrap,name,"I",@[],nil)) return @"失败：文本整数无法核验，未提交";
+        unsigned type=((unsigned(*)(id,SEL))objc_msgSend)(wrap,NSSelectorFromString(@"m_uiMessageType"));
+        if(type!=1) return @"失败：消息类型不符，未提交";
+        unsigned time=((unsigned(*)(id,SEL))objc_msgSend)(sessionManager,NSSelectorFromString(@"GenSendMsgTime"));
+        if(!time) return @"失败：宿主发送时间不可用，未提交";
+        NSArray *values=@[account,target,text];
+        for(NSUInteger i=0;i<setters.count;i++) ((void(*)(id,SEL,id))objc_msgSend)(wrap,NSSelectorFromString(setters[i]),values[i]);
+        ((void(*)(id,SEL,unsigned))objc_msgSend)(wrap,NSSelectorFromString(@"setM_uiStatus:"),1);
+        ((void(*)(id,SEL,unsigned))objc_msgSend)(wrap,NSSelectorFromString(@"setM_uiCreateTime:"),time);
+        for(NSUInteger i=0;i<getters.count;i++) if(![values[i] isEqual:((id(*)(id,SEL))objc_msgSend)(wrap,NSSelectorFromString(getters[i])]) return @"失败：文本字段核验不符，未提交";
+        if(((unsigned(*)(id,SEL))objc_msgSend)(wrap,NSSelectorFromString(@"m_uiStatus"))!=1 || ((unsigned(*)(id,SEL))objc_msgSend)(wrap,NSSelectorFromString(@"m_uiCreateTime"))!=time) return @"失败：文本整数核验不符，未提交";
+        if(!current() || !RepoMethod(manager,@"AddMsg:MsgWrap:","v",@[@"@",@"@"],@"CMessageMgr")) return @"失败：确认或发送服务已失效，未提交";
+        submitted=YES;
+        ((void(*)(id,SEL,id,id))objc_msgSend)(manager,NSSelectorFromString(@"AddMsg:MsgWrap:"),target,wrap);
+        return @"已请求（非送达）；不自动重试";
+    } @catch(NSException *e) { return submitted?@"未知：可能已提交，请核对宿主，未重试":@"失败：构造异常，未提交"; }
 }

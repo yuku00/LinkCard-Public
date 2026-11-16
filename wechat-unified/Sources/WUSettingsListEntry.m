@@ -15,7 +15,7 @@ static id Get(id o,NSString *name) { return Match(o,name,"@",@[]) ? ((id(*)(id,S
 - (void)open { UIViewController *v=self.owner; if(v.isViewLoaded && v.view.window && v.navigationController.topViewController==v && !v.presentedViewController) WUShowSettings(v); }
 @end
 void WUEnsureSettingsListRow(UIViewController *owner) {
-    if (!NSThread.isMainThread || object_getClass(owner)!=NSClassFromString(@"NewSettingViewController") || !owner.isViewLoaded || !owner.view.window) return;
+    if (!NSThread.isMainThread || ![owner isKindOfClass:NSClassFromString(@"NewSettingViewController")] || !owner.isViewLoaded || !owner.view.window) return;
     Ivar ivar=class_getInstanceVariable(object_getClass(owner),"m_tableViewMgr");
     if(ivar && ivar_getTypeEncoding(ivar)[0]=='@') {
         id manager=object_getIvar(owner,ivar);
@@ -23,7 +23,7 @@ void WUEnsureSettingsListRow(UIViewController *owner) {
         NSString *factory=@"normalCellForSel:target:title:accessoryType:";
         id table=Get(manager,@"getTableView"), sections=Get(manager,@"sections");
         id old=objc_getAssociatedObject(owner,&sectionKey);
-        if(object_getClass(manager)==NSClassFromString(@"WCTableViewManager") && [table isKindOfClass:UITableView.class] && [table isDescendantOfView:owner.view] && [sections isKindOfClass:NSArray.class] &&
+        if([manager isKindOfClass:NSClassFromString(@"WCTableViewManager")] && [table isKindOfClass:UITableView.class] && [table isDescendantOfView:owner.view] && [sections isKindOfClass:NSArray.class] &&
            Match(sectionClass,@"defaultSection","@",@[]) && Match(cellClass,factory,"@",@[@":",@"@",@"@",@"q"]) &&
            Match(manager,@"insertSection:At:","v",@[@"@",[NSString stringWithUTF8String:@encode(unsigned int)]]) && WUMatches(class_getInstanceMethod(sectionClass,NSSelectorFromString(@"addCell:")),"v",@[@"@"])) {
             if(old && [sections indexOfObjectIdenticalTo:old]!=NSNotFound) return;
@@ -31,7 +31,7 @@ void WUEnsureSettingsListRow(UIViewController *owner) {
             if(!target) { target=[WUSettingsRowTarget new]; target.owner=owner; objc_setAssociatedObject(owner,&entryKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
             id section=((id(*)(id,SEL))objc_msgSend)(sectionClass,NSSelectorFromString(@"defaultSection"));
             id cell=((id(*)(id,SEL,SEL,id,id,long long))objc_msgSend)(cellClass,NSSelectorFromString(factory),@selector(open),target,@"微信整合",1LL);
-            if(!section || object_getClass(section)!=sectionClass || !cell || object_getClass(cell)!=cellClass || Get(manager,@"sections")!=sections || object_getIvar(owner,ivar)!=manager) return;
+            if(![section isKindOfClass:sectionClass] || ![cell isKindOfClass:cellClass] || object_getIvar(owner,ivar)!=manager) return;
             ((void(*)(id,SEL,id))objc_msgSend)(section,NSSelectorFromString(@"addCell:"),cell);
             ((void(*)(id,SEL,id,unsigned int))objc_msgSend)(manager,NSSelectorFromString(@"insertSection:At:"),section,0U);
             objc_setAssociatedObject(owner,&sectionKey,section,OBJC_ASSOCIATION_RETAIN_NONATOMIC);

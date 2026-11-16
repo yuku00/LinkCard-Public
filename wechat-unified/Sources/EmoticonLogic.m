@@ -32,7 +32,11 @@ static NSUInteger GIFComplete(const unsigned char *b, NSUInteger n) {
 }
 static const NSUInteger Limit=20*1024*1024;
 NSData *WUEmoticonRead(NSString *path) {
-    if(![path isKindOfClass:NSString.class] || !path.isAbsolutePath || ![path.stringByStandardizingPath isEqual:path.stringByResolvingSymlinksInPath]) return nil;
+    if(![path isKindOfClass:NSString.class] || !path.isAbsolutePath) return nil;
+    NSString *standard=path.stringByStandardizingPath, *resolved=path.stringByResolvingSymlinksInPath;
+    // iOS exposes /var as a system alias of /private/var. Permit only that
+    // exact alias, not arbitrary symlinks elsewhere in the path.
+    if(![standard isEqual:resolved] && !([standard hasPrefix:@"/var/"] && [resolved isEqual:[@"/private" stringByAppendingString:standard]])) return nil;
     int fd=open(path.fileSystemRepresentation,O_RDONLY|O_NOFOLLOW); if(fd<0) return nil;
     struct stat a,b;
     if(fstat(fd,&a)!=0 || !S_ISREG(a.st_mode) || a.st_size<=0 || a.st_size>(off_t)Limit) { close(fd); return nil; }

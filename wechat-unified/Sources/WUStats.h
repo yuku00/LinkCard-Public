@@ -11,6 +11,7 @@ NS_ASSUME_NONNULL_BEGIN
 // Inclusive civil dates, converted to [start midnight, day-after-end midnight)
 // using calendar arithmetic (not 86400 seconds across DST). nil means invalid.
 FOUNDATION_EXPORT NSDictionary * _Nullable WUStatsDateRange(NSString *start, NSString *end, NSTimeZone *zone);
+FOUNDATION_EXPORT NSDictionary * _Nullable WUStatsRecentDateRange(NSDate *now, NSInteger days, NSTimeZone *zone);
 FOUNDATION_EXPORT BOOL WUStatsTimeInRange(NSNumber *time, NSDictionary * _Nullable range);
 // Pins Runtime Method only after validating the evidenced App query shape.
 FOUNDATION_EXPORT NSString * _Nullable WUStatsAppMethodEncoding(id manager);

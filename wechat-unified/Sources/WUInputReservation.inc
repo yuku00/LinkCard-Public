@@ -14,7 +14,6 @@ static BOOL WUInputHookReady;
 @property(nonatomic,weak) UIView *bar;
 @property(nonatomic,weak) UIView *container;
 @property(nonatomic,weak) UIScrollView *table;
-@property(nonatomic) CGFloat oldBottomInset;
 @property(nonatomic,strong) WUInputToolbar *toolbar;
 @property(nonatomic) WUInputRect oldTool, oldBar;
 @property(nonatomic) BOOL enabled, ready;
@@ -75,12 +74,14 @@ static BOOL WUInputStillSafe(WUInputReservation *s) {
     CGRect strip=CGRectMake(CGRectGetMinX(container.bounds),CGRectGetMinY(container.bounds),container.bounds.size.width,WUInputExtra);
     CGRect rootStrip=[container convertRect:strip toView:root];
     if(!CGRectContainsRect(root.bounds,rootStrip) || CGRectIntersectsRect(CGRectInset(strip,0,0.5),[bar convertRect:bar.bounds toView:container]) || !WUInputClear(container,bar,strip)) return NO;
-    if(table.adjustedContentInset.bottom+2 < s.oldBottomInset+WUInputExtra) return NO;
+    // A host may reserve by shrinking the table instead of increasing its inset.
+    // The visible-content edge must still end above the strip in either case.
     CGRect tableStrip=[root convertRect:rootStrip toView:table];
     if(CGRectGetMinY(tableStrip)+2 < CGRectGetMaxY(table.bounds)-table.adjustedContentInset.bottom) return NO;
     for(UIView *child in root.subviews) {
         if(child==tool || child==table || child.hidden || child.alpha<=0.01) continue;
-        if([child isKindOfClass:UIImageView.class] && !child.userInteractionEnabled && [root.subviews indexOfObjectIdenticalTo:child]<[root.subviews indexOfObjectIdenticalTo:tool]) continue;
+        // Passive backgrounds below the input cannot cover the new strip or receive its touches.
+        if(!child.userInteractionEnabled && [root.subviews indexOfObjectIdenticalTo:child]<[root.subviews indexOfObjectIdenticalTo:tool]) continue;
         if(CGRectIntersectsRect(CGRectInset(rootStrip,0,0.5),[child convertRect:child.bounds toView:root])) return NO;
     }
     return YES;
@@ -117,7 +118,7 @@ static void WUInputSyncChecked(UIViewController *owner, NSArray<NSDictionary *> 
     Class tableClass=NSClassFromString(@"MMTableView"); UIScrollView *table=nil;
     for(UIView *v in root.subviews) if(tableClass && [v isKindOfClass:tableClass] && [v isKindOfClass:UIScrollView.class]) { if(table) return; table=(UIScrollView *)v; }
     if(!table || container.superview!=tool || objc_getAssociatedObject(tool,&WUInputStateKey)) return;
-    s=[WUInputReservation new]; s.owner=owner; s.tool=tool; s.bar=bar; s.container=container; s.table=table; s.oldBottomInset=table.adjustedContentInset.bottom; s.oldTool=WUInputWindowRect(container); s.oldBar=WUInputWindowRect(bar); s.current=current; s.enabled=YES;
+    s=[WUInputReservation new]; s.owner=owner; s.tool=tool; s.bar=bar; s.container=container; s.table=table; s.oldTool=WUInputWindowRect(container); s.oldBar=WUInputWindowRect(bar); s.current=current; s.enabled=YES;
     objc_setAssociatedObject(owner,&WUInputStateKey,s,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(tool,&WUInputStateKey,s,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [tool setNeedsLayout]; [root setNeedsLayout];

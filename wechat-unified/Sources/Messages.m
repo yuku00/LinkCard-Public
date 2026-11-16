@@ -117,7 +117,19 @@ static void SearchRelayAppeared(UIViewController *relay, SEL cmd, BOOL animated)
     state[@"started"]=@YES;
     @try {
         if(nav.topViewController==relay && WUEnabled(@"chatSearch") && [state[@"account"] isEqual:Account()] && [state[@"session"] isEqual:Session(owner)] && ChatSearchReady()) {
-            ((void(*)(id,SEL))objc_msgSend)(relay,NSSelectorFromString(@"onEditAndSearch")); return;
+            ((void(*)(id,SEL))objc_msgSend)(relay,NSSelectorFromString(@"onEditAndSearch"));
+            // If WeChat pushed a search controller, remove only our relay from
+            // between the original chat and that controller. Back then lands
+            // directly on chat; never rewrite an unrelated or modal stack.
+            dispatch_async(dispatch_get_main_queue(),^{
+                NSArray *stack=nav.viewControllers; NSUInteger index=[stack indexOfObjectIdenticalTo:relay];
+                if(index!=NSNotFound && index>0 && index+1<stack.count && stack[index-1]==owner && nav.topViewController!=relay) {
+                    NSMutableArray *withoutRelay=[stack mutableCopy]; [withoutRelay removeObjectAtIndex:index];
+                    [nav setViewControllers:withoutRelay animated:NO];
+                    objc_setAssociatedObject(relay,&searchRelayKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                }
+            });
+            return;
         }
     } @catch(__unused NSException *e) {}
     objc_setAssociatedObject(relay,&searchRelayKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -271,7 +283,7 @@ static NSHashTable *chatActions;
     if(self.tools) [items removeObject:self.tools];
     if(self.search) [items removeObject:self.search]; if(self.recall) [items removeObject:self.recall]; if(self.stats) [items removeObject:self.stats];
     // Statistics is available only through the account-selected tools menu.
-    if(WUEnabled(@"chatSearch") && ChatSearchReady()) { if(!self.search) self.search=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"magnifyingglass"] style:UIBarButtonItemStylePlain target:self action:@selector(openSearch)]; self.search.accessibilityLabel=@"搜索当前会话聊天记录"; [items addObject:self.search]; }
+    if(WUEnabled(@"chatSearch") && ChatSearchReady()) { if(!self.search) self.search=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"magnifyingglass"] style:UIBarButtonItemStylePlain target:self action:@selector(openSearch)]; self.search.accessibilityLabel=@"搜索当前会话聊天记录"; }
     if(WUEnabled(@"multiRevoke") && Has(v,@"getSelectedMsgs","@",@[]) && RevokeSelector(Service(@"CMessageMgr"))) { if(!self.recall) self.recall=[[UIBarButtonItem alloc] initWithTitle:@"撤回所选" style:UIBarButtonItemStylePlain target:self action:@selector(recallSelected)]; [items addObject:self.recall]; }
     NSString *account=Account(), *session=Session(v); NSUInteger gen=generation;
     self.inputAccount=account; self.inputSession=session; self.inputGeneration=gen;
@@ -311,8 +323,10 @@ static NSHashTable *chatActions;
         self.tools.menu=useGrid?nil:[UIMenu menuWithTitle:@"手动工具" children:menu];
         self.tools.target=useGrid?self:nil; self.tools.action=useGrid?@selector(openGrid):NULL; [items addObject:self.tools];
         if([selected containsObject:@"stats"] && self.stats) [items removeObject:self.stats];
-        if([selected containsObject:@"search"] && self.search) [items removeObject:self.search];
     } else self.tools.menu=nil;
+    // Append after tools: search occupies the former outermost tools slot.
+    // Tools remain accessible immediately beside it and from the input panel.
+    if(WUEnabled(@"chatSearch") && ChatSearchReady() && self.search) [items addObject:self.search];
     v.navigationItem.rightBarButtonItems=items;
     [self removeInputToolbar]; [self syncInputToolbar];
     WURefreshMomentsInput(v);
@@ -778,18 +792,17 @@ static void OpenRepository(UIViewController *owner) {
     binding.send=^NSString *(NSDictionary *part){
         if(!current()) return @"失败：上下文失效，未提交";
         if([part[@"kind"] isEqual:@"text"]) {
-            id mgr=Service(@"CMessageMgr");
+            id mgr=Service(@"CMessageMgr"), sessionManager=Service(@"MMNewSessionMgr");
             if(!current()) return @"失败：上下文失效，未提交";
-            // No AddMsg fallback after a possibly submitted call, and no AI helper.
-            return WURepositoryInvoke(mgr,@"sendMsg:toContactUsrName:",part[@"text"],target);
+            id wrap=WUCreateMessage(NSClassFromString(@"CMessageWrap"),1,account);
+            return WURepositorySendText(mgr,sessionManager,wrap,account,target,part[@"text"],current);
         }
         id source=RepositorySource(part[@"identity"],account);
         if(!source) return @"失败：源消息已失效或查询接口不可用；不是独立备份";
         if([part[@"identity"][@"type"] unsignedIntValue]==34) return @"失败：普通转发不保证语音；请在聊天选择该语音并使用所选语音转发，未提交";
         id contacts=Service(@"CContactMgr");
-        if(!Has(contacts,@"getContactByName:","@",@[@"@"])) return @"失败：目标查询不可用，未提交";
-        id contact=((id(*)(id,SEL,id))objc_msgSend)(contacts,NSSelectorFromString(@"getContactByName:"),target);
-        if(![Str(contact,@"m_nsUsrName") isEqual:target]) return @"失败：目标不符，未提交";
+        id contact=WURepositoryContact(contacts,target);
+        if(!contact) return @"失败：目标查询不可用或用户名不符，未提交";
         Class cls=NSClassFromString(@"ForwardMessageLogicController");
         id forwarder=cls?[[cls alloc] init]:nil;
         if(!WURepositoryCanInvoke(forwarder,@"ForwardMsg:ToContact:")) return @"失败：转发协议不可用，未提交";
@@ -943,7 +956,7 @@ static void OpenVoicePacks(UIViewController *owner) {
     b.capture=^NSDictionary *{ return current()?selectedSnapshot:nil; };
     b.send=^NSString *(WUVoiceForwardOperation *operation){
         if(!current()) return @"失败：账号/会话/代次已失效，未提交";
-        return [operation submitWithManager:Service(@"CMessageMgr") audioSender:Service(@"AudioSender") messageClass:NSClassFromString(@"CMessageWrap") current:current];
+        return [operation submitWithManager:Service(@"CMessageMgr") audioSender:Service(@"AudioSender") uploadManager:Service(@"MMNewUploadVoiceMgr") messageClass:NSClassFromString(@"CMessageWrap") current:current];
     };
     WUShowVoicePacks(owner,b);
 }
@@ -981,9 +994,7 @@ static void ForwardSelectedVoice(UIViewController *owner) {
             if(!current()) { operations[identity]=@"失败：上下文失效，未提交"; return; }
             @try {
                 id contacts=Service(@"CContactMgr");
-                if(!target.length || target.length>256 || !WUVoiceExactSignature(contacts,@"getContactByName:","@",@[@"@"])) { operations[identity]=@"失败：收件人接口不可用，未提交"; Notice(weak,operations[identity]); return; }
-                id contact=((id(*)(id,SEL,id))objc_msgSend)(contacts,NSSelectorFromString(@"getContactByName:"),target);
-                if(![Str(contact,@"m_nsUsrName") isEqual:target]) { operations[identity]=@"失败：收件人用户名不匹配，未提交"; Notice(weak,operations[identity]); return; }
+                if(!WURepositoryContact(contacts,target)) { operations[identity]=@"失败：收件人查询不可用或用户名不匹配，未提交"; Notice(weak,operations[identity]); return; }
             } @catch(NSException *e) { operations[identity]=@"失败：收件人核验异常，未提交"; Notice(weak,operations[identity]); return; }
             operations[identity]=@"未提交：正在离线解码所选语音";
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
@@ -999,7 +1010,7 @@ static void ForwardSelectedVoice(UIViewController *owner) {
                         if(confirmed) return; confirmed=YES;
                         [weak dismissViewControllerAnimated:YES completion:^{
                             if(!current()) { operations[identity]=@"失败：确认失效，未提交"; return; }
-                            @try { operations[identity]=[operation submitWithManager:Service(@"CMessageMgr") audioSender:Service(@"AudioSender") messageClass:NSClassFromString(@"CMessageWrap") current:current]; }
+                            @try { operations[identity]=[operation submitWithManager:Service(@"CMessageMgr") audioSender:Service(@"AudioSender") uploadManager:Service(@"MMNewUploadVoiceMgr") messageClass:NSClassFromString(@"CMessageWrap") current:current]; }
                             @catch(NSException *e) { operations[identity]=@"失败：服务获取异常，未提交"; }
                             Notice(weak,operations[identity]);
                         }];

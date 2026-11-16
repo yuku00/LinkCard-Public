@@ -93,7 +93,13 @@ static id WUMenuAddEmoticon(id original, UIView *cell) {
     SEL action=NSSelectorFromString([NSString stringWithFormat:@"wu_saveEmoticonToPhotos_%lu:",(unsigned long)++wuLinkMenuSerial]);
     Class ownerClass=object_getClass(owner),cellClass=object_getClass(cell);
     if(class_getInstanceMethod(ownerClass,action) || class_getInstanceMethod(cellClass,action) || !class_addMethod(ownerClass,action,(IMP)WUMenuEmoticonAction,"v@:@") || !class_addMethod(cellClass,action,(IMP)WUMenuEmoticonAction,"v@:@")) return original;
-    id item=((id(*)(id,SEL,id,id,SEL))objc_msgSend)([itemClass alloc],init,@"下载/保存表情",@"",action);
+    SEL iconInit=NSSelectorFromString(@"initWithTitle:icon:action:");
+    UIImage *downloadIcon=[UIImage systemImageNamed:@"arrow.down.to.line"];
+    id item=nil;
+    if(downloadIcon && WUMatches(class_getInstanceMethod(itemClass,iconInit),"@",@[@"@",@"@",@":"]))
+        item=((id(*)(id,SEL,id,id,SEL))objc_msgSend)([itemClass alloc],iconInit,@"下载/保存表情",downloadIcon,action);
+    else
+        item=((id(*)(id,SEL,id,id,SEL))objc_msgSend)([itemClass alloc],init,@"下载/保存表情",@"",action);
     if(!item || ![item isKindOfClass:itemClass] || !current()) return original;
     objc_setAssociatedObject(item,&wuLinkMenuItemKey,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     WUMenuStoreLease(cell,owner,@{@"selector":NSStringFromSelector(action),@"current":[current copy],@"wrap":wrap});

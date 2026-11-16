@@ -23,6 +23,14 @@ NSDictionary *WUStatsDateRange(NSString *start, NSString *end, NSTimeZone *zone)
     if(!exclusive || a.timeIntervalSince1970<0) return nil;
     return @{@"start":@(a.timeIntervalSince1970),@"end":@(exclusive.timeIntervalSince1970),@"label":[NSString stringWithFormat:@"%@ 至 %@（含） · %@ · [起日00:00,末日次日00:00)",start,end,zone.name]};
 }
+NSDictionary *WUStatsRecentDateRange(NSDate *now, NSInteger days, NSTimeZone *zone) {
+    if(!now || !zone || days<1 || days>30) return nil;
+    NSCalendar *cal=[[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian]; cal.timeZone=zone;
+    NSDate *today=[cal startOfDayForDate:now];
+    NSDate *start=[cal dateByAddingUnit:NSCalendarUnitDay value:1-days toDate:today options:0];
+    NSDateFormatter *f=[NSDateFormatter new]; f.locale=[NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"]; f.calendar=cal; f.timeZone=zone; f.dateFormat=@"yyyy-MM-dd";
+    return start?WUStatsDateRange([f stringFromDate:start],[f stringFromDate:today],zone):nil;
+}
 BOOL WUStatsTimeInRange(NSNumber *time, NSDictionary *range) {
     if(!range) return YES;
     return [time isKindOfClass:NSNumber.class] && isfinite(time.doubleValue) && time.doubleValue>0 && time.doubleValue>=[range[@"start"] doubleValue] && time.doubleValue<[range[@"end"] doubleValue];
@@ -458,7 +466,7 @@ static char WUStatsOwnerKey;
     __weak typeof(self) weak=self;
     self.binding.visitSnapshot(^(NSDictionary *snapshot) { WUStatsController *v=weak; if(!v || !v.binding || !v.binding.stillCurrent()) return; v.visits=snapshot; [v render:v.lastResult]; });
 }
-- (void)chooseRange {
+- (void)chooseCustomRange {
     if(!self.binding || [self scanning]) return;
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"统计日期（含起止日）" message:[NSString stringWithFormat:@"格式 yyyy-MM-dd；时区 %@。按日历转换为起日00:00至末日次日00:00。未知时间不进入范围统计。",self.binding.timeZone.name] preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *f){ f.placeholder=@"起日，例如 2026-01-01"; }];
@@ -471,6 +479,25 @@ static char WUStatsOwnerKey;
         if(!range) { v.status=@"日期无效：请填写存在的日期，起日不得晚于末日"; [v render:v.lastResult]; return; }
         [v.job cancel]; [v.overviewJob cancel]; v.job=nil; v.binding.dateRange=range; v.status=@"日期已更新，请手动扫描"; [v render:nil];
     }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+- (void)chooseRange {
+    if(!self.binding || [self scanning]) return;
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"统计日期" message:@"快捷范围含今天，按当前统计时区的自然日计算。" preferredStyle:UIAlertControllerStyleAlert];
+    __weak typeof(self) weak=self;
+    NSArray *titles=@[@"最近1天（今天）",@"最近3天",@"最近一周",@"最近30天"];
+    NSArray *days=@[@1,@3,@7,@30];
+    for(NSUInteger i=0;i<titles.count;i++) {
+        NSInteger count=[days[i] integerValue];
+        [alert addAction:[UIAlertAction actionWithTitle:titles[i] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            WUStatsController *v=weak; if(!v.binding || !v.binding.stillCurrent() || [v scanning]) return;
+            NSDictionary *range=WUStatsRecentDateRange([NSDate date],count,v.binding.timeZone);
+            if(!range) { v.status=@"日期计算失败，请使用自定义日期"; [v render:v.lastResult]; return; }
+            [v.job cancel]; [v.overviewJob cancel]; v.job=nil; v.binding.dateRange=range; v.status=@"日期已更新，请手动扫描"; [v render:nil];
+        }]];
+    }
+    [alert addAction:[UIAlertAction actionWithTitle:@"自定义起止日期" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [weak chooseCustomRange]; }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 - (void)confirmClearVisits {

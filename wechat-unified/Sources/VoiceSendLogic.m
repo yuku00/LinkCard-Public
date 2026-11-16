@@ -9,6 +9,15 @@
 BOOL WUVoiceExactSignature(id o, NSString *name, const char *result, NSArray<NSString *> *args) {
     @try {
         SEL s=NSSelectorFromString(name); Method m=o?class_getInstanceMethod(object_getClass(o),s):NULL;
+        // 8.0.79 CMessageWrap forwards its @dynamic voice properties to the
+        // typed extension; their IMPs need not exist on CMessageWrap itself.
+        if(!m && o) {
+            static NSSet *voiceSelectors;
+            static dispatch_once_t once;
+            dispatch_once(&once, ^{ voiceSelectors=[NSSet setWithArray:@[@"m_dtVoice",@"setM_dtVoice:",@"m_uiVoiceTime",@"setM_uiVoiceTime:",@"m_uiVoiceFormat",@"setM_uiVoiceFormat:",@"m_uiVoiceEndFlag",@"setM_uiVoiceEndFlag:"]]; });
+            Class wrap=NSClassFromString(@"CMessageWrap"), ext=NSClassFromString(@"CExtendInfoOfVoiceMsg");
+            if(wrap && ext && [o isKindOfClass:wrap] && [voiceSelectors containsObject:name]) m=class_getInstanceMethod(ext,s);
+        }
         if(!m || method_getNumberOfArguments(m)!=args.count+2) return NO;
         NSMethodSignature *sig=[o methodSignatureForSelector:s];
         if(!sig || sig.numberOfArguments!=args.count+2 || strcmp(sig.methodReturnType,result)) return NO;
@@ -82,15 +91,22 @@ uint32_t WUVoiceMeasuredMS(NSData *data) {
     if((self=[super init])) { _data=[data copy]; _milliseconds=WUVoiceMeasuredMS(_data); _account=[account copy]; _target=[target copy]; _status=@"未提交"; } return self;
 }
 - (NSString *)submitWithManager:(id)manager audioSender:(id)audio messageClass:(Class)cls current:(BOOL (^)(void))current {
+    return [self submitWithManager:manager audioSender:audio uploadManager:nil messageClass:cls current:current];
+}
+- (NSString *)submitWithManager:(id)manager audioSender:(id)audio uploadManager:(id)upload messageClass:(Class)cls current:(BOOL (^)(void))current {
     @synchronized(self) {
         if(self.consumed) return self.status; self.consumed=YES;
         BOOL attempted=NO;
         @try {
-            // Choose the fallback before side effects.
-            id sender=audio ?: manager;
-            NSString *senderClass=audio?@"AudioSender":@"CMessageMgr";
-            NSString *sendSelector=audio?@"ResendVoiceMsg:MsgWrap:":@"ResendMsg:MsgWrap:";
-            if(!NSThread.isMainThread || !current || !current() || !self.account.length || !self.target.length || !self.data.length || !self.milliseconds || self.milliseconds>60000 || !VoiceServiceReady(manager,@"CMessageMgr",@"AddLocalMsg:MsgWrap:") || !VoiceServiceReady(sender,senderClass,sendSelector)) { self.status=@"失败：上下文或语音服务不可用，未提交"; return self.status; }
+            if(!NSThread.isMainThread || !current || !current() || !self.account.length || !self.target.length || !self.data.length || !self.milliseconds || self.milliseconds>60000) { self.status=@"失败：上下文或语音数据不可用，未提交"; return self.status; }
+            // WCVoice selects AudioSender.m_upload, otherwise MMNewUploadVoiceMgr.
+            // Resolve and validate both before AddLocalMsg; never fall back after it.
+            id sender=nil;
+            @try { if(audio) sender=[audio valueForKey:@"m_upload"]; } @catch(NSException *e) { sender=nil; }
+            NSString *senderClass=@"BaseUploadVoiceMgr";
+            NSString *sendSelector=@"ResendVoiceMsg:MsgWrap:";
+            if(!VoiceServiceReady(sender,senderClass,sendSelector)) { sender=upload; senderClass=@"MMNewUploadVoiceMgr"; }
+            if(!VoiceServiceReady(manager,@"CMessageMgr",@"AddLocalMsg:MsgWrap:") || !VoiceServiceReady(sender,senderClass,sendSelector)) { self.status=@"失败：语音服务不可用，未提交"; return self.status; }
             id message=WUCreateVoiceMessage(cls,34,self.account);
             if(!message) { self.status=@"失败：消息构造ABI不可用或初始化失败，未提交"; return self.status; }
             // Bind the extension before touching dynamic voice properties.
@@ -111,9 +127,9 @@ uint32_t WUVoiceMeasuredMS(NSData *data) {
                 }
             }
             NSArray *objects=@[@"setM_nsContent:",@"setM_nsFromUsr:",@"setM_nsToUsr:",@"setM_dtVoice:"];
-            NSArray *numbers=@[@"setM_uiVoiceTime:",@"setM_uiVoiceFormat:",@"setM_uiVoiceEndFlag:",@"setM_uiCreateTime:"];
+            NSArray *numbers=@[@"setM_uiVoiceTime:",@"setM_uiVoiceFormat:",@"setM_uiVoiceEndFlag:",@"setM_uiCreateTime:",@"setM_uiStatus:",@"setM_uiDownloadStatus:"];
             NSArray *objectGetters=@[@"m_nsContent",@"m_nsFromUsr",@"m_nsToUsr",@"m_dtVoice"];
-            NSArray *numberGetters=@[@"m_uiVoiceTime",@"m_uiVoiceFormat",@"m_uiVoiceEndFlag",@"m_uiCreateTime"];
+            NSArray *numberGetters=@[@"m_uiVoiceTime",@"m_uiVoiceFormat",@"m_uiVoiceEndFlag",@"m_uiCreateTime",@"m_uiStatus",@"m_uiDownloadStatus"];
             for(NSString *s in objects) if(!WUVoiceExactSignature(message,s,"v",@[@"@"])) { self.status=@"失败：消息对象字段ABI不可用，未提交"; return self.status; }
             for(NSString *s in numbers) if(!WUVoiceExactSignature(message,s,"v",@[@"I"])) { self.status=@"失败：消息整数宽度不符，未提交"; return self.status; }
             for(NSString *s in objectGetters) if(!WUVoiceExactSignature(message,s,"@",@[])) { self.status=@"失败：消息字段无法核验，未提交"; return self.status; }
@@ -121,7 +137,8 @@ uint32_t WUVoiceMeasuredMS(NSData *data) {
             if(!WUVoiceExactSignature(message,@"m_uiMessageType","I",@[])) { self.status=@"失败：消息类型无法核验，未提交"; return self.status; }
             NSArray *values=@[[NSString stringWithFormat:@"<msg><voicemsg voicelength=\"%u\" voiceformat=\"4\" forwardflag=\"0\" /></msg>",self.milliseconds],self.account,self.target,self.data];
             for(NSUInteger i=0;i<objects.count;i++) ((void(*)(id,SEL,id))objc_msgSend)(message,NSSelectorFromString(objects[i]),values[i]);
-            uint32_t ints[]={self.milliseconds,4,1,(uint32_t)NSDate.date.timeIntervalSince1970};
+            // WCVoice initializes outgoing status=1 and download status=9.
+            uint32_t ints[]={self.milliseconds,4,1,(uint32_t)NSDate.date.timeIntervalSince1970,1,9};
             for(NSUInteger i=0;i<numbers.count;i++) ((void(*)(id,SEL,unsigned))objc_msgSend)(message,NSSelectorFromString(numbers[i]),ints[i]);
             if(((unsigned(*)(id,SEL))objc_msgSend)(message,NSSelectorFromString(@"m_uiMessageType"))!=34) { self.status=@"失败：消息类型核验不符，未提交"; return self.status; }
             for(NSUInteger i=0;i<objectGetters.count;i++) {

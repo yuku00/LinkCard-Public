@@ -84,12 +84,14 @@ static BOOL StaticImage(NSData *data) {
     if(src) CFRelease(src); return ok;
 }
 BOOL WUImageEntryValidateData(NSData *data) { @try { return StaticImage(data); } @catch(__unused NSException *e) { return NO; } }
-static void Notice(UIViewController *owner, NSString *text) {
+static void NoticeWithTitle(UIViewController *owner, NSString *title, NSString *text) {
     if(!owner.viewIfLoaded.window || owner.presentedViewController || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"图片转表情" message:text preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:title message:text preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]];
     [owner presentViewController:a animated:YES completion:nil];
 }
+static void Notice(UIViewController *owner, NSString *text) { NoticeWithTitle(owner,@"图片转表情",text); }
+static void ExportNotice(UIViewController *owner, NSString *text) { NoticeWithTitle(owner,@"保存原表情",text); }
 @interface WUEmoticonExport : NSObject <UIDocumentPickerDelegate>
 @property(nonatomic,strong) NSURL *directory;
 @end
@@ -106,9 +108,9 @@ void WUExportEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(v
         NSString *md5=Text(wrap,@"m_nsEmoticonMD5");
         if(!md5.length) md5=Text(Object(wrap,@"m_extendInfoWithMsgType"),@"m_nsEmoticonMD5");
         Class util=NSClassFromString(@"EmoticonUtil"); NSString *selector=@"pathOfEmoticonForMd5:needUpdateTime:ignoreWxAM:";
-        if(!WUValidMD5(md5) || !Has(util,selector,"@",@[@"@",@"B",@"B"])) { Notice(owner,@"原表情路径不可核验，未导出。"); return; }
+        if(!WUValidMD5(md5) || !Has(util,selector,"@",@[@"@",@"B",@"B"])) { ExportNotice(owner,@"原表情路径不可核验，未导出。"); return; }
         id path=((id(*)(id,SEL,id,BOOL,BOOL))objc_msgSend)(util,NSSelectorFromString(selector),md5,NO,NO);
-        if(![path isKindOfClass:NSString.class] || ![path length]) { Notice(owner,@"原表情尚未缓存，请先在微信加载后重新选择；未使用缩略图。"); return; }
+        if(![path isKindOfClass:NSString.class] || ![path length]) { ExportNotice(owner,@"原表情尚未缓存，请先在微信加载后重新选择；未使用缩略图。"); return; }
         __weak UIViewController *weakOwner=owner;
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
             NSData *data=WUEmoticonRead(path);
@@ -123,20 +125,20 @@ void WUExportEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(v
             NSString *type=[hex isEqualToString:md5.lowercaseString]?WUEmoticonType(data):nil;
             dispatch_async(dispatch_get_main_queue(),^{
                 UIViewController *live=weakOwner; if(!live || !current() || live.presentedViewController) return;
-                if(!type) { Notice(live,@"原文件未就绪、校验不符或格式不受支持；未导出缩略图。"); return; }
+                if(!type) { ExportNotice(live,@"原文件未就绪、校验不符或格式不受支持；未导出缩略图。"); return; }
                 NSString *ext=[type isEqual:@"com.compuserve.gif"]?@"gif":([type isEqual:@"public.png"]?@"png":@"jpg");
                 NSURL *dir=[[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES] URLByAppendingPathComponent:NSUUID.UUID.UUIDString isDirectory:YES];
                 NSError *error=nil;
-                if(![NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:NO attributes:@{NSFileProtectionKey:NSFileProtectionComplete} error:&error]) { Notice(live,@"无法创建临时导出文件，未保存。"); return; }
+                if(![NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:NO attributes:@{NSFileProtectionKey:NSFileProtectionComplete} error:&error]) { ExportNotice(live,@"无法创建临时导出文件，未保存。"); return; }
                 WUEmoticonExport *lease=[WUEmoticonExport new]; lease.directory=dir;
                 NSURL *file=[dir URLByAppendingPathComponent:[@"emoticon" stringByAppendingPathExtension:ext]];
-                if(![data writeToURL:file options:NSDataWritingWithoutOverwriting error:&error] || !current()) { [lease clean]; Notice(live,@"无法准备原文件，未保存。"); return; }
+                if(![data writeToURL:file options:NSDataWritingWithoutOverwriting error:&error] || !current()) { [lease clean]; ExportNotice(live,@"无法准备原文件，未保存。"); return; }
                 UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc] initForExportingURLs:@[file] asCopy:YES];
                 picker.delegate=lease; objc_setAssociatedObject(picker,&WUEmoticonExportKey,lease,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                 [live presentViewController:picker animated:YES completion:nil];
             });
         });
-    } @catch(__unused NSException *e) { Notice(owner,@"原表情导出准备失败，未保存。"); }
+    } @catch(__unused NSException *e) { ExportNotice(owner,@"原表情导出准备失败，未保存。"); }
 }
 @interface WUImageEntry : NSObject { _Atomic(BOOL) _cancelled; }
 @property(nonatomic,weak) UIViewController *owner;

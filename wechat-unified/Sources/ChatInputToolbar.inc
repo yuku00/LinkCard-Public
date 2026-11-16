@@ -19,8 +19,13 @@ static __attribute__((unused)) UIView *WUInputBarForOwner(UIViewController *owne
         UIScrollView *scroll=[UIScrollView new]; scroll.translatesAutoresizingMaskIntoConstraints=NO; scroll.showsHorizontalScrollIndicator=NO; [self addSubview:scroll];
         UIStackView *stack=[UIStackView new]; stack.axis=UILayoutConstraintAxisHorizontal; stack.spacing=8; stack.translatesAutoresizingMaskIntoConstraints=NO; [scroll addSubview:stack];
         [NSLayoutConstraint activateConstraints:@[[scroll.leadingAnchor constraintEqualToAnchor:self.leadingAnchor], [scroll.trailingAnchor constraintEqualToAnchor:self.trailingAnchor], [scroll.topAnchor constraintEqualToAnchor:self.topAnchor], [scroll.bottomAnchor constraintEqualToAnchor:self.bottomAnchor], [stack.leadingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.leadingAnchor constant:8], [stack.trailingAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.trailingAnchor constant:-8], [stack.topAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.topAnchor], [stack.bottomAnchor constraintEqualToAnchor:scroll.contentLayoutGuide.bottomAnchor], [stack.heightAnchor constraintEqualToAnchor:scroll.frameLayoutGuide.heightAnchor]]];
+        NSDictionary *symbols=@{@"所选消息链接":@"link", @"当前会话搜索":@"magnifyingglass", @"当前会话统计":@"chart.bar", @"整合设置":@"gearshape", @"消息仓库":@"archivebox", @"所选语音转发":@"waveform", @"本地语音包":@"waveform", @"所选表情保存图库":@"face.smiling", @"所选图片 → 微信表情编辑":@"photo", @"本地表情分组 / 资源库":@"square.grid.2x2", @"半屏朋友圈":@"person.2"};
         for(NSDictionary *entry in entries) {
-            UIButton *button=[UIButton buttonWithType:UIButtonTypeSystem]; [button setTitle:entry[@"title"] forState:UIControlStateNormal]; button.titleLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote]; button.titleLabel.adjustsFontForContentSizeCategory=YES; button.accessibilityLabel=entry[@"title"];
+            UIButton *button=[UIButton buttonWithType:UIButtonTypeSystem]; [button setTitle:entry[@"title"] forState:UIControlStateNormal];
+            NSString *symbol=symbols[entry[@"title"]]; if(symbol) [button setImage:[UIImage systemImageNamed:symbol] forState:UIControlStateNormal];
+            button.tintColor=UIColor.labelColor; button.backgroundColor=UIColor.systemBackgroundColor; button.layer.cornerRadius=22;
+            button.contentEdgeInsets=UIEdgeInsetsMake(0,12,0,12); button.imageEdgeInsets=UIEdgeInsetsMake(0,-4,0,4);
+            button.titleLabel.font=[UIFont systemFontOfSize:14 weight:UIFontWeightSemibold]; button.titleLabel.adjustsFontForContentSizeCategory=YES; button.accessibilityLabel=entry[@"title"];
             [button.widthAnchor constraintGreaterThanOrEqualToConstant:44].active=YES; void (^run)(void)=entry[@"run"];
             [button addAction:[UIAction actionWithHandler:^(__kindof UIAction *action){ if(run) run(); }] forControlEvents:UIControlEventTouchUpInside]; [stack addArrangedSubview:button];
         }

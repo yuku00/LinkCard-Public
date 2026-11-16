@@ -5,3 +5,6 @@ BOOL WURepositorySave(NSURL *directory, NSString *account, NSArray *items, NSErr
 // Status describes local invocation only; never delivery.
 NSString *WURepositoryInvoke(id receiver, NSString *selector, id first, id second);
 BOOL WURepositoryCanInvoke(id receiver, NSString *selector);
+// The caller constructs a fresh type-1 wrap and supplies a context recheck.
+NSString *WURepositorySendText(id manager, id sessionManager, id wrap, NSString *account, NSString *target, NSString *text, BOOL (^current)(void));
+id WURepositoryContact(id contacts, NSString *target);
