@@ -18,11 +18,11 @@ DIRECT = re.compile(r'\bclass_get(Instance|Class)Method\s*\(\s*NSClassFromString
 # Source-file provenance, not selector-name guessing; one candidate may serve multiple functions.
 CATEGORY_FILES = {
     '账号': ('Messages.m Account', 'WUHostService.', 'account', 'MMContext', 'MMServiceCenter'),
-    '聊天搜索与撤回': ('Sources/Messages.m', 'reverse-round2-message.md', 'Sources/WUStats.m'),
+    '聊天搜索与撤回': ('Sources/Messages.m', '撤回候选', 'Sources/WUStats.m'),
     '多选': ('Sources/MessageEntries.', 'Sources/MessageEntryBindings.', 'Sources/ChatGrid.inc', '功能证据：多选'),
-    '语音': ('Sources/Voice', 'reverse-voice-state.md', 'Sources/OfflineVoice', 'Sources/WUDictation.'),
+    '语音': ('Sources/Voice', 'Sources/OfflineVoice', 'Sources/WUDictation.'),
     '表情': ('Sources/Emoticon', 'IMAGE-TO-EMOTICON-GAP.md'),
-    '朋友圈': ('Sources/Moments', 'Sources/Timeline.', 'reverse-round2-moments.md', 'FAKE-LIKES-GAP.md'),
+    '朋友圈': ('Sources/Moments', 'Sources/Timeline.', '朋友圈候选', 'FAKE-LIKES-GAP.md'),
     '链接': ('Sources/LinkLogic.', 'Sources/MessageEntries.', 'Sources/MessageEntryBindings.', 'Sources/WUArticleImage.', '功能证据：链接'),
     '小程序': ('Sources/WUMiniAds.', 'Sources/WUMiniAdsScript.inc'),
     '聊天菜单': ('用户提供菜单线索',),
@@ -55,16 +55,16 @@ def generate(root):
         add('BaseMsgContentViewController', 'getSelectedMsgs', '-', '功能证据：'+feature+'；Sources/Messages.m 对应功能门禁')
     add('BaseMsgContentViewController', 'onSearchItem', '-', 'Sources/Messages.m 聊天搜索功能门禁')
     # User-supplied leads, not verified declarations or a license to hook.
-    add('BaseMessageCellView', 'filteredMenuItems:', '-', '用户提供菜单线索；WCPulse 逆向提示，目标版关联及ABI未核验')
-    add('VoiceMessageCellView', 'filteredMenuItems:', '-', '用户提供菜单线索；WCPulse-0xaff1c.asm 0xaffd4 类型分支，方法归属及ABI未核验')
-    add('MMMenuItem', 'initWithTitle:svgName:action:', '-', '用户提供菜单线索；WCPulse-0xaff1c.asm 调用线索，目标版关联及ABI未核验')
-    add('EcsOrderService', 'jumpOrderAndCardCenterFromVc:clickSessionId:', '-', '卡包证据：WCPulse 逆向线索；ABI需运行时验证')
-    add('MMUIRouteRegistry', 'openLegacyCardHomePageWithNavigationController:', '+', '卡包证据：WCPulse 逆向线索；ABI需运行时验证')
+    add('BaseMessageCellView', 'filteredMenuItems:', '-', '用户提供菜单线索；目标版关联及ABI未核验')
+    add('VoiceMessageCellView', 'filteredMenuItems:', '-', '用户提供菜单线索；方法归属及ABI未核验')
+    add('MMMenuItem', 'initWithTitle:svgName:action:', '-', '用户提供菜单线索；目标版关联及ABI未核验')
+    add('EcsOrderService', 'jumpOrderAndCardCenterFromVc:clickSessionId:', '-', '卡包证据：候选；ABI需运行时验证')
+    add('MMUIRouteRegistry', 'openLegacyCardHomePageWithNavigationController:', '+', '卡包证据：候选；ABI需运行时验证')
     # Account() checks the returned contact but does not establish its concrete class.
     for cls, sel, kind in [('MMServiceCenter','defaultCenter','+'), ('MMServiceCenter','getService:','-'), ('CContactMgr','getSelfContact','-'), ('','m_nsUsrName','?')]:
         add(cls, sel, kind, 'Sources/Messages.m Account（手工证据；返回对象的具体类未假定）')
     for cls, sel, kind in [('MMContext','activeUserContext','+'), ('MMContext','currentContext','+'), ('MMContext','getService:','-')]:
-        add(cls, sel, kind, 'AFN.dylib 0x23cd0–0x23da4 / 0x2f3cc–0x2f51c；目标版签名需运行时检查')
+        add(cls, sel, kind, '服务候选；目标版签名需运行时检查')
     # Explicitly documented gap candidates, not a claim that these ABIs or behaviors work.
     gaps = [
         ('EmoticonPickViewController', ['m_image','setM_image:','Confirm','Cancel','AddEmoticonFinishedWithWrap:IsSuccessed:']),
@@ -78,21 +78,21 @@ def generate(root):
         for selector in selectors:
             add(cls, selector, '-', 'IMAGE-TO-EMOTICON-GAP.md 2026-11-02 定向补充；第三方8.0.55声明，目标版未验证')
     for selector in ['getRawHDThumbImagePath','getHDThumbImagePath','getMsgHdOrMiddleImgData:','getPathOfMsgImg:', 'onEmoticonUploadSuccessWithEmoji:uploadInfo:', 'onEmoticonUploadFailWithUploadInfo:reason:realMd5:']:
-        add('', selector, '?', 'IMAGE-TO-EMOTICON-GAP.md 新确认边界；类或ABI待定，旧插件线索非原图证明')
+        add('', selector, '?', '表情候选；类或ABI待定，不能证明原图')
     for selector in ['likeFlag','likeUsers','setLikeUsers:','setLikeCount:']:
-        add('', selector, '?', 'FAKE-LIKES-GAP.md 本轮新增证据；旧库观察，目标模型类型及生命周期待定')
+        add('', selector, '?', '朋友圈候选；目标模型类型及生命周期待定')
     add('WCDataItem', 'likeFlag', '-', 'FAKE-LIKES-GAP.md 精确剩余契约；暂缓功能仅只读诊断')
     for cls, selectors in [('MMNewSessionMgr',['GetUserNamesOnSessionList','GetSessionByUserName:']), ('CContactMgr',['getAllContactUserName'])]:
         for selector in selectors:
             add(cls, selector, '-', 'REMAINING.md 第11项；第三方8.0.55声明，目标版兼容性未实测')
     for cls, selectors in [('CMessageMgr',['sendMsg:toContactUsrName:','AddMsg:MsgWrap:','GetMsg:LocalID:']), ('CContactMgr',['getContactByName:']), ('ForwardMessageLogicController',['ForwardMsg:ToContact:'])]:
         for selector in selectors:
-            add(cls, selector, '-', 'reverse-repository-send.md 已闭合核心发送链；旧插件调用观察，目标ABI待验证')
+            add(cls, selector, '-', '发送候选；目标ABI待验证')
     for cls, selector in [('CMessageMgr','AddLocalMsg:MsgWrap:'), ('AudioSender','ResendVoiceMsg:MsgWrap:')]:
-        add(cls, selector, '-', 'reverse-voice-state.md 第2节及 Sources/VoiceSendLogic.m；旧插件调用观察，目标ABI待验证')
+        add(cls, selector, '-', 'Sources/VoiceSendLogic.m；目标ABI待验证')
     for cls, selector, kind in [('MessageRevokeMgr','onRevokeMsg:','-'), ('','RevokeMsg:MsgWrap:Counter:revokeTicket:viewController:','?'), ('','RevokeMsg:MsgWrap:Counter:','?')]:
-        add(cls, selector, kind, 'reverse-round2-message.md 撤回注册与调用证据；未证明目标版兼容')
-    add('WCFacade','filterTimelineItem:','-', 'reverse-round2-moments.md 第150行注册证据；未证明目标版兼容')
+        add(cls, selector, kind, '撤回候选；未证明目标版兼容')
+    add('WCFacade','filterTimelineItem:','-', '朋友圈候选；未证明目标版兼容')
     return {'schema': 1, 'generator': 'literal-candidates-v1', 'candidates': [
         {'class': c, 'selector': s, 'kind': k, 'sources': sorted(v), 'categories': categories(v)}
         for (c, s, k), v in sorted(entries.items())]}

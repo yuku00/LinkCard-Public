@@ -202,8 +202,6 @@ static void CountUnsigned(id m,SEL s,unsigned long long n) {
 }
 static UITableView *Table(UIView *v,NSUInteger depth) { if(!depth) return nil; if([v isKindOfClass:UITableView.class]) return (id)v; if(v.subviews.count>100) return nil; for(UIView *c in v.subviews) { UITableView *t=Table(c,depth-1); if(t) return t; } return nil; }
 static NSArray *Tabs(NSDictionary *s) { return [@[@{@"id":@"all",@"name":@"全部"},@{@"id":@"private",@"name":@"私信"},@{@"id":@"chatroom",@"name":@"群聊"},@{@"id":@"other",@"name":@"其他"}] arrayByAddingObjectsFromArray:s[@"groups"]]; }
-static BOOL searchHeaderObserved;
-BOOL WUHomeSearchAvailable(void) { return searchHeaderObserved; }
 static BOOL SearchOnlyHeader(UIView *header) {
     Class search=NSClassFromString(@"WCSearchBar");
     for(NSUInteger depth=0;header && depth<6;depth++) {
@@ -249,7 +247,6 @@ static BOOL SearchOnlyHeader(UIView *header) {
     BOOL hide=WUEnabled(@"hideHomeSearch");
     if((hide && !self.searchHeader && self.header) || (!hide && self.searchHeader)) [self restore];
     UIView *candidate=self.header?self.originalHeader:t.tableHeaderView;
-    if(SearchOnlyHeader(candidate)) searchHeaderObserved=YES;
     if(hide && !self.searchHeader && SearchOnlyHeader(candidate)) {
         self.searchHeader=candidate; self.searchHeaderFrame=candidate.frame;
         self.searchPlaceholder=[[UIView alloc] initWithFrame:CGRectMake(0,0,t.bounds.size.width,0.01)];

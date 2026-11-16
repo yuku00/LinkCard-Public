@@ -7,7 +7,7 @@ NSString *const WUDictationGuardKey = @"dictationPreventMistouch";
 static IMP iconOriginal, hitOriginal, beganOriginal, movedOriginal, endedOriginal, cancelOriginal;
 static IMP hiddenOriginal;
 static Class maskedClass;
-static BOOL ready, observedIcon;
+static BOOL ready;
 static NSUInteger contextEpoch;
 static NSHashTable<UIView *> *inputs, *icons;
 static char inputKey, iconKey;
@@ -123,7 +123,6 @@ static UIView *Bind(UIView *v, id candidate) {
         s.bindingAccount = account ?: @""; s.bindingSession = session ?: @""; s.bindingGeneration = generation;
     }
     if (!icon) return nil;
-    observedIcon = YES;
     WUDIconState *is = objc_getAssociatedObject(icon, &iconKey);
     if (is && is.owner != v) { Restore(icon); is = nil; }
     if (!WUEnabled(WUDictationHideKey)) { Restore(icon); return icon; }
@@ -251,7 +250,7 @@ static void Cancelled(UIView *v, SEL cmd, NSSet *touches, UIEvent *event) {
     if (cancelOriginal) ((void(*)(id,SEL,id,id))cancelOriginal)(v,cmd,touches,event);
 }
 BOOL WUDictationAvailable(NSString *key) {
-    return ([key isEqualToString:WUDictationHideKey] || [key isEqualToString:WUDictationGuardKey]) && ready && observedIcon;
+    return ([key isEqualToString:WUDictationHideKey] || [key isEqualToString:WUDictationGuardKey]) && ready;
 }
 void WUInstallDictation(void) {
     if (!NSThread.isMainThread || ready) return;

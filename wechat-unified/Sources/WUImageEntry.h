@@ -9,3 +9,5 @@ BOOL WUImageEntryValidateData(NSData *data);
 BOOL WUOpenConfirmedImageDataEditor(UIViewController *owner, NSData *data, BOOL (^current)(BOOL editing));
 void WUCancelImageDataEditor(UIViewController *owner);
 void WUCancelImageEntries(void);
+// Export the selected type-47 message's verified original bytes, not a thumbnail.
+void WUExportEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(void));

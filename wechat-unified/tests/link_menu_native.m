@@ -15,6 +15,8 @@ BOOL WUImageEntryOwnsNavigation(UIViewController *owner) { return NO; }
 void WUOpenMessageImageEditor(UIViewController *owner,id wrap,BOOL (^current)(void)) { imageOpened=current(); }
 BOOL WUValidMD5(NSString *v) { return [v isKindOfClass:NSString.class] && v.length==32; }
 static void WUSaveEmoticonForWrap(UIViewController *owner,id wrap,BOOL (^current)(void),BOOL verifyDigest) { saved=verifyDigest && current(); }
+static BOOL exported=NO;
+void WUExportEmoticonForWrap(UIViewController *owner,id wrap,BOOL (^current)(void)) { exported=current(); }
 @interface EmoticonUtil : NSObject
 + (id)pathOfEmoticonForMd5:(id)md5 needUpdateTime:(BOOL)a ignoreWxAM:(BOOL)b;
 @end
@@ -129,7 +131,8 @@ int main(void) { @autoreleasepool {
     imageOpened=NO; menu=[cell filteredMenuItems:host]; generation++; Activate(testOwner,menu[1],cell); assert(!imageOpened);
     msg.m_uiMessageType=47; msg.m_nsEmoticonMD5=@"0123456789abcdef0123456789abcdef";
     menu=[cell filteredMenuItems:host]; assert(menu.count==2 && menu[0]==host[0]);
-    MMMenuItem *old=menu[1]; menu=[cell filteredMenuItems:menu]; assert(menu.count==2); Activate(testOwner,old,cell); assert(!saved); Activate(testOwner,menu[1],cell); assert(saved);
+    MMMenuItem *old=menu[1]; menu=[cell filteredMenuItems:menu]; assert(menu.count==2); Activate(testOwner,old,cell); assert(!saved); Activate(testOwner,menu[1],cell); assert(!saved); [((UIAlertController *)testOwner.presentedViewController).actions[1] fire]; assert(saved);
+    menu=[cell filteredMenuItems:host]; Activate(testOwner,menu[1],cell); [((UIAlertController *)testOwner.presentedViewController).actions[0] fire]; assert(exported);
     saved=NO; menu=[cell filteredMenuItems:host]; msg.m_nsEmoticonMD5=@"1123456789abcdef0123456789abcdef"; Activate(testOwner,menu[1],cell); assert(!saved);
     menu=[cell filteredMenuItems:host]; generation++; Activate(testOwner,menu[1],cell); assert(!saved);
     menu=[cell filteredMenuItems:host]; account=@"other"; Activate(testOwner,menu[1],cell); assert(!saved); account=@"me";

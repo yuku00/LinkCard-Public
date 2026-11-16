@@ -242,7 +242,7 @@ class Guardrails(unittest.TestCase):
         self.assertIn('tests/draft_media_logic.m',(ROOT/'tools/build.sh').read_text())
     def test_emoticon_original_photos_completion(self):
         logic=(ROOT/'Sources/EmoticonLogic.m').read_text()
-        ui=(ROOT/'Sources/Messages.m').read_text().split('// Evidence: WCPulse 0xb8514')[1]
+        ui=(ROOT/'Sources/Messages.m').read_text().split('static char emojiSaveKey;')[1]
         for required in ['PNGComplete', 'GIFComplete', 'crc32', 'CGImageSourceGetStatusAtIndex', 'self.started', 'self.finished', 'O_NOFOLLOW', '20*1024*1024']:
             self.assertIn(required,logic)
         for required in ['getSelectedMsgs', 'PHAccessLevelAddOnly', 'NSPhotoLibraryAddUsageDescription', 'performChanges:', 'addResourceWithType:PHAssetResourceTypePhoto data:original', 'added && success && !error', 'gen!=generation', 'if(consumed)', 'needUpdateTime:ignoreWxAM:']:
@@ -300,7 +300,7 @@ class Guardrails(unittest.TestCase):
         self.assertLess(logic.index('self.consumed=YES'), logic.index('NSString *insert=VoiceServiceInvoke'))
         self.assertEqual(logic.count('NSString *insert=VoiceServiceInvoke'), 1)
         self.assertEqual(logic.count('NSString *send=VoiceServiceInvoke'), 1)
-        # WCPulse's nil-AudioSender branch is chosen before any host side effect,
+        # The nil-AudioSender fallback is chosen before any host side effect,
         # not a retry after an AudioSender call or ABI failure.
         choice='id sender=audio ?: manager;'
         selector='NSString *sendSelector=audio?@"ResendVoiceMsg:MsgWrap:":@"ResendMsg:MsgWrap:";'

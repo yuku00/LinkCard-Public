@@ -3,6 +3,8 @@
 #import "GroupLogic.h"
 #import "EmoticonLogic.h"
 #import <ImageIO/ImageIO.h>
+#import <CommonCrypto/CommonDigest.h>
+#import <objc/runtime.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <errno.h>
@@ -36,14 +38,14 @@ static NSDictionary *Identity(id wrap, NSString *account, NSString *session) {
 }
 static NSArray *Paths(id wrap) {
     NSMutableArray *out=[NSMutableArray array];
-    // Evidence: WCRefine 0xfb0098. Only actual checked getters, never KVC or guessed paths.
+    // Only actual checked getters, never KVC or guessed paths.
     for(NSString *selector in @[@"m_nsImageHDPath",@"m_nsImagePath"]) {
         if(!Has(wrap,selector,"@",@[])) continue;
         id path=Object(wrap,selector);
         if(path && ![path isKindOfClass:NSString.class]) return nil;
         if([path length]) [out addObject:@{@"getter":selector,@"path":[path copy]}];
     }
-    // 8.0.79 CMessageWrap.h:226; WCRefine 0xfb0098 also calls this class API.
+    // Checked class API fallback.
     // It supplies a cache path, NOT a guarantee of original/HD bytes.
     if(!out.count && !Has(wrap,@"m_nsImageHDPath","@",@[]) && !Has(wrap,@"m_nsImagePath","@",@[])) {
         Class c=NSClassFromString(@"CMessageWrap");
@@ -87,6 +89,54 @@ static void Notice(UIViewController *owner, NSString *text) {
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"图片转表情" message:text preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]];
     [owner presentViewController:a animated:YES completion:nil];
+}
+@interface WUEmoticonExport : NSObject <UIDocumentPickerDelegate>
+@property(nonatomic,strong) NSURL *directory;
+@end
+@implementation WUEmoticonExport
+- (void)clean { if(self.directory) { [NSFileManager.defaultManager removeItemAtURL:self.directory error:NULL]; self.directory=nil; } }
+- (void)dealloc { [self clean]; }
+- (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)picker { [self clean]; }
+- (void)documentPicker:(UIDocumentPickerViewController *)picker didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls { [self clean]; }
+@end
+static char WUEmoticonExportKey;
+void WUExportEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(void)) {
+    if(!NSThread.isMainThread || !owner || !wrap || !current || !current() || owner.presentedViewController) return;
+    @try {
+        NSString *md5=Text(wrap,@"m_nsEmoticonMD5");
+        if(!md5.length) md5=Text(Object(wrap,@"m_extendInfoWithMsgType"),@"m_nsEmoticonMD5");
+        Class util=NSClassFromString(@"EmoticonUtil"); NSString *selector=@"pathOfEmoticonForMd5:needUpdateTime:ignoreWxAM:";
+        if(!WUValidMD5(md5) || !Has(util,selector,"@",@[@"@",@"B",@"B"])) { Notice(owner,@"原表情路径不可核验，未导出。"); return; }
+        id path=((id(*)(id,SEL,id,BOOL,BOOL))objc_msgSend)(util,NSSelectorFromString(selector),md5,NO,NO);
+        if(![path isKindOfClass:NSString.class] || ![path length]) { Notice(owner,@"原表情尚未缓存，请先在微信加载后重新选择；未使用缩略图。"); return; }
+        __weak UIViewController *weakOwner=owner;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
+            NSData *data=WUEmoticonRead(path);
+            unsigned char digest[CC_MD5_DIGEST_LENGTH];
+            if(data) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+                CC_MD5(data.bytes,(CC_LONG)data.length,digest);
+#pragma clang diagnostic pop
+            }
+            NSMutableString *hex=[NSMutableString string]; if(data) for(unsigned i=0;i<CC_MD5_DIGEST_LENGTH;i++) [hex appendFormat:@"%02x",digest[i]];
+            NSString *type=[hex isEqualToString:md5.lowercaseString]?WUEmoticonType(data):nil;
+            dispatch_async(dispatch_get_main_queue(),^{
+                UIViewController *live=weakOwner; if(!live || !current() || live.presentedViewController) return;
+                if(!type) { Notice(live,@"原文件未就绪、校验不符或格式不受支持；未导出缩略图。"); return; }
+                NSString *ext=[type isEqual:@"com.compuserve.gif"]?@"gif":([type isEqual:@"public.png"]?@"png":@"jpg");
+                NSURL *dir=[[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES] URLByAppendingPathComponent:NSUUID.UUID.UUIDString isDirectory:YES];
+                NSError *error=nil;
+                if(![NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:NO attributes:@{NSFileProtectionKey:NSFileProtectionComplete} error:&error]) { Notice(live,@"无法创建临时导出文件，未保存。"); return; }
+                WUEmoticonExport *lease=[WUEmoticonExport new]; lease.directory=dir;
+                NSURL *file=[dir URLByAppendingPathComponent:[@"emoticon" stringByAppendingPathExtension:ext]];
+                if(![data writeToURL:file options:NSDataWritingWithoutOverwriting error:&error] || !current()) { [lease clean]; Notice(live,@"无法准备原文件，未保存。"); return; }
+                UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc] initForExportingURLs:@[file] asCopy:YES];
+                picker.delegate=lease; objc_setAssociatedObject(picker,&WUEmoticonExportKey,lease,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                [live presentViewController:picker animated:YES completion:nil];
+            });
+        });
+    } @catch(__unused NSException *e) { Notice(owner,@"原表情导出准备失败，未保存。"); }
 }
 @interface WUImageEntry : NSObject { _Atomic(BOOL) _cancelled; }
 @property(nonatomic,weak) UIViewController *owner;
@@ -204,7 +254,7 @@ static NSMutableSet<WUImageEntry *> *entries;
 - (void)open {
     if(![self current] || self.editor || !self.image) { [self stop]; return; }
     @try {
-        // WCRefine 0xfc65e8: alloc/init -> setM_image: -> source navigation push.
+        // Verify the editor contract before allocation and navigation.
         Class c=NSClassFromString(@"EmoticonPickViewController");
         if(!c || ![c isSubclassOfClass:UIViewController.class] || !WUMatches(class_getInstanceMethod(c,@selector(init)),"@",@[]) || !WUMatches(class_getInstanceMethod(c,NSSelectorFromString(@"setM_image:")),"v",@[@"@"])) {
             [self fail:@"此微信版本的表情编辑器类型或方法签名不匹配，未打开。"]; return;

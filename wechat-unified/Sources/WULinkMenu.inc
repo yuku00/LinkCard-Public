@@ -1,6 +1,6 @@
 // Included by Messages.m: private menu methods are checked before every invocation.
 #import "LinkLogic.h"
-static IMP wuLinkMenuOriginal, wuLinkClickOriginal;
+static IMP wuLinkMenuOriginal, wuLinkClickOriginal, wuEmoticonOperationMenuOriginal;
 static char wuLinkMenuLeaseKey, wuLinkMenuItemKey, wuEmoticonMenuTokenKey, wuOwnerMenuLeaseKey;
 static NSUInteger wuLinkMenuSerial;
 
@@ -43,8 +43,9 @@ static void WULinkMenuAction(id receiver, SEL cmd, id argument) {
     } @catch(__unused NSException *e) {}
 }
 static NSString *WUMenuEmoticonMD5(id wrap) {
-    if(!Has(wrap,@"m_nsEmoticonMD5","@",@[])) return nil;
-    return Str(wrap,@"m_nsEmoticonMD5");
+    NSString *direct=Has(wrap,@"m_nsEmoticonMD5","@",@[])?Str(wrap,@"m_nsEmoticonMD5"):nil;
+    id extension=Has(wrap,@"m_extendInfoWithMsgType","@",@[])?Obj(wrap,@"m_extendInfoWithMsgType"):nil;
+    return direct.length?direct:(Has(extension,@"m_nsEmoticonMD5","@",@[])?Str(extension,@"m_nsEmoticonMD5"):nil);
 }
 static BOOL WUMenuEmoticonEnabled(void) {
     return WUEnabled(@"repeatEmoticon") && [(WUValue(@"repeatOptions")?:WURepeatDefaults())[@"longDownload"] boolValue];
@@ -58,7 +59,17 @@ static void WUMenuEmoticonAction(id receiver, SEL cmd, id argument) {
         if(!lease || ![lease[@"selector"] isEqual:NSStringFromSelector(cmd)] || !owner || (receiver!=owner && receiver!=cell)) return;
         objc_setAssociatedObject(cell,&wuLinkMenuLeaseKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         BOOL (^current)(void)=lease[@"current"]; id wrap=lease[@"wrap"];
-        if(current && current()) WUSaveEmoticonForWrap(owner,wrap,current,YES);
+        if(!current || !current() || owner.presentedViewController) return;
+        UIAlertController *choice=[UIAlertController alertControllerWithTitle:@"保存原表情" message:@"导出文件保留原始字节；保存到图库使用微信已缓存的同一表情。" preferredStyle:UIAlertControllerStyleAlert];
+        __weak UIAlertController *weakChoice=choice;
+        [choice addAction:[UIAlertAction actionWithTitle:@"保存到文件" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+            [weakChoice dismissViewControllerAnimated:YES completion:^{ if(current()) WUExportEmoticonForWrap(owner,wrap,current); }];
+        }]];
+        [choice addAction:[UIAlertAction actionWithTitle:@"保存到图库" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+            [weakChoice dismissViewControllerAnimated:YES completion:^{ if(current()) WUSaveEmoticonForWrap(owner,wrap,current,YES); }];
+        }]];
+        [choice addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
+        [owner presentViewController:choice animated:YES completion:nil];
     } @catch(__unused NSException *e) {}
 }
 static id WUMenuAddEmoticon(id original, UIView *cell) {
@@ -82,7 +93,7 @@ static id WUMenuAddEmoticon(id original, UIView *cell) {
     SEL action=NSSelectorFromString([NSString stringWithFormat:@"wu_saveEmoticonToPhotos_%lu:",(unsigned long)++wuLinkMenuSerial]);
     Class ownerClass=object_getClass(owner),cellClass=object_getClass(cell);
     if(class_getInstanceMethod(ownerClass,action) || class_getInstanceMethod(cellClass,action) || !class_addMethod(ownerClass,action,(IMP)WUMenuEmoticonAction,"v@:@") || !class_addMethod(cellClass,action,(IMP)WUMenuEmoticonAction,"v@:@")) return original;
-    id item=((id(*)(id,SEL,id,id,SEL))objc_msgSend)([itemClass alloc],init,@"保存表情到图库",@"",action);
+    id item=((id(*)(id,SEL,id,id,SEL))objc_msgSend)([itemClass alloc],init,@"下载/保存表情",@"",action);
     if(!item || ![item isKindOfClass:itemClass] || !current()) return original;
     objc_setAssociatedObject(item,&wuLinkMenuItemKey,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     WUMenuStoreLease(cell,owner,@{@"selector":NSStringFromSelector(action),@"current":[current copy],@"wrap":wrap});
@@ -192,9 +203,19 @@ static void WULinkClicked(id cell, SEL cmd, id text, CGRect rect) {
     } @catch(__unused NSException *e) {}
     ((void(*)(id,SEL,id,CGRect))wuLinkClickOriginal)(cell,cmd,text,rect);
 }
+// 8.0.79 declares its own operationMenuItems on the emoticon cell; it need not pass through the base filter.
+static id WUEmoticonOperationMenu(id cell, SEL cmd) {
+    id original=((id(*)(id,SEL))wuEmoticonOperationMenuOriginal)(cell,cmd);
+    @try {
+        if(!NSThread.isMainThread || ![cell isKindOfClass:UIView.class] || ![original isKindOfClass:NSArray.class]) return original;
+        for(id item in original) if(objc_getAssociatedObject(item,&wuLinkMenuItemKey)) return original;
+        return WUMenuAddEmoticon(original,cell);
+    } @catch(__unused NSException *e) { return original; }
+}
 static void WUInstallLinkMenu(void) {
     WUHook(@"TextMessageCellView",@"onLinkClicked:withRect:",NO,"v",@[@"@",[NSString stringWithUTF8String:@encode(CGRect)]],(IMP)WULinkClicked,&wuLinkClickOriginal);
     Class cell=NSClassFromString(@"BaseMessageCellView"), item=NSClassFromString(@"MMMenuItem");
     if(!cell || !item || !WUMatches(class_getInstanceMethod(item,NSSelectorFromString(@"initWithTitle:svgName:action:")),"@",@[@"@",@"@",@":"])) return;
     WUHook(@"BaseMessageCellView",@"filteredMenuItems:",NO,"@",@[@"@"],(IMP)WULinkFilteredMenu,&wuLinkMenuOriginal);
+    WUHook(@"EmoticonMessageCellView",@"operationMenuItems",NO,"@",@[],(IMP)WUEmoticonOperationMenu,&wuEmoticonOperationMenuOriginal);
 }

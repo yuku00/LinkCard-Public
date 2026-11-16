@@ -202,10 +202,10 @@ static NSData *Wave(NSData *data) {
     [a addAction:[UIAlertAction actionWithTitle:@"离线试听" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [menu dismissViewControllerAnimated:YES completion:^{ [self use:row sending:NO]; }]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"确认发送至当前会话" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [menu dismissViewControllerAnimated:YES completion:^{ if(!WUVoicePackMatches(row,self.binding.version)) [self notice:@"语音包版本、格式或配对校验不匹配，仅可试听；未请求发送。"]; else [self use:row sending:YES]; }]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"停止试听" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self stop]; }]];
-    [a addAction:[UIAlertAction actionWithTitle:@"与所选微信语音逐字节核对" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self dismissViewControllerAnimated:YES completion:^{ [self pairRow:row]; }]; }]];
-    [a addAction:[UIAlertAction actionWithTitle:@"导出 .wuvoice 文件" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self dismissViewControllerAnimated:YES completion:^{ [self exportRow:row]; }]; }]];
-    [a addAction:[UIAlertAction actionWithTitle:@"重命名" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [self dismissViewControllerAnimated:YES completion:^{ [self edit:row deleting:NO]; }]; }]];
-    [a addAction:[UIAlertAction actionWithTitle:@"删除自有副本" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){ [self dismissViewControllerAnimated:YES completion:^{ [self edit:row deleting:YES]; }]; }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"与所选微信语音逐字节核对" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [menu dismissViewControllerAnimated:YES completion:^{ [self pairRow:row]; }]; }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"导出 .wuvoice 文件" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [menu dismissViewControllerAnimated:YES completion:^{ [self exportRow:row]; }]; }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"重命名" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ [menu dismissViewControllerAnimated:YES completion:^{ [self edit:row deleting:NO]; }]; }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"删除自有副本" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action){ [menu dismissViewControllerAnimated:YES completion:^{ [self edit:row deleting:YES]; }]; }]];
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]]; [self presentViewController:a animated:YES completion:nil];
 }
 @end

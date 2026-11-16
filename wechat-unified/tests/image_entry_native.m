@@ -23,6 +23,9 @@ NSString *WUChatSession(UIViewController *owner) { return session; }
 NSDictionary *WUAccountOptions(NSString *a) { return @{@"toolbar":selectedTool?@[@"imageEmoji"]:@[]}; }
 #import "../Sources/WUImageEntry.m"
 
+@implementation UIDocumentPickerViewController
+- (instancetype)initForExportingURLs:(NSArray<NSURL *> *)urls asCopy:(BOOL)copy { return [super init]; }
+@end
 @implementation UIImage
 + (instancetype)imageWithData:(NSData *)data {
     if(badDecode) return nil;

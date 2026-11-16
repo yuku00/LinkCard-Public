@@ -11,6 +11,14 @@ static NSUInteger checks;
 @implementation VoiceWrap
 - (instancetype)initWithMsgType:(unsigned int)n nsFromUsr:(NSString *)a { if((self=[super init])) { _m_uiMessageType=n; _m_nsFromUsr=[a copy]; } return self; }
 @end
+@interface CExtendInfoOfVoiceMsg : NSObject
+@property(nonatomic,weak) id m_refMessageWrap;
+@end
+@implementation CExtendInfoOfVoiceMsg @end
+@interface ExtendedVoiceWrap : VoiceWrap
+@property(nonatomic,strong) CExtendInfoOfVoiceMsg *m_extendInfoWithMsgType;
+@end
+@implementation ExtendedVoiceWrap @end
 @interface OneVoiceWrap : NSObject
 @property(nonatomic) unsigned int m_uiMessageType, m_uiVoiceFormat, m_uiVoiceTime, m_uiVoiceEndFlag, m_uiCreateTime;
 @property(nonatomic,copy) NSData *m_dtVoice;
@@ -98,6 +106,9 @@ int main(void) { @autoreleasepool {
     VoiceWrap *source=[[VoiceWrap alloc] initWithMsgType:34 nsFromUsr:@"original"]; source.m_uiVoiceFormat=4; source.m_dtVoice=tencent;
     CHECK([WUVoiceSelectedData(source) isEqual:tencent]); source.m_uiVoiceFormat=0; CHECK(!WUVoiceSelectedData(source)); source.m_uiVoiceFormat=4; source.m_uiMessageType=1; CHECK(!WUVoiceSelectedData(source)); source.m_uiMessageType=34;
     CHECK(!WUVoiceSelectedData([NSObject new])); CHECK(!WUVoiceSelectedData(nil)); source.m_dtVoice=[NSData data]; CHECK(!WUVoiceSelectedData(source));
+    VoiceHost *extensionHost=[VoiceHost new]; WUVoiceForwardOperation *extensionOp=Operation(tencent);
+    CHECK([[extensionOp submitWithManager:extensionHost audioSender:extensionHost messageClass:ExtendedVoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
+    ExtendedVoiceWrap *extended=(id)extensionHost.last; CHECK(extended.m_extendInfoWithMsgType && extended.m_extendInfoWithMsgType.m_refMessageWrap==extended);
     VoiceHost *oneHost=[VoiceHost new]; WUVoiceForwardOperation *oneOp=Operation(tencent);
     CHECK([[oneOp submitWithManager:oneHost audioSender:oneHost messageClass:OneVoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
     CHECK(oneHost.inserts==1 && oneHost.sends==1 && [oneHost.last.m_nsFromUsr isEqual:@"self"] && [oneHost.last.m_nsToUsr isEqual:@"recipient"]);

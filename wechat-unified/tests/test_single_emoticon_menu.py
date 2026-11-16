@@ -10,6 +10,16 @@ class SingleEmoticonContract(unittest.TestCase):
         src=(ROOT/'Sources/Messages.m').read_text()
         for s in ['WUSaveEmoticonForWrap(owner,wrap,current,NO)', 'if(!context()) return NO;', 'if(!verifyDigest) return YES;', 'WUEmoticonRead(path)', 'CC_MD5(data.bytes,(CC_LONG)data.length,digest)', 'if(![hex isEqualToString:md5.lowercaseString]) data=nil', 'data:original options:options', 'added && success && !error', 'requestAuthorizationForAccessLevel:PHAccessLevelAddOnly', 'Permission only. User must explicitly invoke the tool again.', 'if((verifyDigest && !context()) || !owner.viewIfLoaded.window']:
             self.assertIn(s,src)
+    def test_export_is_original_verified_and_user_chosen(self):
+        menu=(ROOT/'Sources/WULinkMenu.inc').read_text()
+        image=(ROOT/'Sources/WUImageEntry.m').read_text()
+        for part in ('@"保存到文件"', '@"保存到图库"', 'WUExportEmoticonForWrap(owner,wrap,current)'):
+            self.assertIn(part,menu)
+        body=image[image.index('void WUExportEmoticonForWrap'):image.index('@interface WUImageEntry :')]
+        for part in ('WUEmoticonRead(path)', 'CC_MD5(data.bytes', '[hex isEqualToString:md5.lowercaseString]', 'WUEmoticonType(data)', 'NSDataWritingWithoutOverwriting', 'initForExportingURLs:@[file] asCopy:YES'):
+            self.assertIn(part,body)
+        for forbidden in ('UIImagePNGRepresentation', 'thumbPathOf', 'dataWithContentsOfURL:', 'NSURLSession'):
+            self.assertNotIn(forbidden,body)
     def test_native_and_whitelist(self):
         native=(ROOT/'tests/link_menu_native.m').read_text(); release=(ROOT/'tools/release.py').read_text()
         for s in ['msg.m_uiMessageType=47', 'Activate(testOwner,old,cell); assert(!saved)', 'generation++; Activate(testOwner,menu[1],cell); assert(!saved)', 'msg.m_nsEmoticonMD5=@"bad"']:

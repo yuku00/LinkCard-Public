@@ -174,12 +174,12 @@ static void WUWords(NSString *text, NSMutableDictionary *words) {
 }
 @end
 
-// Static evidence 0x1599b44..b68: object, 32-bit ID/time/limit, pointer
+// Contract: object, 32-bit ID/time/limit, pointer
 // to a 32-bit left count; object return. Signedness/type encoding is NOT in
 // the sample. Require an independently verified exact encoding before invoking.
 static const char *WUUnqualified(const char *s) { while (*s && strchr("rnNoORV",*s)) s++; return s; }
 static BOOL WUUInt32(id n) { return [n isKindOfClass:NSNumber.class] && isfinite([n doubleValue]) && [n doubleValue]>=0 && [n doubleValue]<=UINT32_MAX && floor([n doubleValue])==[n doubleValue]; }
-// 0x1599790..a8: session, FromID, CreateTime, limit=200; object return.
+// Session, FromID, CreateTime, limit=200; object return.
 // The sample writes w3/w4/w5. Runtime may widen integer parameters; marshal
 // each independently at its actual width, never reinterpret pointers/objects.
 NSString *WUStatsAppMethodEncoding(id manager) {
@@ -227,7 +227,7 @@ static NSString *WUStatsAppType(id wrap) {
     BOOL red=native && [u.host.lowercaseString isEqual:@"c2cbizmessagehandler"] && [u.path isEqual:@"/hongbao/receivehongbao"];
     BOOL transfer=native && [u.host.lowercaseString isEqual:@"c2ctransfer"];
     NSNumber *inner=WUStatsHostInteger(wrap,@"m_uiAppMsgInnerType"), *scene=WUStatsHostInteger(pay,@"m_sceneId");
-    // 0x1595188..51fc: inner=2001, scene=1003 => transfer, else redpacket.
+    // inner=2001, scene=1003 => transfer, else redpacket.
     // Missing scene is unknown, NOT zero; do not copy textual/URL-substring heuristics.
     if(inner.unsignedLongLongValue==2001 && scene) { if(scene.unsignedLongLongValue==1003) transfer=YES; else red=YES; }
     if(red && transfer) return @"appUnknown";
@@ -246,7 +246,7 @@ NSDictionary *WUStatsDecodeHostPage(NSArray *page, uint32_t left, NSString *acco
             NSNumber *local=WUStatsHostInteger(wrap,@"m_uiMesLocalID"), *time=WUStatsHostInteger(wrap,@"m_uiCreateTime"), *type=WUStatsHostInteger(wrap,@"m_uiMessageType"), *sid=WUStatsHostInteger(wrap,@"m_n64MesSvrID");
             if(!WUUInt32(local) || !WUUInt32(time) || !WUUInt32(type)) return nil;
             uint32_t lid=local.unsignedIntValue,t=time.unsignedIntValue;
-            // 0x1597798..7824: minimum positive local ID and minimum positive
+            // Select minimum positive local ID and minimum positive
             // time at that ID. Not lastObject; local IDs are source-scoped cursors.
             if(lid && (!minID || lid<minID)) { minID=lid; minTime=t; }
             else if(lid==minID && t && (!minTime || t<minTime)) minTime=t;
@@ -389,7 +389,7 @@ static NSArray *WUReadPage(WUStatsBinding *b,NSDictionary *cursor,uint32_t *left
 - (void)phaseFinished {
     if(!self.appPhase && self.binding.scanAppMessages) {
         if(!self.binding.decodeAppPage) { [self finish:@"已截断：App解码器不可用；普通消息结果保留" complete:NO]; return; }
-        // 0x15994bc..9538: phase=App, adjacentValid=false, App cursor=(0,0).
+        // App phase starts with adjacentValid=false and cursor=(0,0).
         self.appPhase=YES; self.phasePages=0; self.accumulator.interactionPhase++;
         self.cursor=@{@"id":@0,@"time":@0}; [self.cursors removeAllObjects];
         [self scheduleStep];
@@ -413,10 +413,10 @@ static NSArray *WUReadPage(WUStatsBinding *b,NSDictionary *cursor,uint32_t *left
     NSDictionary *next=decoded[@"next"];
     if (![next isKindOfClass:NSDictionary.class] || !WUUInt32(next[@"id"]) || !WUUInt32(next[@"time"])) { [self finish:@"已截断：无有效下一页游标" complete:NO]; return; }
     uint32_t oldTime=[self.cursor[@"time"] unsignedIntValue],oldID=[self.cursor[@"id"] unsignedIntValue],newTime=[next[@"time"] unsignedIntValue],newID=[next[@"id"] unsignedIntValue];
-    // 0x158ca0c/18: (0,0) means initial page. 0x1598874..88f0
+    // (0,0) means initial page; the decoder
     // selects minimum positive local ID and its time, independent of array order.
     BOOL initial=self.phasePages==1 && oldID==0 && oldTime==0;
-    // App 0x1597c30..c94 allows either lower ID OR lower time; ordinary
+    // App cursor allows either lower ID OR lower time; ordinary
     // semantics stay unchanged. Neither proves descending creation-time order.
     BOOL advances=(initial && newID>0) || (newID>0 && (newID<oldID || (self.appPhase?newTime<oldTime:(newID==oldID && newTime<oldTime))));
     NSString *key=[NSString stringWithFormat:@"%u:%u",newTime,newID];
@@ -536,7 +536,7 @@ static char WUStatsOwnerKey;
     self.lastResult=r;
     if(!self.sectionOrder) self.sectionOrder=WUStatsSectionOrder(self.binding.account.length?[NSUserDefaults.standardUserDefaults objectForKey:[self layoutKey]]:nil);
     NSMutableArray *sections=[NSMutableArray array];
-    [sections addObject:@{@"title":@"时间范围与访问日志",@"rows":@[self.binding.dateRange[@"label"]?:[NSString stringWithFormat:@"全部可见日期 · %@（点选起止）",self.binding.timeZone.name?:@"无上下文"],@"重置日期为全部",@"清空本账号访问日志",self.overview?@"扫描范围：已加载私聊/群聊消息数排行（点选切换）":@"扫描范围：当前会话（点选切换）",@"板块选择与排序"]}];
+    [sections addObject:@{@"title":@"时间范围与访问日志",@"rows":@[self.binding.dateRange[@"label"]?:[NSString stringWithFormat:@"全部可见日期 · %@（点选起止）",self.binding.timeZone.name?:@"无上下文"],@"重置日期为全部",@"清空本账号访问日志",self.overview?@"扫描范围：本地私聊和群聊排行（点选切换）":@"扫描范围：当前会话（点选切换）",@"板块选择与排序"]}];
     if(self.binding.sessions.count) {
         NSMutableDictionary *counts=[NSMutableDictionary dictionary];
         for(NSDictionary *row in self.binding.sessions) { NSString *kind=row[@"kind"]; counts[kind]=@([counts[kind] unsignedIntegerValue]+([kind isEqual:@"unknown"]?[row[@"count"] unsignedIntegerValue]:1)); }
@@ -547,13 +547,13 @@ static char WUStatsOwnerKey;
     NSMutableDictionary *names=[NSMutableDictionary dictionary];
     NSArray *visitRanking=WUStatsVisitRanking(self.visits[@"events"]?:@[],self.binding.dateRange);
     for(NSDictionary *row in self.binding.sessions) if([row[@"username"] length]) names[WUStatsVisitID(WUStatsVisitID(self.binding.account,@""),row[@"username"])]=row[@"username"];
-    NSMutableArray *visitRows=[NSMutableArray arrayWithObjects:@"只记录启用统计工具后的真实前台聊天出现；同一最近会话12秒去抖，不补造历史，不等于消息数/最常聊。",@"账号隔离原子日志：最多4096条/1MiB，满后停止；日期范围同消息筛选。日志无正文、无明文账号/会话。",nil];
+    NSMutableArray *visitRows=[NSMutableArray arrayWithObjects:@"只记录启用后打开的聊天；连续进入同一会话且间隔不到12秒只记一次。访问次数不是消息数，也不代表最常聊。",@"仅保存在本机并按账号区分；不含正文或明文账号、会话。按所选日期筛选，最多4096条或1MiB，满后停止记录。",nil];
     if([self.visits[@"error"] length]) [visitRows addObject:self.visits[@"error"]];
     if([self.visits[@"full"] boolValue]) [visitRows addObject:@"日志已满：访问榜只是已记录范围，清空后才能继续记录。"];
     for(NSDictionary *row in visitRanking) { NSString *key=row[@"id"]; [visitRows addObject:[NSString stringWithFormat:@"%@ · %@：%@ 次",names[key]?:[key substringToIndex:12],row[@"kind"],row[@"count"]]]; }
     if(!visitRanking.count) [visitRows addObject:@"此范围暂无已记录访问（不推断历史）"];
     [sections addObject:@{@"title":@"会话访问次数榜",@"rows":visitRows}];
-    [sections addObject:@{@"title":@"状态与范围",@"rows":@[self.status?:@"",@"只读所选范围本地消息；消息统计不落盘、不联网、不包含 AI。需手动扫描；访问日志另按启用后真实事件记录。",@"总上限20,000条/100页；排行限用户名顺序前50个可分类候选，包含已加载会话与宿主会话列表，所有子扫描共享页数预算；列表覆盖范围未知。未知时间不进入日期范围；同秒消息不推断互动。",@"规则统计不是社交意图：6小时新段、24小时破冰、5分钟同人连发。首尾不补猜开场。"]}];
+    [sections addObject:@{@"title":@"状态与范围",@"rows":@[self.status?:@"",@"消息需手动扫描，仅在本机读取，统计结果不保存、不联网。访问记录从启用后开始单独保存。",@"最多扫描20,000条、100页；消息数排行最多扫描用户名顺序前50个私聊或群聊候选，所有会话共用页数预算。会话列表可能不完整，未知时间不计入日期范围。",@"开场、破冰和连发按时间规则计算，并非判断关系：分别以6小时、24小时、5分钟为界；同秒及范围首尾不作推断。"]}];
     if([r[@"overview"] boolValue]) {
         NSMutableArray *rows=[NSMutableArray arrayWithObjects:[NSString stringWithFormat:@"已处理 %@ / %@ 个可靠会话 · %@ 页 · %@ 条扫描记录",r[@"processed"],r[@"sessions"],r[@"pages"],r[@"scanned"]],[r[@"complete"] boolValue]?@"完成已加载可分类会话；不是服务器全部历史":@"部分排行/截断：未扫会话可能更活跃，不称全账号最常聊",nil];
         [sections addObject:@{@"title":@"最常聊 · 本地消息数（所选日期）",@"rows":rows}];

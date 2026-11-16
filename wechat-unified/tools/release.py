@@ -55,6 +55,7 @@ def upload():
     allowed += ['Sources/WUHostService.h','Sources/WUHostService.m','Sources/WUVerifiedServiceProxy.h','tests/host_service_native.m','tests/test_account_generation_regression.py','tools/test_host_service.sh']
     allowed += ['tests/test_child_surface_refresh.py','tests/test_home_service_resolution.py','tests/test_keyboard_playback_contract.py','tests/test_neo_search_tiles.py','tests/test_plus_switch_safety.py','tests/test_red_reminder_wiring.py','tests/test_text_bubble_surface.py']
     allowed += ['tests/neo_cards_ios.m','tools/test_neo_cards_ios.py','tests/test_neo_individual_cards.py','tests/voice_playback_proxy.m','tests/run_voice_playback_proxy.py','tests/test_revoke_notice_timestamp.py','tests/test_config_recovery_contract.py']
+    allowed += ['Sources/WUHomeIndexMap.h','tests/home_index_map.c','tests/test_voice_pack_feedback.py','tests/test_voice_hook_order.py','tests/test_voice_settings_disclosure.py','tests/test_message_feedback_fixes.py','tests/test_home_proxy_selection.py','tests/test_home_input_startup_regression.py','tests/test_home_service_resolution.py']
     # Exact manifest closure only: no SDK repository/history, binaries or private media.
     vendor=json.loads((ROOT/'Vendor/manifest.json').read_text())
     for name,digest in vendor['sha256'].items():

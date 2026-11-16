@@ -10,6 +10,8 @@ static NSTimer *pulseWatch;
 static IMP inputLayout, noticeLayout, homeLayout;
 static NSHashTable<UIView *> *decorated;
 static NSHashTable<UITableView *> *tables;
+static NSHashTable<UIViewController *> *homes;
+BOOL WUHomeSearchAvailable(void) { return homeLayout != NULL; }
 static char layerKey, separatorKey;
 static void Remove(UIView *v) { CALayer *l=objc_getAssociatedObject(v,&layerKey); [l removeAllAnimations]; [l removeFromSuperlayer]; objc_setAssociatedObject(v,&layerKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
 static void Decorate(UIView *v,NSString *key) {
@@ -77,18 +79,19 @@ static void Walk(UIView *v) {
     for(UIView *c in v.subviews) Walk(c);
 }
 static void Home(UIViewController *v,SEL s) {
-    RestoreTables(); ((void(*)(id,SEL))homeLayout)(v,s);
+    [homes addObject:v]; RestoreTables(); ((void(*)(id,SEL))homeLayout)(v,s);
     if(WUEnabled(@"separators")) Walk(v.view);
     WURefreshHome(v);
 }
 void WUInstallAppearance(void) {
     static dispatch_once_t once; dispatch_once(&once, ^{
-        decorated=NSHashTable.weakObjectsHashTable; tables=NSHashTable.weakObjectsHashTable; inputs=NSHashTable.weakObjectsHashTable;
+        decorated=NSHashTable.weakObjectsHashTable; tables=NSHashTable.weakObjectsHashTable; inputs=NSHashTable.weakObjectsHashTable; homes=NSHashTable.weakObjectsHashTable;
         for(NSString *name in @[WUChanged,UIApplicationWillResignActiveNotification,UIApplicationDidBecomeActiveNotification,UIAccessibilityReduceMotionStatusDidChangeNotification,UITextViewTextDidBeginEditingNotification,UITextViewTextDidEndEditingNotification])
         [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
             if([n.name isEqual:UIApplicationWillResignActiveNotification]) inputSuspended=YES;
             if([n.name isEqual:UIApplicationDidBecomeActiveNotification]) inputSuspended=NO;
-            RestoreTables(); [pulseWatch invalidate]; pulseWatch=nil;
+            if([n.name isEqual:WUChanged]) { RestoreTables(); for(UIViewController *home in homes.allObjects) [home.viewIfLoaded setNeedsLayout]; }
+            [pulseWatch invalidate]; pulseWatch=nil;
             for(UIView *v in decorated.allObjects) { WURestoreConfiguredSurface(v); Remove(v); [v setNeedsLayout]; }
             if(![n.name isEqual:UIApplicationWillResignActiveNotification]) for(UIView *v in inputs.allObjects) RefreshInput(v);
         }];

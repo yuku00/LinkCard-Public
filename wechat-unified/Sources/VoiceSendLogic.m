@@ -86,13 +86,30 @@ uint32_t WUVoiceMeasuredMS(NSData *data) {
         if(self.consumed) return self.status; self.consumed=YES;
         BOOL attempted=NO;
         @try {
-            // WCPulse uses CMessageMgr only when AudioSender is absent; choose before side effects.
+            // Choose the fallback before side effects.
             id sender=audio ?: manager;
             NSString *senderClass=audio?@"AudioSender":@"CMessageMgr";
             NSString *sendSelector=audio?@"ResendVoiceMsg:MsgWrap:":@"ResendMsg:MsgWrap:";
             if(!NSThread.isMainThread || !current || !current() || !self.account.length || !self.target.length || !self.data.length || !self.milliseconds || self.milliseconds>60000 || !VoiceServiceReady(manager,@"CMessageMgr",@"AddLocalMsg:MsgWrap:") || !VoiceServiceReady(sender,senderClass,sendSelector)) { self.status=@"失败：上下文或语音服务不可用，未提交"; return self.status; }
             id message=WUCreateVoiceMessage(cls,34,self.account);
             if(!message) { self.status=@"失败：消息构造ABI不可用或初始化失败，未提交"; return self.status; }
+            // Bind the extension before touching dynamic voice properties.
+            // Only use it when the declared host getter/setter are both present and checked.
+            if(WUVoiceExactSignature(message,@"m_extendInfoWithMsgType","@",@[]) && WUVoiceExactSignature(message,@"setM_extendInfoWithMsgType:","v",@[@"@"])) {
+                id extension=((id(*)(id,SEL))objc_msgSend)(message,NSSelectorFromString(@"m_extendInfoWithMsgType"));
+                if(!extension) {
+                    Class extClass=NSClassFromString(@"CExtendInfoOfVoiceMsg");
+                    if(!extClass) { self.status=@"失败：语音扩展不可用，未提交"; return self.status; }
+                    id allocated=[extClass alloc];
+                    if(!WUVoiceExactSignature(allocated,@"init","@",@[])) { self.status=@"失败：语音扩展初始化ABI不可用，未提交"; return self.status; }
+                    extension=[allocated init];
+                    if(!extension || !WUVoiceExactSignature(extension,@"setM_refMessageWrap:","v",@[@"@"]) || !WUVoiceExactSignature(extension,@"m_refMessageWrap","@",@[])) { self.status=@"失败：语音扩展ABI不可用，未提交"; return self.status; }
+                    ((void(*)(id,SEL,id))objc_msgSend)(extension,NSSelectorFromString(@"setM_refMessageWrap:"),message);
+                    if(((id(*)(id,SEL))objc_msgSend)(extension,NSSelectorFromString(@"m_refMessageWrap"))!=message) { self.status=@"失败：语音扩展回指未绑定，未提交"; return self.status; }
+                    ((void(*)(id,SEL,id))objc_msgSend)(message,NSSelectorFromString(@"setM_extendInfoWithMsgType:"),extension);
+                    if(((id(*)(id,SEL))objc_msgSend)(message,NSSelectorFromString(@"m_extendInfoWithMsgType"))!=extension) { self.status=@"失败：语音扩展未绑定，未提交"; return self.status; }
+                }
+            }
             NSArray *objects=@[@"setM_nsContent:",@"setM_nsFromUsr:",@"setM_nsToUsr:",@"setM_dtVoice:"];
             NSArray *numbers=@[@"setM_uiVoiceTime:",@"setM_uiVoiceFormat:",@"setM_uiVoiceEndFlag:",@"setM_uiCreateTime:"];
             NSArray *objectGetters=@[@"m_nsContent",@"m_nsFromUsr",@"m_nsToUsr",@"m_dtVoice"];

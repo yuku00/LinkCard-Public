@@ -42,12 +42,17 @@
 - (void)close { self.invalid=YES; [self.timer invalidate]; [self.navigationController dismissViewControllerAnimated:YES completion:nil]; }
 - (BOOL)save:(NSArray *)items {
     if(!self.loaded || self.busy || ![self current]) return NO;
-    NSError *e=nil; if(!WURepositorySave(self.directory,self.binding.account,items,&e)) { [self notice:e.localizedDescription?:@"保存失败，原仓库保留"]; return NO; }
+    NSError *e=nil; if(!WURepositorySave(self.directory,self.binding.account,items,&e)) {
+        NSString *message=e.localizedDescription?:@"保存失败，原仓库保留";
+        UIViewController *alert=self.presentedViewController;
+        if(alert) [alert dismissViewControllerAnimated:YES completion:^{ [self notice:message]; }]; else [self notice:message];
+        return NO;
+    }
     self.items=[items copy]; [self.tableView reloadData]; return YES;
 }
-- (void)addParts:(NSArray *)parts name:(NSString *)name {
-    if(![self current] || self.busy) return;
-    NSMutableArray *next=[self.items mutableCopy]; [next addObject:@{@"id":NSUUID.UUID.UUIDString,@"name":name?:@"",@"parts":parts?:@[]}]; [self save:next];
+- (BOOL)addParts:(NSArray *)parts name:(NSString *)name {
+    if(![self current] || self.busy) return NO;
+    NSMutableArray *next=[self.items mutableCopy]; [next addObject:@{@"id":NSUUID.UUID.UUIDString,@"name":name?:@"",@"parts":parts?:@[]}]; return [self save:next];
 }
 - (void)newText {
     if(![self current] || self.busy || !self.loaded || self.presentedViewController) return;
@@ -55,7 +60,7 @@
     [a addTextFieldWithConfigurationHandler:^(UITextField *t){ t.placeholder=@"备注"; }];
     [a addTextFieldWithConfigurationHandler:^(UITextField *t){ t.placeholder=@"纯文本正文"; }];
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    __block BOOL used=NO; [a addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ if(used) return; used=YES; NSString *name=a.textFields[0].text, *text=a.textFields[1].text; [self dismissViewControllerAnimated:YES completion:^{ [self addParts:@[@{@"kind":@"text",@"text":text?:@""}] name:name]; }]; }]];
+    __block BOOL used=NO; [a addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ if(used) return; used=YES; NSString *name=a.textFields[0].text, *text=a.textFields[1].text; if([self addParts:@[@{@"kind":@"text",@"text":text?:@""}] name:name]) [a dismissViewControllerAnimated:YES completion:nil]; }]];
     [self presentViewController:a animated:YES completion:nil];
 }
 - (void)capture {
@@ -65,7 +70,7 @@
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"原消息引用入库" message:@"只保存消息身份引用，不是独立媒体备份。原消息删除/媒体清理后可能无法发送；不会用文本或路径假恢复。" preferredStyle:UIAlertControllerStyleAlert];
     [a addTextFieldWithConfigurationHandler:^(UITextField *t){ t.placeholder=@"备注（1–80字）"; }];
     [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-    __block BOOL used=NO; [a addAction:[UIAlertAction actionWithTitle:@"保存引用" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ if(used) return; used=YES; NSString *name=a.textFields.firstObject.text; [self dismissViewControllerAnimated:YES completion:^{ [self addParts:parts name:name]; }]; }]];
+    __block BOOL used=NO; [a addAction:[UIAlertAction actionWithTitle:@"保存引用" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){ if(used) return; used=YES; NSString *name=a.textFields.firstObject.text; if([self addParts:parts name:name]) [a dismissViewControllerAnimated:YES completion:nil]; }]];
     [self presentViewController:a animated:YES completion:nil];
 }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)section { return [self current]?self.items.count:0; }
@@ -91,7 +96,7 @@
         [a addTextFieldWithConfigurationHandler:^(UITextField *f){ f.text=item[@"name"]; }];
         [a addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
         [a addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault handler:^(UIAlertAction *b){ NSString *name=a.textFields.firstObject.text;
-            [self dismissViewControllerAnimated:YES completion:^{ NSMutableArray *next=[self.items mutableCopy]; NSUInteger index=[next indexOfObject:item]; if(index==NSNotFound) return; NSMutableDictionary *copy=[item mutableCopy]; copy[@"name"]=name?:@""; next[index]=copy; [self save:next]; }];
+            NSMutableArray *next=[self.items mutableCopy]; NSUInteger index=[next indexOfObject:item]; if(index==NSNotFound) return; NSMutableDictionary *copy=[item mutableCopy]; copy[@"name"]=name?:@""; next[index]=copy; if([self save:next]) [a dismissViewControllerAnimated:YES completion:nil];
         }]]; [self presentViewController:a animated:YES completion:nil];
     }];
     UISwipeActionsConfiguration *c=[UISwipeActionsConfiguration configurationWithActions:@[remove,rename]]; c.performsFirstActionWithFullSwipe=NO; return c;

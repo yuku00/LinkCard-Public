@@ -99,6 +99,44 @@ static void Notice(UIViewController *v, NSString *text) {
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"微信整合" message:text preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]]; [v presentViewController:a animated:YES completion:nil];
 }
+static IMP searchRelayAppearOriginal;
+static char searchRelayKey;
+static BOOL ChatSearchReady(void) {
+    Class cls=NSClassFromString(@"AddContactToChatRoomViewController");
+    return searchRelayAppearOriginal && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"setM_contact:")),"v",@[@"@"]) && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"initMsgSearchHelper:")),"v",@[@"i"]) && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"onEditAndSearch")),"v",@[]);
+}
+static void SearchRelayAppeared(UIViewController *relay, SEL cmd, BOOL animated) {
+    ((void(*)(id,SEL,BOOL))searchRelayAppearOriginal)(relay,cmd,animated);
+    NSMutableDictionary *state=objc_getAssociatedObject(relay,&searchRelayKey); if(!state) return;
+    UIViewController *owner=state[@"owner"]; UINavigationController *nav=relay.navigationController;
+    if([state[@"started"] boolValue]) {
+        objc_setAssociatedObject(relay,&searchRelayKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if(nav.topViewController==relay && [nav.viewControllers containsObject:owner]) dispatch_async(dispatch_get_main_queue(),^{ if(nav.topViewController==relay) [nav popToViewController:owner animated:NO]; });
+        return;
+    }
+    state[@"started"]=@YES;
+    @try {
+        if(nav.topViewController==relay && WUEnabled(@"chatSearch") && [state[@"account"] isEqual:Account()] && [state[@"session"] isEqual:Session(owner)] && ChatSearchReady()) {
+            ((void(*)(id,SEL))objc_msgSend)(relay,NSSelectorFromString(@"onEditAndSearch")); return;
+        }
+    } @catch(__unused NSException *e) {}
+    objc_setAssociatedObject(relay,&searchRelayKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if(nav.topViewController==relay && [nav.viewControllers containsObject:owner]) dispatch_async(dispatch_get_main_queue(),^{ if(nav.topViewController==relay) [nav popToViewController:owner animated:NO]; });
+}
+static BOOL OpenCurrentChatSearch(UIViewController *owner) {
+    if(!NSThread.isMainThread || !ChatSearchReady() || !owner.viewIfLoaded.window || owner.presentedViewController || owner.navigationController.topViewController!=owner) return NO;
+    NSString *account=Account(), *session=Session(owner); if(!account.length || !session.length) return NO;
+    id contact=Obj(owner,@"getChatContactForSpecialMsg") ?: Obj(owner,@"getChatContact") ?: Obj(owner,@"GetContact");
+    if(![Str(contact,@"m_nsUsrName") isEqual:session]) return NO;
+    UIViewController *relay=[NSClassFromString(@"AddContactToChatRoomViewController") new]; if(!relay) return NO;
+    ((void(*)(id,SEL,id))objc_msgSend)(relay,NSSelectorFromString(@"setM_contact:"),contact);
+    ((void(*)(id,SEL,int))objc_msgSend)(relay,NSSelectorFromString(@"initMsgSearchHelper:"),0);
+    objc_setAssociatedObject(relay,&searchRelayKey,[@{@"owner":owner,@"account":account,@"session":session} mutableCopy],OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    UINavigationController *nav=owner.navigationController;
+    if(Has(nav,@"PushViewController:animated:","v",@[@"@",@"B"])) ((void(*)(id,SEL,id,BOOL))objc_msgSend)(nav,NSSelectorFromString(@"PushViewController:animated:"),relay,NO);
+    else [nav pushViewController:relay animated:NO];
+    return YES;
+}
 static NSHashTable *pendingAlerts;
 static void RedCancel(void);
 static void CancelPending(void) {
@@ -233,7 +271,7 @@ static NSHashTable *chatActions;
     if(self.tools) [items removeObject:self.tools];
     if(self.search) [items removeObject:self.search]; if(self.recall) [items removeObject:self.recall]; if(self.stats) [items removeObject:self.stats];
     // Statistics is available only through the account-selected tools menu.
-    if(WUEnabled(@"chatSearch") && Has(v,@"onSearchItem","v",@[])) { if(!self.search) self.search=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"magnifyingglass"] style:UIBarButtonItemStylePlain target:self action:@selector(openSearch)]; self.search.accessibilityLabel=@"搜索当前会话聊天记录"; [items addObject:self.search]; }
+    if(WUEnabled(@"chatSearch") && ChatSearchReady()) { if(!self.search) self.search=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"magnifyingglass"] style:UIBarButtonItemStylePlain target:self action:@selector(openSearch)]; self.search.accessibilityLabel=@"搜索当前会话聊天记录"; [items addObject:self.search]; }
     if(WUEnabled(@"multiRevoke") && Has(v,@"getSelectedMsgs","@",@[]) && RevokeSelector(Service(@"CMessageMgr"))) { if(!self.recall) self.recall=[[UIBarButtonItem alloc] initWithTitle:@"撤回所选" style:UIBarButtonItemStylePlain target:self action:@selector(recallSelected)]; [items addObject:self.recall]; }
     NSString *account=Account(), *session=Session(v); NSUInteger gen=generation;
     self.inputAccount=account; self.inputSession=session; self.inputGeneration=gen;
@@ -242,7 +280,7 @@ static NSHashTable *chatActions;
     self.gridEntries=@[];
     if([WUValue(@"enabled") boolValue] && account.length && session.length) for(NSString *key in selected) {
         if([key isEqual:@"messageLinks"] && (!WUEnabled(@"enhancedLinks") || !Has(v,@"getSelectedMsgs","@",@[]))) continue;
-        if([key isEqual:@"search"] && !Has(v,@"onSearchItem","v",@[])) continue;
+        if([key isEqual:@"search"] && !ChatSearchReady()) continue;
         // Keep the selected entry visible; OpenStats rechecks the host ABI on tap.
         if([key isEqual:@"moments"] && (!WUEnabled(@"convenientMoments") || !WUMomentsAvailable())) continue;
         NSString *title=@{@"messageLinks":@"所选消息链接",@"search":@"当前会话搜索",@"stats":@"当前会话统计",@"settings":@"整合设置",@"repository":@"消息仓库",@"voiceForward":@"所选语音转发",@"voicePacks":@"本地语音包",@"emojiSave":@"所选表情保存图库",@"imageEmoji":@"所选图片 → 微信表情编辑",@"emoticonLibrary":@"本地表情分组 / 资源库",@"moments":@"半屏朋友圈"}[key];
@@ -260,7 +298,7 @@ static NSHashTable *chatActions;
                 else if([key isEqual:@"repository"]) OpenRepository(owner);
                 else if([key isEqual:@"stats"]) OpenStats(owner);
                 else if([key isEqual:@"moments"]) { if(!WUOpenMoments(owner)) Notice(owner,@"半屏朋友圈当前不可用，未打开全屏替代页面。"); }
-                else if([key isEqual:@"search"] && Has(owner,@"onSearchItem","v",@[])) ((void(*)(id,SEL))objc_msgSend)(owner,NSSelectorFromString(@"onSearchItem"));
+                else if([key isEqual:@"search"]) { if(!OpenCurrentChatSearch(owner)) Notice(owner,@"当前会话搜索不可用。"); }
             } @catch(NSException *e) { Notice(owner,@"该工具当前不可用，未自动重试。"); }
         };
         [grid addObject:@{@"title":title,@"run":[run copy]}];
@@ -289,7 +327,7 @@ static NSHashTable *chatActions;
 - (void)openStats { if([WUValue(@"enabled") boolValue]) OpenStats(self.owner); }
 - (void)openSearch {
     UIViewController *v=self.owner;
-    @try { if(WUEnabled(@"chatSearch") && v.viewIfLoaded.window && !v.presentedViewController && Session(v).length && Has(v,@"onSearchItem","v",@[])) ((void(*)(id,SEL))objc_msgSend)(v,NSSelectorFromString(@"onSearchItem")); }
+    @try { if(WUEnabled(@"chatSearch") && !OpenCurrentChatSearch(v)) Notice(v,@"当前会话搜索不可用。"); }
     @catch(NSException *e) { Notice(v,@"宿主聊天记录搜索不可用；未扫描数据库或采集搜索词。"); }
 }
 - (void)recallSelected {
@@ -379,7 +417,7 @@ static void ChatDisappeared(UIViewController *v,SEL s,BOOL animated) {
 }
 
 #import "MessageConstruction.h"
-static BOOL RepeatReady(id wrap) { return WUEmoticonSourceReady(wrap,Service(@"CMessageMgr")); }
+static BOOL RepeatReady(id wrap) { return WUMessageCanConstruct(NSClassFromString(@"CMessageWrap")) && WUEmoticonSourceReady(wrap,Service(@"CMessageMgr")); }
 @interface WUCellActions : NSObject
 @property(nonatomic,weak) UIView *cell;
 @property(nonatomic,strong) UIButton *repeat;
@@ -396,7 +434,8 @@ static NSHashTable *cellActions;
 static id KnownValue(id o, NSString *key) { @try { return [o valueForKey:key]; } @catch(NSException *e) { return nil; } }
 static NSDictionary *GroupInfo(id model, NSString *session, NSString *account) {
     id wrap=Obj(model,@"messageWrap"); if(!wrap || [model isKindOfClass:NSClassFromString(@"ChatTimeViewModel")]) return @{@"separator":@YES};
-    NSDictionary *m=Info(wrap); NSString *sender=[session hasSuffix:@"@chatroom"]?([m[@"real"] length]?m[@"real"]:m[@"from"]):m[@"from"];
+    NSDictionary *m=Info(wrap); BOOL group=[session hasSuffix:@"@chatroom"];
+    NSString *sender=group?([m[@"from"] isEqual:account]?account:m[@"real"]):m[@"from"];
     return @{@"session":session?:@"",@"sender":sender?:@"",@"time":m[@"time"],@"separator":@(!InSession(m,account,session) || [m[@"type"] unsignedIntValue]>=10000)};
 }
 @implementation WUCellActions
@@ -406,7 +445,7 @@ static NSDictionary *GroupInfo(id model, NSString *session, NSString *account) {
 - (void)update {
     UIView *cell=self.cell; [self restore]; UIViewController *v=Chat(cell); id wrap=Wrap(cell);
     NSDictionary *repeatOptions=WUValue(@"repeatOptions")?:WURepeatDefaults();
-    BOOL show=cell.window && v && WUEnabled(@"repeatEmoticon") && ([repeatOptions[@"normalRepeat"] boolValue] || [repeatOptions[@"longDownload"] boolValue]) && Num(wrap,@"m_uiMessageType")==47 && RepeatReady(wrap);
+    BOOL show=cell.window && v && WUEnabled(@"repeatEmoticon") && ([repeatOptions[@"normalRepeat"] boolValue] || [repeatOptions[@"longDownload"] boolValue]) && Num(wrap,@"m_uiMessageType")==47;
     if(!show) { [self.repeat removeFromSuperview]; self.repeat=nil; }
     else {
         if(!self.repeat) { self.repeat=[UIButton buttonWithType:UIButtonTypeSystem]; [self.repeat setImage:[UIImage systemImageNamed:@"arrow.triangle.2.circlepath"] forState:UIControlStateNormal]; self.repeat.accessibilityLabel=@"常规复读此表情（需要确认）"; self.repeat.layer.cornerRadius=6; self.repeat.backgroundColor=UIColor.secondarySystemBackgroundColor; [self.repeat addTarget:self action:@selector(repeatMessage) forControlEvents:UIControlEventTouchUpInside]; UILongPressGestureRecognizer *press=[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(downloadRepeat:)]; press.minimumPressDuration=0.5; press.cancelsTouchesInView=YES; [self.repeat addGestureRecognizer:press]; [cell addSubview:self.repeat]; }
@@ -417,13 +456,23 @@ static NSDictionary *GroupInfo(id model, NSString *session, NSString *account) {
         self.repeat.accessibilityLabel=[repeatOptions[@"normalRepeat"] boolValue]?@"常规复读此表情（需要确认）":@"表情标签（点按复读已关闭）";
         self.repeat.accessibilityHint=[repeatOptions[@"longDownload"] boolValue]?@"长按可选择文件保存位置，下载原表情":@"长按下载已关闭";
         for(UIGestureRecognizer *gesture in self.repeat.gestureRecognizers) if([gesture isKindOfClass:UILongPressGestureRecognizer.class]) gesture.enabled=[repeatOptions[@"longDownload"] boolValue];
-        self.repeat.alpha=1; self.repeat.frame=CGRectMake(MAX(0,CGRectGetWidth(cell.bounds)-31),MAX(0,(CGRectGetHeight(cell.bounds)-25)/2),25,25);
+        self.repeat.alpha=1;
+        UIView *emoticon=KnownValue(cell,@"m_emoticonView"); CGRect rect=CGRectZero;
+        if([emoticon isKindOfClass:UIView.class] && [emoticon isDescendantOfView:cell]) rect=[emoticon convertRect:emoticon.bounds toView:cell];
+        CGFloat x=CGRectGetWidth(cell.bounds)-31, y=MAX(0,(CGRectGetHeight(cell.bounds)-25)/2);
+        if(!CGRectIsEmpty(rect)) { x=CGRectGetMidX(rect)>CGRectGetMidX(cell.bounds)?CGRectGetMinX(rect)-29:CGRectGetMaxX(rect)+4; y=CGRectGetMidY(rect)-12.5; }
+        self.repeat.frame=CGRectMake(MAX(0,MIN(x,CGRectGetWidth(cell.bounds)-25)),MAX(0,MIN(y,CGRectGetHeight(cell.bounds)-25)),25,25);
+        [cell bringSubviewToFront:self.repeat];
     }
     NSString *session=Session(v); BOOL group=[session hasSuffix:@"@chatroom"];
     if(!cell.window || !WUEnabled(group?@"mergeGroup":@"mergePrivate") || !session.length) return;
     id models=KnownValue(v,@"m_arrMessageNodeData"), model=Obj(cell,@"viewModel");
     if(![models isKindOfClass:NSArray.class] || [models count]>10000) return;
-    NSUInteger index=[models indexOfObjectIdenticalTo:model]; if(index==NSNotFound) return;
+    NSUInteger index=[models indexOfObjectIdenticalTo:model];
+    if(index==NSNotFound && wrap) {
+        for(NSUInteger i=0;i<[models count];i++) { id candidate=models[i]; if(Obj(candidate,@"messageWrap")==wrap) { if(index!=NSNotFound) return; index=i; } }
+    }
+    if(index==NSNotFound) return;
     BOOL bottom=WUEnabled(@"mergeBottom"); if((bottom && index+1>=[models count]) || (!bottom && index==0)) return;
     NSString *account=Account(); if(!account.length) return;
     id adjacent=models[bottom?index+1:index-1]; NSDictionary *a=GroupInfo(bottom?model:adjacent,session,account), *b=GroupInfo(bottom?adjacent:model,session,account);
@@ -594,14 +643,14 @@ static void Arrival(id self, SEL cmd, id sessionArg, id wrap) {
 #include "WULinkMenu.inc"
 BOOL WUMessageAvailable(NSString *key) {
     @try {
-        Class base=NSClassFromString(@"BaseMsgContentViewController"), msg=NSClassFromString(@"CMessageWrap");
-        if([key isEqual:@"chatSearch"]) return WUMatches(class_getInstanceMethod(base,NSSelectorFromString(@"onSearchItem")),"v",@[]);
+        Class base=NSClassFromString(@"BaseMsgContentViewController");
+        if([key isEqual:@"chatSearch"]) return ChatSearchReady();
         if([key isEqual:@"antiRevoke"]) return revokeOriginal && LookupReady(Service(@"CMessageMgr"));
         if([key isEqual:@"convenientMoments"]) return chatAppearOriginal && WUMomentsAvailable();
         if([key isEqual:@"callbackConfirm"]) return callbackOriginal!=NULL;
         if([key isEqual:@"enhancedLinks"]) return wuLinkMenuOriginal || (chatAppearOriginal && WUMatches(class_getInstanceMethod(base,NSSelectorFromString(@"getSelectedMsgs")),"@",@[]));
         if([key isEqual:@"multiRevoke"]) return chatAppearOriginal && WUMatches(class_getInstanceMethod(base,NSSelectorFromString(@"getSelectedMsgs")),"@",@[]) && RevokeSelector(Service(@"CMessageMgr"));
-        if([key isEqual:@"repeatEmoticon"]) { id mgr=Service(@"CMessageMgr"); return cellLayoutOriginal && WUMessageCanConstruct(msg) && (Has(mgr,@"AddEmoticonMsg:MsgWrap:","v",@[@"@",@"@"]) || WUVerifiedProxyMethod(mgr,WUVerifiedEmoticonSend)); }
+        if([key isEqual:@"repeatEmoticon"]) return cellLayoutOriginal!=NULL;
         if([key hasPrefix:@"merge"]) return cellLayoutOriginal && WUMatches(class_getInstanceMethod(NSClassFromString(@"CommonMessageCellView"),NSSelectorFromString(@"viewModel")),"@",@[]);
         if([key isEqual:@"redReminder"]) return arrivalOriginal!=NULL;
     } @catch(NSException *e) {}
@@ -621,6 +670,7 @@ void WUInstallMessages(void) {
         [NSNotificationCenter.defaultCenter addObserverForName:UIKeyboardDidShowNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ for(WUChatActions *a in chatActions.allObjects) WURefreshMomentsInput(a.owner); }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ CancelPending(); }];
     });
+    WUHook(@"AddContactToChatRoomViewController",@"viewDidAppear:",NO,"v",@[@"B"],(IMP)SearchRelayAppeared,&searchRelayAppearOriginal);
     WUHook(@"BaseMsgContentViewController",@"viewDidLayoutSubviews",NO,"v",@[],(IMP)ChatLayout,&chatLayoutOriginal);
     WUHook(@"BaseMsgContentViewController",@"viewDidAppear:",NO,"v",@[@"B"],(IMP)ChatAppeared,&chatAppearOriginal);
     WUHook(@"BaseMsgContentViewController",@"viewDidDisappear:",NO,"v",@[@"B"],(IMP)ChatDisappeared,&chatDisappearOriginal);
@@ -637,7 +687,7 @@ static void OpenStats(UIViewController *owner) {
     @try {
         NSString *account=Account(), *session=Session(owner); id mgr=Service(@"CMessageMgr");
         // Independently checked semantic contract: object session, 3 32-bit values,
-        // pointer to 32-bit remaining count, object return (static PC 0x1599b44..68).
+        // pointer to 32-bit remaining count, object return.
         BOOL checked=StatsReady(mgr);
         if(!checked || !account.length || !session.length) { Notice(owner,@"统计不可用：缺稳定账号、会话或已核验的32位分页接口。未调用宿主查询。"); return; }
         WUStatsBinding *binding=[WUStatsBinding new]; binding.account=account; binding.session=session; binding.group=[session hasSuffix:@"@chatroom"]; binding.messageManager=mgr;
@@ -645,7 +695,7 @@ static void OpenStats(UIViewController *owner) {
         binding.verifiedEncoding=WUMessageServiceEncoding(mgr,WUMessageServiceStatsPage);
         binding.scanAppMessages=YES; binding.appEncoding=WUStatsAppMethodEncoding(mgr);
         binding.decodeAppPage=^NSDictionary *(NSArray *page,NSDictionary *cursor) { return WUStatsDecodeHostPage(page,0,account,session,YES); };
-        binding.initialCursor=@{@"id":@0,@"time":@0}; // 0x158ca0c..30, not a guessed UINT_MAX cursor.
+        binding.initialCursor=@{@"id":@0,@"time":@0}; // Initial cursor; not a guessed UINT_MAX cursor.
         NSUInteger g=generation; __weak UIViewController *weak=owner;
         binding.stillCurrent=^BOOL{ return weak && UIApplication.sharedApplication.applicationState==UIApplicationStateActive && [WUValue(@"enabled") boolValue] && [account isEqual:Account()] && g==generation && [session isEqual:Session(weak)] && [WUToolbarActions(WUAccountOptions(account)[@"toolbar"]) containsObject:@"stats"]; };
         binding.sessions=WUStatsHostSessions()?:@[];
@@ -756,7 +806,7 @@ static void OpenRepository(UIViewController *owner) {
 #include "MessageEntryBindings.inc"
 #include "EmoticonLibraryBindings.inc"
 
-// Evidence: WCPulse 0xb8514 / 0xb8760-68 (NO,NO), 0x12be34 raw Photos resource.
+// Export only the explicitly selected original media.
 static char emojiSaveKey;
 static void SaveSelectedEmoticon(UIViewController *owner) {
     NSString *account=Account(), *session=Session(owner); NSUInteger gen=generation;

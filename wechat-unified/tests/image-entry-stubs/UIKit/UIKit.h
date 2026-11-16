@@ -1,5 +1,10 @@
 // Reuse the existing native/dictation UIKit surface without modifying it.
 #import "../../native/stubs/UIKit/UIKit.h"
+@protocol UIDocumentPickerDelegate <NSObject> @end
+@interface UIDocumentPickerViewController : UIViewController
+@property(nonatomic,weak) id<UIDocumentPickerDelegate> delegate;
+- (instancetype)initForExportingURLs:(NSArray<NSURL *> *)urls asCopy:(BOOL)copy;
+@end
 @interface UIImage : NSObject
 @property(nonatomic,copy) NSArray<UIImage *> *images;
 @property(nonatomic,copy) NSData *mockBytes;

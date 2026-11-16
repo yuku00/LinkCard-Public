@@ -12,6 +12,9 @@ static BOOL WUInputHookReady;
 @property(nonatomic,weak) UIViewController *owner;
 @property(nonatomic,weak) UIView *tool;
 @property(nonatomic,weak) UIView *bar;
+@property(nonatomic,weak) UIView *container;
+@property(nonatomic,weak) UIScrollView *table;
+@property(nonatomic) CGFloat oldBottomInset;
 @property(nonatomic,strong) WUInputToolbar *toolbar;
 @property(nonatomic) WUInputRect oldTool, oldBar;
 @property(nonatomic) BOOL enabled, ready;
@@ -56,21 +59,31 @@ static BOOL WUInputInstall(void) {
 // The new strip may not intersect any visible host sibling. Reject uncertain layouts.
 static BOOL WUInputClear(UIView *container, UIView *except, CGRect strip) {
     for(UIView *child in container.subviews) {
-        if(child==except || child.hidden || child.alpha<=0.01) continue;
+        if(child==except || [child isKindOfClass:WUInputToolbar.class] || child.hidden || child.alpha<=0.01) continue;
         // A noninteractive image behind the input is decoration, not a list or control.
         if(except && [child isKindOfClass:UIImageView.class] && !child.userInteractionEnabled && [container.subviews indexOfObjectIdenticalTo:child]<[container.subviews indexOfObjectIdenticalTo:except]) continue;
+        if(except && [child isKindOfClass:UIVisualEffectView.class] && [container.subviews indexOfObjectIdenticalTo:child]<[container.subviews indexOfObjectIdenticalTo:except]) continue;
         CGRect r=[child convertRect:child.bounds toView:container];
         if(!CGRectIsNull(r) && !CGRectIsInfinite(r) && CGRectIntersectsRect(CGRectInset(strip,0,0.5),r)) return NO;
     }
     return YES;
 }
 static BOOL WUInputStillSafe(WUInputReservation *s) {
-    UIView *tool=s.tool, *root=s.owner.viewIfLoaded, *bar=s.bar;
-    if(!tool || !bar || !tool.window || tool.window!=root.window || tool.superview!=root || ![bar isDescendantOfView:tool] || tool.hidden || tool.alpha<=0.01 || tool.bounds.size.width<=0 || tool.bounds.size.height<WUInputExtra) return NO;
-    CGRect strip=CGRectMake(CGRectGetMinX(tool.bounds),CGRectGetMinY(tool.bounds),tool.bounds.size.width,WUInputExtra);
-    CGRect rootStrip=[tool convertRect:strip toView:root];
-    if(!CGRectContainsRect(root.bounds,rootStrip)) return NO;
-    return WUInputClear(tool,s.toolbar,strip) && WUInputClear(root,tool,rootStrip);
+    UIView *tool=s.tool, *root=s.owner.viewIfLoaded, *bar=s.bar, *container=s.container;
+    UIScrollView *table=s.table;
+    if(!tool || !bar || !container || !table || !tool.window || tool.window!=root.window || tool.superview!=root || container.superview!=tool || bar.superview!=container || table.superview!=root || tool.hidden || container.hidden || tool.alpha<=0.01 || container.alpha<=0.01 || container.bounds.size.width<=0 || container.bounds.size.height<WUInputExtra) return NO;
+    CGRect strip=CGRectMake(CGRectGetMinX(container.bounds),CGRectGetMinY(container.bounds),container.bounds.size.width,WUInputExtra);
+    CGRect rootStrip=[container convertRect:strip toView:root];
+    if(!CGRectContainsRect(root.bounds,rootStrip) || CGRectIntersectsRect(CGRectInset(strip,0,0.5),[bar convertRect:bar.bounds toView:container]) || !WUInputClear(container,bar,strip)) return NO;
+    if(table.adjustedContentInset.bottom+2 < s.oldBottomInset+WUInputExtra) return NO;
+    CGRect tableStrip=[root convertRect:rootStrip toView:table];
+    if(CGRectGetMinY(tableStrip)+2 < CGRectGetMaxY(table.bounds)-table.adjustedContentInset.bottom) return NO;
+    for(UIView *child in root.subviews) {
+        if(child==tool || child==table || child.hidden || child.alpha<=0.01) continue;
+        if([child isKindOfClass:UIImageView.class] && !child.userInteractionEnabled && [root.subviews indexOfObjectIdenticalTo:child]<[root.subviews indexOfObjectIdenticalTo:tool]) continue;
+        if(CGRectIntersectsRect(CGRectInset(rootStrip,0,0.5),[child convertRect:child.bounds toView:root])) return NO;
+    }
+    return YES;
 }
 static void WUInputStop(UIViewController *owner, BOOL failed) {
     WUInputReservation *s=objc_getAssociatedObject(owner,&WUInputStateKey);
@@ -100,8 +113,11 @@ static void WUInputSyncChecked(UIViewController *owner, NSArray<NSDictionary *> 
     id panel=nil;
     @try { panel=((id(*)(id,SEL))objc_msgSend)(tool,NSSelectorFromString(@"toolPanelView")); } @catch(__unused NSException *e) { return; }
     if(![panel isKindOfClass:UIView.class] || ![(UIView *)panel isDescendantOfView:tool]) return;
-    if(objc_getAssociatedObject(tool,&WUInputStateKey)) return;
-    s=[WUInputReservation new]; s.owner=owner; s.tool=tool; s.bar=bar; s.oldTool=WUInputWindowRect(tool); s.oldBar=WUInputWindowRect(bar); s.current=current; s.enabled=YES;
+    UIView *container=bar.superview;
+    Class tableClass=NSClassFromString(@"MMTableView"); UIScrollView *table=nil;
+    for(UIView *v in root.subviews) if(tableClass && [v isKindOfClass:tableClass] && [v isKindOfClass:UIScrollView.class]) { if(table) return; table=(UIScrollView *)v; }
+    if(!table || container.superview!=tool || objc_getAssociatedObject(tool,&WUInputStateKey)) return;
+    s=[WUInputReservation new]; s.owner=owner; s.tool=tool; s.bar=bar; s.container=container; s.table=table; s.oldBottomInset=table.adjustedContentInset.bottom; s.oldTool=WUInputWindowRect(container); s.oldBar=WUInputWindowRect(bar); s.current=current; s.enabled=YES;
     objc_setAssociatedObject(owner,&WUInputStateKey,s,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(tool,&WUInputStateKey,s,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [tool setNeedsLayout]; [root setNeedsLayout];
@@ -111,11 +127,11 @@ static void WUInputSyncChecked(UIViewController *owner, NSArray<NSDictionary *> 
         if(!o || objc_getAssociatedObject(o,&WUInputStateKey)!=s) return;
         @try {
             [o.viewIfLoaded layoutIfNeeded];
-            if((s.current && !s.current()) || !WUInputInstall() || !s.tool.window || !WUInputReserved(s.oldTool,WUInputWindowRect(s.tool),s.oldBar,WUInputWindowRect(s.bar),WUInputExtra) || !WUInputStillSafe(s)) { WUInputStop(o,YES); return; }
+            if((s.current && !s.current()) || !WUInputInstall() || !s.tool.window || !WUInputReserved(s.oldTool,WUInputWindowRect(s.container),s.oldBar,WUInputWindowRect(s.bar),WUInputExtra) || !WUInputStillSafe(s)) { WUInputStop(o,YES); return; }
             WUInputToolbar *toolbar=[[WUInputToolbar alloc] initWithEntries:entries]; s.toolbar=toolbar;
-            toolbar.frame=CGRectMake(CGRectGetMinX(s.tool.bounds),CGRectGetMinY(s.tool.bounds),s.tool.bounds.size.width,WUInputExtra);
+            toolbar.frame=CGRectMake(CGRectGetMinX(s.container.bounds),CGRectGetMinY(s.container.bounds),s.container.bounds.size.width,WUInputExtra);
             toolbar.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleBottomMargin;
-            [s.tool addSubview:toolbar]; s.ready=YES;
+            [s.container addSubview:toolbar]; s.ready=YES;
         } @catch(__unused NSException *e) { WUInputStop(o,YES); }
     });
 }

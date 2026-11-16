@@ -9,6 +9,12 @@ python3 tests/test_card_settings_contract.py
 python3 tests/test_neo_individual_cards.py
 python3 tests/test_config_recovery_contract.py
 python3 tests/test_revoke_notice_timestamp.py
+for test in tests/test_voice_pack_feedback.py tests/test_voice_hook_order.py tests/test_voice_settings_disclosure.py tests/test_message_feedback_fixes.py tests/test_home_proxy_selection.py tests/test_home_input_startup_regression.py; do
+  python3 "$test"
+done
+xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/home_index_map.c -o build/home-index-map-tests
+build/home-index-map-tests
+rm build/home-index-map-tests
 WU_REQUIRE_APPLE_TESTS=1 python3 tests/run_voice_playback_proxy.py
 rm -r build/voice-proxy
 xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/card_policy.c -o build/card-policy-tests

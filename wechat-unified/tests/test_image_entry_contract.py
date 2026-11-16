@@ -13,9 +13,15 @@ class ImageEntryContract(unittest.TestCase):
         for part in ('[selected count]==1', '[selected firstObject]==self.wrap',
                      'Identity(self.wrap,self.account,self.session)', '[self.paths isEqual:Paths(self.wrap)]'):
             self.assertIn(part, SRC)
-        for forbidden in ('valueForKey:', 'setValue:', 'UIDocumentPicker', 'NSURLSession',
+        for forbidden in ('valueForKey:', 'setValue:', 'NSURLSession',
                           'dataWithContentsOfURL:', 'getMsgHdOrMiddleImgData:'):
             self.assertNotIn(forbidden, SRC)
+        # The separate, explicit original-emoticon export may use an export picker;
+        # the selected chat-image editor itself must never import a file.
+        editor = SRC[SRC.index('@interface WUImageEntry :'):]
+        self.assertNotIn('UIDocumentPicker', editor)
+        self.assertIn('initForExportingURLs:', SRC)
+        self.assertNotIn('initForOpeningContentTypes:', SRC)
         self.assertIn('@[@"m_nsImageHDPath",@"m_nsImagePath"]', SRC)
 
     def test_verified_class_cache_path(self):
