@@ -34,6 +34,9 @@ python3 tests/test_feature_diagnostics.py
 for test in tests/test_incremental_safety.py tests/test_chat_layout.py tests/test_chat_surface.py tests/test_child_surface_refresh.py tests/test_home_service_resolution.py tests/test_host_popup_surface.py tests/test_keyboard_playback_contract.py tests/test_neo_search_tiles.py tests/test_plus_switch_safety.py tests/test_quick_reply_surface.py tests/test_red_reminder_wiring.py tests/test_reply_surface.py tests/test_text_bubble_surface.py; do
   python3 "$test"
 done
+for test in tests/test_chat_relay_merge_regression.py tests/test_emoticon_surface_boundary.py tests/test_link_click_contract.py tests/test_merge_lifecycle_contract.py tests/test_native_modal_navigation_contract.py tests/test_settings_polish.py tests/test_settings_repair_contract.py tests/test_surface_editor_clarity.py tests/test_surface_settings_routing.py tests/test_surface_sizing.py; do
+  python3 "$test"
+done
 python3 tests/test_source.py
 python3 tests/test_home_count_abi.py
 python3 tests/test_home_background_snapshot.py
@@ -41,6 +44,12 @@ python3 tests/test_theme_svg_abi.py
 python3 tests/test_account_generation_regression.py
 python3 tests/test_chat_input_toolbar_safety.py
 python3 tests/test_github_transport.py
+python3 tools/test_account_encoding.py
+node tests/miniads/fresh_object_retry_characterization.js
+node tests/miniads/node_lifecycle_sim.js
+xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/settings_card_sim.c -o build/settings-card-sim
+build/settings-card-sim
+rm build/settings-card-sim
 python3 tests/miniads/contract.py
 python3 tests/test_settings_search.py
 python3 tests/test_settings_layout.py

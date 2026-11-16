@@ -61,6 +61,10 @@ jobs:
         if: ${{ !contains(github.event.head_commit.message, '[targeted-pluginhub]') && !contains(github.event.head_commit.message, '[capture-only]') }}
         working-directory: wechat-unified
         run: python3 tools/test_input_reservation_ios.py "$RUNNER_TEMP/wu-input-reservation"
+      - name: Repository flow UIKit simulator regression
+        if: ${{ !contains(github.event.head_commit.message, '[targeted-pluginhub]') && !contains(github.event.head_commit.message, '[capture-only]') }}
+        working-directory: wechat-unified
+        run: python3 tools/test_repository_flow_ios.py "$RUNNER_TEMP/wu-repository-flow"
       - name: Capture geometry UIKit regression
         if: ${{ contains(github.event.head_commit.message, '[capture-only]') }}
         working-directory: wechat-unified

@@ -34,7 +34,7 @@ def main():
         for action in tree.get('actions',{}).get('_values',[]):
             ref=action.get('actionResult',{}).get('testsRef',{}).get('id',{}).get('_value')
             if ref: results+=records(json.loads(capture(command+['--id',ref])))
-        expected={'testReservationAndRemoval','testUnsupportedLayoutRollsBackAndDoesNotRetry','testReservedStripCoveredByHostRollsBack','testInvalidatedContextBeforeDeferredValidation','testRemovalBeforeDeferredValidation'}
+        expected={'testReservationAndRemoval','testUnsupportedLayoutRollsBackAndDoesNotRetry','testReservedStripCoveredByHostRollsBack','testInvalidatedContextBeforeDeferredValidation','testRemovalBeforeDeferredValidation','testUnreservedTableRollsBack'}
         if len(results)!=len(expected) or {n for n,s in results}!=expected or any(s!='Success' for n,s in results):
             raise RuntimeError(f'Expected all tests without skips: {results}')
         print('PASS: synthetic host with real UIKit; not WeChat/device acceptance')
