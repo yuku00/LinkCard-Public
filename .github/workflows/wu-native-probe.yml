@@ -1,0 +1,21 @@
+name: native synthetic voice constructor probe
+on:
+  push:
+    branches: ['wu-native-probe/**']
+permissions:
+  contents: read
+jobs:
+  native-probe:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compile and run macOS synthetic mocks (no simulator)
+        shell: bash
+        working-directory: wechat-unified
+        run: |
+          set -euo pipefail
+          xcrun --sdk macosx clang -fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources tests/voice_native_probe.m Sources/MessageConstruction.m Sources/VoiceSendLogic.m Sources/RepositoryLogic.m -framework Foundation -o /tmp/wu-voice-native-probe
+          /tmp/wu-voice-native-probe
