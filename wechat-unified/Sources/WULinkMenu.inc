@@ -1,5 +1,6 @@
 // Included by Messages.m: private menu methods are checked before every invocation.
 #import "LinkLogic.h"
+extern void WUSaveSelectedEmoticonToPhotos(UIViewController *, id, BOOL (^)(void));
 static IMP wuLinkMenuOriginal, wuLinkClickOriginal, wuEmoticonOperationMenuOriginal;
 static char wuLinkMenuLeaseKey, wuLinkMenuItemKey, wuEmoticonMenuTokenKey, wuOwnerMenuLeaseKey;
 static NSUInteger wuLinkMenuSerial;
@@ -60,13 +61,13 @@ static void WUMenuEmoticonAction(id receiver, SEL cmd, id argument) {
         objc_setAssociatedObject(cell,&wuLinkMenuLeaseKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         BOOL (^current)(void)=lease[@"current"]; id wrap=lease[@"wrap"];
         if(!current || !current() || owner.presentedViewController) return;
-        UIAlertController *choice=[UIAlertController alertControllerWithTitle:@"保存原表情" message:@"导出文件保留原始字节；保存到图库使用微信已缓存的同一表情。" preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertController *choice=[UIAlertController alertControllerWithTitle:@"保存表情" message:@"文件保留微信缓存原字节；WxAM 保存到图库时由微信转换为 GIF，原文件不会改变。" preferredStyle:UIAlertControllerStyleAlert];
         __weak UIAlertController *weakChoice=choice;
         [choice addAction:[UIAlertAction actionWithTitle:@"保存到文件" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
             [weakChoice dismissViewControllerAnimated:YES completion:^{ if(current()) WUExportEmoticonForWrap(owner,wrap,current); }];
         }]];
         [choice addAction:[UIAlertAction actionWithTitle:@"保存到图库" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
-            [weakChoice dismissViewControllerAnimated:YES completion:^{ if(current()) WUSaveEmoticonForWrap(owner,wrap,current,YES); }];
+            [weakChoice dismissViewControllerAnimated:YES completion:^{ if(current()) WUSaveSelectedEmoticonToPhotos(owner,wrap,current); }];
         }]];
         [choice addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
         [owner presentViewController:choice animated:YES completion:nil];
@@ -79,8 +80,8 @@ static id WUMenuAddEmoticon(id original, UIView *cell) {
     UIViewController *owner=Chat(cell); id model=Obj(cell,@"viewModel"), wrap=Obj(model,@"messageWrap");
     if(!owner || !cell.window || !model || !wrap || !WULinkMessageReady(wrap)) return original;
     NSDictionary *identity=Info(wrap); NSString *account=Account(), *session=Session(owner), *md5=WUMenuEmoticonMD5(wrap); NSUInteger gen=generation;
-    Class util=NSClassFromString(@"EmoticonUtil"); NSString *pathSelector=@"pathOfEmoticonForMd5:needUpdateTime:ignoreWxAM:";
-    if([identity[@"type"] unsignedIntegerValue]!=47 || !account.length || !session.length || !InSession(identity,account,session) || (![identity[@"id"] unsignedLongLongValue] && ![identity[@"local"] unsignedLongLongValue]) || !WUValidMD5(md5) || !Has(util,pathSelector,"@",@[@"@",@"B",@"B"])) return original;
+    Class util=NSClassFromString(@"EmoticonUtil"); NSString *pathSelector=@"pathOfEmoticonForMd5:needUpdateTime:ignoreWxAM:", *dataSelector=@"dataOfEmoticonForMd5:needUpdateTime:ignoreWxAM:";
+    if([identity[@"type"] unsignedIntegerValue]!=47 || !account.length || !session.length || !InSession(identity,account,session) || (![identity[@"id"] unsignedLongLongValue] && ![identity[@"local"] unsignedLongLongValue]) || !WUValidMD5(md5) || (!Has(util,pathSelector,"@",@[@"@",@"B",@"B"]) && !Has(util,dataSelector,"@",@[@"@",@"B",@"B"]))) return original;
     NSObject *token=[NSObject new]; objc_setAssociatedObject(cell,&wuEmoticonMenuTokenKey,token,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     __weak UIView *weakCell=cell; __weak UIViewController *weakOwner=owner; __weak id weakModel=model, weakWrap=wrap;
     BOOL (^current)(void)=^BOOL {
@@ -94,7 +95,13 @@ static id WUMenuAddEmoticon(id original, UIView *cell) {
     Class ownerClass=object_getClass(owner),cellClass=object_getClass(cell);
     if(class_getInstanceMethod(ownerClass,action) || class_getInstanceMethod(cellClass,action) || !class_addMethod(ownerClass,action,(IMP)WUMenuEmoticonAction,"v@:@") || !class_addMethod(cellClass,action,(IMP)WUMenuEmoticonAction,"v@:@")) return original;
     SEL iconInit=NSSelectorFromString(@"initWithTitle:icon:action:");
-    UIImage *downloadIcon=[UIImage systemImageNamed:@"arrow.down.to.line"];
+    UIImage *downloadIcon=nil;
+    for(id hostItem in original) {
+        NSString *title=Str(hostItem,@"title");
+        id icon=Obj(hostItem,@"iconImage");
+        if(([title containsString:@"保存"] || [title containsString:@"下载"]) && [icon isKindOfClass:UIImage.class]) { downloadIcon=icon; break; }
+    }
+    if(!downloadIcon) downloadIcon=[UIImage systemImageNamed:@"arrow.down.to.line"];
     id item=nil;
     if(downloadIcon && WUMatches(class_getInstanceMethod(itemClass,iconInit),"@",@[@"@",@"@",@":"]))
         item=((id(*)(id,SEL,id,id,SEL))objc_msgSend)([itemClass alloc],iconInit,@"下载/保存表情",downloadIcon,action);

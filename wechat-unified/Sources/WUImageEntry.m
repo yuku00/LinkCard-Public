@@ -3,6 +3,7 @@
 #import "GroupLogic.h"
 #import "EmoticonLogic.h"
 #import <ImageIO/ImageIO.h>
+#import <Photos/Photos.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <objc/runtime.h>
 #include <string.h>
@@ -102,42 +103,84 @@ static void ExportNotice(UIViewController *owner, NSString *text) { NoticeWithTi
 - (void)documentPicker:(UIDocumentPickerViewController *)picker didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls { [self clean]; }
 @end
 static char WUEmoticonExportKey;
+static NSData *WUSelectedEmoticonData(id wrap, NSString **kind) {
+    NSString *md5=Text(wrap,@"m_nsEmoticonMD5");
+    if(!md5.length) md5=Text(Object(wrap,@"m_extendInfoWithMsgType"),@"m_nsEmoticonMD5");
+    if(!WUValidMD5(md5)) return nil;
+    Class util=NSClassFromString(@"EmoticonUtil");
+    NSString *dataSelector=@"dataOfEmoticonForMd5:needUpdateTime:ignoreWxAM:";
+    NSString *pathSelector=@"pathOfEmoticonForMd5:needUpdateTime:ignoreWxAM:";
+    id path=Has(util,pathSelector,"@",@[@"@",@"B",@"B"])?((id(*)(id,SEL,id,BOOL,BOOL))objc_msgSend)(util,NSSelectorFromString(pathSelector),md5,NO,NO):nil;
+    id data=WUEmoticonRead(path);
+    if(!data && Has(util,dataSelector,"@",@[@"@",@"B",@"B"]))
+        data=((id(*)(id,SEL,id,BOOL,BOOL))objc_msgSend)(util,NSSelectorFromString(dataSelector),md5,NO,NO);
+    if(![data isKindOfClass:NSData.class] || ![data length] || [data length]>20*1024*1024) return nil;
+    NSString *type=WUEmoticonType(data);
+    if(!type && Has(util,@"isWxAMData:","B",@[@"@"]) && ((BOOL(*)(id,SEL,id))objc_msgSend)(util,NSSelectorFromString(@"isWxAMData:"),data)) type=@"wxam";
+    if(!type) return nil;
+    if(kind) *kind=type;
+    return [data copy];
+}
+static NSData *WUWxAMPhotoGIF(NSData *data) {
+    Class util=NSClassFromString(@"EmoticonUtil"), decoder=NSClassFromString(@"WxAMAnimatedImageDecoder");
+    NSString *convert=@"createGifFromWxAMData:", *frames=@"frameCountForImageData:";
+    if(!Has(util,convert,"@",@[@"@"]) || !Has(decoder,frames,"i",@[@"@"])) return nil;
+    int count=((int(*)(id,SEL,id))objc_msgSend)(decoder,NSSelectorFromString(frames),data);
+    if(count<1 || count>500) return nil;
+    id gif=((id(*)(id,SEL,id))objc_msgSend)(util,NSSelectorFromString(convert),data);
+    if(![WUEmoticonType(gif) isEqual:@"com.compuserve.gif"]) return nil;
+    CGImageSourceRef source=CGImageSourceCreateWithData((__bridge CFDataRef)gif,NULL);
+    BOOL valid=source && CGImageSourceGetCount(source)==(size_t)count;
+    if(source) CFRelease(source);
+    return valid?gif:nil;
+}
+void WUSaveSelectedEmoticonToPhotos(UIViewController *owner, id wrap, BOOL (^current)(void)) {
+    if(!NSThread.isMainThread || !owner || !wrap || !current || !current() || owner.presentedViewController) return;
+    @try {
+        id usage=[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSPhotoLibraryAddUsageDescription"];
+        if(![usage isKindOfClass:NSString.class] || ![usage length]) { ExportNotice(owner,@"宿主缺少添加照片权限声明，未保存。"); return; }
+        PHAuthorizationStatus status=[PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelAddOnly];
+        if(status==PHAuthorizationStatusNotDetermined) {
+            [PHPhotoLibrary requestAuthorizationForAccessLevel:PHAccessLevelAddOnly handler:^(PHAuthorizationStatus result) {
+                dispatch_async(dispatch_get_main_queue(),^{ if(current()) ExportNotice(owner,@"权限请求已结束，请再次选择保存到图库。"); });
+            }];
+            return;
+        }
+        if(status!=PHAuthorizationStatusAuthorized) { ExportNotice(owner,@"没有添加照片权限，未保存。"); return; }
+        NSString *kind=nil; NSData *raw=WUSelectedEmoticonData(wrap,&kind);
+        NSData *photo=[kind isEqual:@"wxam"]?WUWxAMPhotoGIF(raw):raw;
+        NSString *uti=WUEmoticonType(photo);
+        if(!uti || !current()) { if(current()) ExportNotice(owner,@"无法读取完整表情或转换动画，未保存；没有使用静图替代。"); return; }
+        __weak UIViewController *weak=owner;
+        __block BOOL added=NO;
+        [PHPhotoLibrary.sharedPhotoLibrary performChanges:^{
+            __block BOOL valid=NO;
+            if(NSThread.isMainThread) valid=current(); else dispatch_sync(dispatch_get_main_queue(),^{ valid=current(); });
+            if(!valid) return;
+            PHAssetResourceCreationOptions *options=[PHAssetResourceCreationOptions new]; options.uniformTypeIdentifier=uti;
+            options.originalFilename=[@"Emoticon." stringByAppendingString:[uti isEqual:@"com.compuserve.gif"]?@"gif":([uti isEqual:@"public.png"]?@"png":@"jpg")];
+            PHAssetCreationRequest *request=[PHAssetCreationRequest creationRequestForAsset];
+            if(request) { [request addResourceWithType:PHAssetResourceTypePhoto data:photo options:options]; added=YES; }
+        } completionHandler:^(BOOL success,NSError *error){ dispatch_async(dispatch_get_main_queue(),^{
+            if(current()) ExportNotice(weak,added && success && !error?([kind isEqual:@"wxam"]?@"已保存微信转换的 GIF 动画；原 WxAM 文件可另存到文件。":@"Photos 已确认保存原表情。"): @"Photos 未确认保存成功，请检查图库。");
+        }); }];
+    } @catch(__unused NSException *e) { ExportNotice(owner,@"准备表情失败，未保存。"); }
+}
 void WUExportEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(void)) {
     if(!NSThread.isMainThread || !owner || !wrap || !current || !current() || owner.presentedViewController) return;
     @try {
-        NSString *md5=Text(wrap,@"m_nsEmoticonMD5");
-        if(!md5.length) md5=Text(Object(wrap,@"m_extendInfoWithMsgType"),@"m_nsEmoticonMD5");
-        Class util=NSClassFromString(@"EmoticonUtil"); NSString *selector=@"pathOfEmoticonForMd5:needUpdateTime:ignoreWxAM:";
-        if(!WUValidMD5(md5) || !Has(util,selector,"@",@[@"@",@"B",@"B"])) { ExportNotice(owner,@"原表情路径不可核验，未导出。"); return; }
-        id path=((id(*)(id,SEL,id,BOOL,BOOL))objc_msgSend)(util,NSSelectorFromString(selector),md5,NO,NO);
-        if(![path isKindOfClass:NSString.class] || ![path length]) { ExportNotice(owner,@"原表情尚未缓存，请先在微信加载后重新选择；未使用缩略图。"); return; }
-        __weak UIViewController *weakOwner=owner;
-        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
-            NSData *data=WUEmoticonRead(path);
-            unsigned char digest[CC_MD5_DIGEST_LENGTH];
-            if(data) {
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
-                CC_MD5(data.bytes,(CC_LONG)data.length,digest);
-#pragma clang diagnostic pop
-            }
-            NSMutableString *hex=[NSMutableString string]; if(data) for(unsigned i=0;i<CC_MD5_DIGEST_LENGTH;i++) [hex appendFormat:@"%02x",digest[i]];
-            NSString *type=[hex isEqualToString:md5.lowercaseString]?WUEmoticonType(data):nil;
-            dispatch_async(dispatch_get_main_queue(),^{
-                UIViewController *live=weakOwner; if(!live || !current() || live.presentedViewController) return;
-                if(!type) { ExportNotice(live,@"原文件未就绪、校验不符或格式不受支持；未导出缩略图。"); return; }
-                NSString *ext=[type isEqual:@"com.compuserve.gif"]?@"gif":([type isEqual:@"public.png"]?@"png":@"jpg");
-                NSURL *dir=[[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES] URLByAppendingPathComponent:NSUUID.UUID.UUIDString isDirectory:YES];
-                NSError *error=nil;
-                if(![NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:NO attributes:@{NSFileProtectionKey:NSFileProtectionComplete} error:&error]) { ExportNotice(live,@"无法创建临时导出文件，未保存。"); return; }
-                WUEmoticonExport *lease=[WUEmoticonExport new]; lease.directory=dir;
-                NSURL *file=[dir URLByAppendingPathComponent:[@"emoticon" stringByAppendingPathExtension:ext]];
-                if(![data writeToURL:file options:NSDataWritingWithoutOverwriting error:&error] || !current()) { [lease clean]; ExportNotice(live,@"无法准备原文件，未保存。"); return; }
-                UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc] initForExportingURLs:@[file] asCopy:YES];
-                picker.delegate=lease; objc_setAssociatedObject(picker,&WUEmoticonExportKey,lease,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                [live presentViewController:picker animated:YES completion:nil];
-            });
-        });
+        NSString *type=nil; NSData *data=WUSelectedEmoticonData(wrap,&type);
+        if(!data || !current()) { if(current()) ExportNotice(owner,@"无法读取微信已缓存的完整表情，未导出缩略图。"); return; }
+        NSString *ext=[type isEqual:@"wxam"]?@"wxam":([type isEqual:@"com.compuserve.gif"]?@"gif":([type isEqual:@"public.png"]?@"png":@"jpg"));
+        NSURL *dir=[[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES] URLByAppendingPathComponent:NSUUID.UUID.UUIDString isDirectory:YES];
+        NSError *error=nil;
+        if(![NSFileManager.defaultManager createDirectoryAtURL:dir withIntermediateDirectories:NO attributes:@{NSFileProtectionKey:NSFileProtectionComplete} error:&error]) { ExportNotice(owner,@"无法创建临时导出文件，未保存。"); return; }
+        WUEmoticonExport *lease=[WUEmoticonExport new]; lease.directory=dir;
+        NSURL *file=[dir URLByAppendingPathComponent:[@"emoticon" stringByAppendingPathExtension:ext]];
+        if(![data writeToURL:file options:NSDataWritingWithoutOverwriting error:&error] || !current()) { [lease clean]; return; }
+        UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc] initForExportingURLs:@[file] asCopy:YES];
+        picker.delegate=lease; objc_setAssociatedObject(picker,&WUEmoticonExportKey,lease,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [owner presentViewController:picker animated:YES completion:nil];
     } @catch(__unused NSException *e) { ExportNotice(owner,@"原表情导出准备失败，未保存。"); }
 }
 @interface WUImageEntry : NSObject { _Atomic(BOOL) _cancelled; }

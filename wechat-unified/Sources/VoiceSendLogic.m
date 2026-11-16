@@ -19,12 +19,15 @@ BOOL WUVoiceExactSignature(id o, NSString *name, const char *result, NSArray<NSS
             if(wrap && ext && [o isKindOfClass:wrap] && [voiceSelectors containsObject:name]) m=class_getInstanceMethod(ext,s);
         }
         if(!m || method_getNumberOfArguments(m)!=args.count+2) return NO;
-        NSMethodSignature *sig=[o methodSignatureForSelector:s];
-        if(!sig || sig.numberOfArguments!=args.count+2 || strcmp(sig.methodReturnType,result)) return NO;
+        // Direct dispatch uses the concrete Method ABI, not forwarding signatures.
+        // Forwarded dynamic voice properties still require the live signature.
+        BOOL forwarded=class_getInstanceMethod(object_getClass(o),s)==NULL;
+        NSMethodSignature *sig=forwarded?[o methodSignatureForSelector:s]:nil;
+        if(forwarded && (!sig || sig.numberOfArguments!=args.count+2 || strcmp(sig.methodReturnType,result))) return NO;
         char *r=method_copyReturnType(m); BOOL ok=r && !strcmp(r,result); free(r);
         for(NSUInteger i=0;i<args.count+2;i++) {
             const char *expected=i==0?"@":(i==1?":":args[i-2].UTF8String); char *t=method_copyArgumentType(m,(unsigned)i);
-            const char *actual=[sig getArgumentTypeAtIndex:i];
+            const char *actual=forwarded?[sig getArgumentTypeAtIndex:i]:expected;
             ok=ok && t && actual && !strcmp(t,expected) && !strcmp(actual,expected); free(t);
         }
         return ok;
@@ -55,11 +58,7 @@ static NSString *VoiceServiceInvoke(id receiver, NSString *className, NSString *
     BOOL invoked=NO;
     @try {
         SEL sel=NSSelectorFromString(selector);
-        NSInvocation *inv=[NSInvocation invocationWithMethodSignature:[receiver methodSignatureForSelector:sel]];
-        inv.target=receiver; inv.selector=sel;
-        __unsafe_unretained id a=first,b=second;
-        [inv setArgument:&a atIndex:2]; [inv setArgument:&b atIndex:3];
-        invoked=YES; [inv invoke];
+        invoked=YES; ((void(*)(id,SEL,id,id))objc_msgSend)(receiver,sel,first,second);
         return @"已请求（非送达）";
     } @catch(NSException *e) { return invoked?@"未知：调用异常，请核对宿主，勿盲重发":@"失败：未提交"; }
 }

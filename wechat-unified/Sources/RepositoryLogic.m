@@ -85,17 +85,19 @@ static BOOL RepoMethod(id object, NSString *selector, const char *result, NSArra
         if(!object) return NO;
         SEL sel=NSSelectorFromString(selector);
         Method method=class_getInstanceMethod(object_getClass(object),sel);
-        if(!method && hostName) {
+        BOOL forwarded=method==NULL;
+        if(forwarded && hostName) {
             BOOL proxy=NO;
             for(Class c=object_getClass(object); c; c=class_getSuperclass(c)) if(c==objc_getClass("NSProxy")) { proxy=YES; break; }
             if(proxy) method=class_getInstanceMethod(NSClassFromString(hostName),sel);
         }
-        NSMethodSignature *sig=[object methodSignatureForSelector:sel];
-        if(!method || !sig || method_getNumberOfArguments(method)!=args.count+2 || sig.numberOfArguments!=args.count+2) return NO;
-        char *r=method_copyReturnType(method); BOOL ok=r && !strcmp(r,result) && !strcmp(sig.methodReturnType,result); free(r);
+        if(!method || method_getNumberOfArguments(method)!=args.count+2) return NO;
+        NSMethodSignature *sig=forwarded?[object methodSignatureForSelector:sel]:nil;
+        if(forwarded && (!sig || sig.numberOfArguments!=args.count+2 || strcmp(sig.methodReturnType,result))) return NO;
+        char *r=method_copyReturnType(method); BOOL ok=r && !strcmp(r,result); free(r);
         for(NSUInteger i=0;i<args.count+2;i++) {
             const char *expected=i==0?"@":i==1?":":args[i-2].UTF8String;
-            char *type=method_copyArgumentType(method,(unsigned)i); const char *actual=[sig getArgumentTypeAtIndex:i];
+            char *type=method_copyArgumentType(method,(unsigned)i); const char *actual=forwarded?[sig getArgumentTypeAtIndex:i]:expected;
             ok=ok && type && actual && !strcmp(type,expected) && !strcmp(actual,expected); free(type);
         }
         return ok;

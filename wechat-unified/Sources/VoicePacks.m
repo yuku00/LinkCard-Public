@@ -6,11 +6,50 @@
 #import <AVFoundation/AVFoundation.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "DraftMediaLogic.h"
+#import "ThemeArchive.h"
 #include <stdlib.h>
 #include <string.h>
 @implementation WUVoicePackBinding
 @end
 static dispatch_queue_t Queue(void) { static dispatch_queue_t q; static dispatch_once_t once; dispatch_once(&once,^{ q=dispatch_queue_create("WU.voice-packs",DISPATCH_QUEUE_SERIAL); }); return q; }
+static NSString *ImportZIP(WUVoicePackStore *store, NSURL *url, NSString *version, BOOL (^current)(void), NSUInteger *imported) {
+    *imported=0;
+    NSData *data=WUDraftMediaReadSource(url,10*1024*1024); NSError *error=nil;
+    if(!data) return @"ZIP不可读、发生变化或超过10MiB；旧语音保留";
+    NSDictionary<NSString *,NSData *> *files=WUReadThemeZIP(data,&error);
+    if(!files) return error.localizedDescription?:@"ZIP校验失败；旧语音保留";
+    NSSet *extensions=[NSSet setWithArray:@[@"wav",@"caf",@"m4a",@"mp4",@"amr",@"silk",@"wuvoice"]];
+    NSMutableArray<NSString *> *candidates=[NSMutableArray array];
+    for(NSString *path in [[files allKeys] sortedArrayUsingSelector:@selector(compare:)]) {
+        NSArray *parts=path.pathComponents; BOOL hidden=NO;
+        for(NSString *part in parts) if([part hasPrefix:@"."] || [part isEqual:@"__MACOSX"]) { hidden=YES; break; }
+        if(!hidden && [extensions containsObject:path.pathExtension.lowercaseString]) [candidates addObject:path];
+    }
+    if(!candidates.count) return @"ZIP没有可识别音频；支持WAV、CAF、M4A/MP4、AMR、SILK及.wuvoice，不支持未知插件专有格式";
+    NSArray *old=[store load:&error];
+    if(!old) return error.localizedDescription?:@"语音索引不可读；旧语音保留";
+    if(candidates.count>32-old.count) return @"ZIP内音频超过剩余条目容量（共32条）；未导入";
+    NSURL *root=[[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES].URLByResolvingSymlinksInPath URLByAppendingPathComponent:[@"WUVoiceZIP-" stringByAppendingString:NSUUID.UUID.UUIDString] isDirectory:YES];
+    NSFileManager *fm=NSFileManager.defaultManager;
+    if(!current() || ![fm createDirectoryAtURL:root withIntermediateDirectories:NO attributes:@{NSFileProtectionKey:NSFileProtectionComplete} error:&error]) return error.localizedDescription?:@"临时目录不可用；未导入";
+    NSString *failure=nil;
+    @try {
+        for(NSString *path in candidates) {
+            if(!current()) { failure=@"账号或页面已失效"; break; }
+            NSString *name=path.lastPathComponent.stringByDeletingPathExtension;
+            if(name.length>80) name=[name substringToIndex:80];
+            NSURL *file=[root URLByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingPathExtension:path.pathExtension.lowercaseString]];
+            NSData *bytes=files[path]; error=nil;
+            BOOL written=[bytes writeToURL:file options:NSDataWritingWithoutOverwriting error:&error];
+            BOOL ok=written && [WUDraftMediaReadSource(file,10*1024*1024) isEqual:bytes] && [store importFile:file name:name version:version current:current error:&error];
+            if(written) [fm removeItemAtURL:file error:NULL];
+            if(!ok) { failure=error.localizedDescription?:@"音频损坏、格式不支持或写入失败"; break; }
+            (*imported)++;
+        }
+    } @finally { [fm removeItemAtURL:root error:NULL]; }
+    if(failure) return [NSString stringWithFormat:@"已导入%lu/%lu条，之后停止：%@。已导入及旧语音均保留；不会自动重试。",(unsigned long)*imported,(unsigned long)candidates.count,failure];
+    return [NSString stringWithFormat:@"已导入%lu条音频；未识别文件被忽略，逐条本机转码校验。发送仍须逐条确认。",(unsigned long)*imported];
+}
 static NSData *Wave(NSData *data) {
     WUOfflinePCM pcm={0}; if(WUOfflineDecode(data.bytes,data.length,NULL,NULL,&pcm)) return nil;
     uint32_t bytes=(uint32_t)pcm.frames*2, total=36+bytes, rate=pcm.rate, speed=rate*2, fmtSize=16;
@@ -91,11 +130,15 @@ static NSData *Wave(NSData *data) {
     NSURL *url=urls.firstObject; BOOL scoped=[url startAccessingSecurityScopedResource]; NSUInteger gen=self.binding.generation;
     NSString *name=url.lastPathComponent.stringByDeletingPathExtension; if(name.length>80) name=[name substringToIndex:80];
     dispatch_async(Queue(),^{
-        NSError *error=nil; BOOL ok=NO;
-        @try { ok=[self.store importFile:url name:name version:self.binding.version current:^BOOL{ return !self.cancellation.cancelled && WUContextGenerationSnapshot()==gen; } error:&error]; }
+        NSError *error=nil; BOOL ok=NO; NSUInteger imported=0; NSString *zipResult=nil;
+        @try {
+            BOOL (^valid)(void)=^BOOL{ return !self.cancellation.cancelled && WUContextGenerationSnapshot()==gen; };
+            if([url.pathExtension.lowercaseString isEqual:@"zip"]) zipResult=ImportZIP(self.store,url,self.binding.version,valid,&imported);
+            else ok=[self.store importFile:url name:name version:self.binding.version current:valid error:&error];
+        }
         @finally { if(scoped) [url stopAccessingSecurityScopedResource]; }
         dispatch_async(dispatch_get_main_queue(),^{ self.busy=NO; if(![self current]) return;
-            void (^finish)(void)=^{ if(![self current]) return; if(ok) [self reload]; else [self notice:error.localizedDescription?:@"导入失败，旧包保留"]; };
+            void (^finish)(void)=^{ if(![self current]) return; if(zipResult) { if(imported) [self reload]; [self notice:zipResult]; } else if(ok) [self reload]; else [self notice:error.localizedDescription?:@"导入失败，旧包保留"]; };
             if(self.presentedViewController==controller) [self dismissViewControllerAnimated:YES completion:finish]; else finish();
         });
     });

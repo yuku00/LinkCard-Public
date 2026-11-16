@@ -99,11 +99,25 @@ static void Notice(UIViewController *v, NSString *text) {
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"微信整合" message:text preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]]; [v presentViewController:a animated:YES completion:nil];
 }
-static IMP searchRelayAppearOriginal;
+static IMP searchRelayAppearOriginal, searchRelayDisappearOriginal;
 static char searchRelayKey;
+static void SearchRelayDisappeared(UIViewController *relay, SEL cmd, BOOL animated) {
+    ((void(*)(id,SEL,BOOL))searchRelayDisappearOriginal)(relay,cmd,animated);
+    NSMutableDictionary *state=objc_getAssociatedObject(relay,&searchRelayKey);
+    if(![state[@"started"] boolValue]) return;
+    UINavigationController *nav=relay.navigationController; UIViewController *owner=state[@"owner"];
+    dispatch_async(dispatch_get_main_queue(),^{
+        NSArray *stack=nav.viewControllers; NSUInteger index=[stack indexOfObjectIdenticalTo:relay];
+        if(objc_getAssociatedObject(relay,&searchRelayKey)==state && index!=NSNotFound && index>0 && index+1<stack.count && stack[index-1]==owner) {
+            NSMutableArray *withoutRelay=[stack mutableCopy]; [withoutRelay removeObjectAtIndex:index];
+            [nav setViewControllers:withoutRelay animated:NO];
+            objc_setAssociatedObject(relay,&searchRelayKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+    });
+}
 static BOOL ChatSearchReady(void) {
     Class cls=NSClassFromString(@"AddContactToChatRoomViewController");
-    return searchRelayAppearOriginal && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"setM_contact:")),"v",@[@"@"]) && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"initMsgSearchHelper:")),"v",@[@"i"]) && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"onEditAndSearch")),"v",@[]);
+    return searchRelayAppearOriginal && searchRelayDisappearOriginal && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"setM_contact:")),"v",@[@"@"]) && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"initMsgSearchHelper:")),"v",@[@"i"]) && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"onEditAndSearch")),"v",@[]);
 }
 static void SearchRelayAppeared(UIViewController *relay, SEL cmd, BOOL animated) {
     ((void(*)(id,SEL,BOOL))searchRelayAppearOriginal)(relay,cmd,animated);
@@ -283,7 +297,7 @@ static NSHashTable *chatActions;
     if(self.tools) [items removeObject:self.tools];
     if(self.search) [items removeObject:self.search]; if(self.recall) [items removeObject:self.recall]; if(self.stats) [items removeObject:self.stats];
     // Statistics is available only through the account-selected tools menu.
-    if(WUEnabled(@"chatSearch") && ChatSearchReady()) { if(!self.search) self.search=[[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"magnifyingglass"] style:UIBarButtonItemStylePlain target:self action:@selector(openSearch)]; self.search.accessibilityLabel=@"搜索当前会话聊天记录"; }
+    if(WUEnabled(@"chatSearch") && ChatSearchReady()) { if(!self.search) self.search=[[UIBarButtonItem alloc] initWithImage:[[UIImage systemImageNamed:@"magnifyingglass"] imageWithConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:17 weight:UIImageSymbolWeightRegular]] style:UIBarButtonItemStylePlain target:self action:@selector(openSearch)]; self.search.accessibilityLabel=@"搜索当前会话聊天记录"; }
     if(WUEnabled(@"multiRevoke") && Has(v,@"getSelectedMsgs","@",@[]) && RevokeSelector(Service(@"CMessageMgr"))) { if(!self.recall) self.recall=[[UIBarButtonItem alloc] initWithTitle:@"撤回所选" style:UIBarButtonItemStylePlain target:self action:@selector(recallSelected)]; [items addObject:self.recall]; }
     NSString *account=Account(), *session=Session(v); NSUInteger gen=generation;
     self.inputAccount=account; self.inputSession=session; self.inputGeneration=gen;
@@ -685,6 +699,7 @@ void WUInstallMessages(void) {
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){ CancelPending(); }];
     });
     WUHook(@"AddContactToChatRoomViewController",@"viewDidAppear:",NO,"v",@[@"B"],(IMP)SearchRelayAppeared,&searchRelayAppearOriginal);
+    WUHook(@"AddContactToChatRoomViewController",@"viewDidDisappear:",NO,"v",@[@"B"],(IMP)SearchRelayDisappeared,&searchRelayDisappearOriginal);
     WUHook(@"BaseMsgContentViewController",@"viewDidLayoutSubviews",NO,"v",@[],(IMP)ChatLayout,&chatLayoutOriginal);
     WUHook(@"BaseMsgContentViewController",@"viewDidAppear:",NO,"v",@[@"B"],(IMP)ChatAppeared,&chatAppearOriginal);
     WUHook(@"BaseMsgContentViewController",@"viewDidDisappear:",NO,"v",@[@"B"],(IMP)ChatDisappeared,&chatDisappearOriginal);
@@ -794,7 +809,7 @@ static void OpenRepository(UIViewController *owner) {
         if([part[@"kind"] isEqual:@"text"]) {
             id mgr=Service(@"CMessageMgr"), sessionManager=Service(@"MMNewSessionMgr");
             if(!current()) return @"失败：上下文失效，未提交";
-            id wrap=WUCreateMessage(NSClassFromString(@"CMessageWrap"),1,account);
+            id wrap=WUCreateVoiceMessage(NSClassFromString(@"CMessageWrap"),1,account);
             return WURepositorySendText(mgr,sessionManager,wrap,account,target,part[@"text"],current);
         }
         id source=RepositorySource(part[@"identity"],account);
