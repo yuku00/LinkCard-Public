@@ -28,7 +28,10 @@ def main():
     assert 'if(WUVoiceOverlayReady() && installed' in voice
     assert 'if(!WUVoiceOverlayReady() || !installed) return NO;' in voice
     assert '原显示接口不可用' not in voice and '原气泡布局未读取时长' not in voice
-    assert '单条不满足条件则保持微信原样' in settings
+    # The disclosure now uses per-option descriptions; keep the fallback promise
+    # on the master switch rather than requiring the retired footer sentence.
+    details=settings.split('NSDictionary *voiceDetails=@{',1)[1].split('};',1)[0]
+    assert '@"voiceProgress":@"语音播放样式总开关；接口或布局不兼容时保持微信原样。"' in details
     if not shutil.which('xcrun'):
         print('NOT RUN: Apple SDK/Foundation hostmock and iOS UIKit syntax checks')
         if os.environ.get('WU_REQUIRE_APPLE_TESTS')=='1': raise SystemExit(2)
