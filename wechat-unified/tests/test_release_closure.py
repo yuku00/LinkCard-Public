@@ -52,7 +52,10 @@ class ReleaseClosure(unittest.TestCase):
                     'tests/link_flow_ios.m', 'tools/test_link_flow_ios.py',
                     'tests/article_image_ui.m', 'tools/test_article_image_ios.py'}
         self.assertFalse(required - allowed, sorted(required - allowed))
-        runners = (ROOT / 'tools/build.sh').read_text() + (ROOT / 'workflow/wechat-unified.yml').read_text()
+        workflow = ROOT / 'workflow/wechat-unified.yml'
+        if not workflow.is_file():
+            workflow = ROOT.parent / '.github/workflows/wechat-unified.yml'
+        runners = (ROOT / 'tools/build.sh').read_text() + workflow.read_text()
         for runner in ('tools/test_neo_cards_ios.py', 'tests/run_voice_playback_proxy.py',
                        'tests/test_revoke_notice_timestamp.py', 'tests/test_config_recovery_contract.py',
                        'tools/test_link_flow_ios.py', 'tools/test_article_image_ios.py'):
