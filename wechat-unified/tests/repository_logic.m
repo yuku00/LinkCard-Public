@@ -18,6 +18,48 @@ static NSUInteger checks=0;
 - (int)wrong:(id)a target:(id)b { self.calls++; return 1; }
 - (void)width:(unsigned int)n target:(id)b { self.calls++; }
 @end
+@interface RepoTextWrap : NSObject
+@property(nonatomic) unsigned int m_uiMessageType, m_uiStatus, m_uiCreateTime;
+@property(nonatomic,copy) NSString *m_nsFromUsr, *m_nsToUsr, *m_nsContent;
+@end
+@implementation RepoTextWrap @end
+@interface CMessageMgr : NSObject
+@property(nonatomic) NSUInteger calls;
+@property(nonatomic) BOOL raises;
+@property(nonatomic,strong) id wrap;
+@property(nonatomic,copy) NSString *target;
+- (void)AddMsg:(id)target MsgWrap:(id)wrap;
+@end
+@implementation CMessageMgr
+- (void)AddMsg:(id)target MsgWrap:(id)wrap { self.calls++; self.target=target; self.wrap=wrap; if(self.raises) [NSException raise:@"fixture" format:@"after AddMsg"]; }
+@end
+@interface MMNewSessionMgr : NSObject
+- (unsigned int)GenSendMsgTime;
+@end
+@implementation MMNewSessionMgr
+- (unsigned int)GenSendMsgTime { return 1234; }
+@end
+@interface RepoContact : NSObject
+@property(nonatomic,copy) NSString *m_nsUsrName;
+@end
+@implementation RepoContact @end
+@interface CContactMgr : NSObject
+@property(nonatomic,strong) RepoContact *contact;
+- (id)getContactByName:(id)name;
+@end
+@implementation CContactMgr
+- (id)getContactByName:(id)name { (void)name; return self.contact; }
+@end
+@interface RepoProxy : NSProxy
+@property(nonatomic,strong) id target;
+@property(nonatomic) BOOL bad;
++ (instancetype)proxy:(id)target bad:(BOOL)bad;
+@end
+@implementation RepoProxy
++ (instancetype)proxy:(id)target bad:(BOOL)bad { RepoProxy *p=[RepoProxy alloc]; p.target=target; p.bad=bad; return p; }
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)s { if(self.bad && s==@selector(AddMsg:MsgWrap:)) return [NSMethodSignature signatureWithObjCTypes:"B@:@@"]; return [self.target methodSignatureForSelector:s]; }
+- (void)forwardInvocation:(NSInvocation *)inv { [inv invokeWithTarget:self.target]; }
+@end
 int main(void) { @autoreleasepool {
     NSURL *dir=[NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString] isDirectory:YES]; NSError *e=nil;
     NSDictionary *text=@{@"kind":@"text",@"text":@"独立文本\n第二行"};
@@ -63,6 +105,26 @@ int main(void) { @autoreleasepool {
     sender.raises=YES; CHECK([WURepositoryInvoke(sender,@"sendMsg:toContactUsrName:",@"text",@"target") hasPrefix:@"未知"]); CHECK(sender.calls==2);
     CHECK([WURepositoryInvoke(sender,@"ForwardMsg:ToContact:",ref,@"contact") hasPrefix:@"已请求"]); CHECK(sender.calls==3 && sender.first==ref);
     CHECK([WURepositoryInvoke(sender,@"ForwardMsg:ToContact:",nil,@"contact") hasPrefix:@"失败"]); CHECK(sender.calls==3);
+    CContactMgr *contacts=[CContactMgr new]; contacts.contact=[RepoContact new]; contacts.contact.m_nsUsrName=@"target";
+    CHECK(WURepositoryContact(contacts,@"target")==contacts.contact);
+    CHECK(WURepositoryContact([RepoProxy proxy:contacts bad:NO],@"target")==contacts.contact);
+    CHECK(!WURepositoryContact([RepoProxy proxy:contacts bad:NO],@"other"));
+    CMessageMgr *manager=[CMessageMgr new]; MMNewSessionMgr *clock=[MMNewSessionMgr new];
+    RepoTextWrap *message=[RepoTextWrap new]; message.m_uiMessageType=1;
+    CHECK([WURepositorySendText(manager,clock,message,@"self",@"target",@"hello",^BOOL{ return YES; }) hasPrefix:@"已请求"]);
+    CHECK(manager.calls==1 && manager.wrap==message && [manager.target isEqual:@"target"]);
+    CHECK([message.m_nsFromUsr isEqual:@"self"] && [message.m_nsToUsr isEqual:@"target"] && [message.m_nsContent isEqual:@"hello"] && message.m_uiStatus==1 && message.m_uiCreateTime==1234);
+    manager=[CMessageMgr new]; message=[RepoTextWrap new]; message.m_uiMessageType=1;
+    RepoProxy *managerProxy=[RepoProxy proxy:manager bad:NO], *clockProxy=[RepoProxy proxy:clock bad:NO];
+    CHECK([WURepositorySendText(managerProxy,clockProxy,message,@"self",@"target",@"hello",^BOOL{ return YES; }) hasPrefix:@"已请求"] && manager.calls==1);
+    manager=[CMessageMgr new]; message=[RepoTextWrap new]; message.m_uiMessageType=1;
+    CHECK([WURepositorySendText([RepoProxy proxy:manager bad:YES],clock,message,@"self",@"target",@"hello",^BOOL{ return YES; }) hasPrefix:@"失败"] && manager.calls==0);
+    __block NSUInteger contextChecks=0;
+    CHECK([WURepositorySendText(manager,clock,message,@"self",@"target",@"hello",^BOOL{ return ++contextChecks<2; }) hasPrefix:@"失败"] && manager.calls==0);
+    message.m_uiMessageType=34;
+    CHECK([WURepositorySendText(manager,clock,message,@"self",@"target",@"hello",^BOOL{ return YES; }) hasPrefix:@"失败"] && manager.calls==0);
+    message.m_uiMessageType=1; manager.raises=YES;
+    CHECK([WURepositorySendText(manager,clock,message,@"self",@"target",@"hello",^BOOL{ return YES; }) hasPrefix:@"未知"] && manager.calls==1);
     CHECK([NSFileManager.defaultManager removeItemAtURL:dir error:&e]);
     printf("Repository production logic and native host mocks: %lu assertions passed\n",(unsigned long)checks);
 } return 0; }

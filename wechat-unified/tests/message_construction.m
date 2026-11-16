@@ -116,6 +116,7 @@ static Class BadOneShape(const char *encoding) {
 - (void)ResendVoiceMsg:(id)a MsgWrap:(id)b;
 @end
 @implementation NoSendHost
+- (id)m_upload { return self; }
 - (void)AddLocalMsg:(id)a MsgWrap:(id)b { self.inserts++; }
 - (void)ResendVoiceMsg:(id)a MsgWrap:(id)b { self.sends++; }
 @end
@@ -146,8 +147,9 @@ int main(void) { @autoreleasepool {
     const char *bad[]={"I@:I@","v@:I@","@@:I","@@:I@@","@@:II","@@:@@","@@:f@","@@:d@","@@:B@","@@:^i@","@@:s@","@@:C@","@@:I#","#@:I@"};
     for(unsigned i=0;i<sizeof(bad)/sizeof(*bad);i++) { Class cls=BadShape(bad[i]); CHECK(!WUMessageCanConstruct(cls)); Rejected(cls,34); }
     const char *mismatches[]={"@@:q@","I@:I@","@@:II","@@:I","@@:I@@"};
-    for(unsigned i=0;i<sizeof(mismatches)/sizeof(*mismatches);i++) { spoof=mismatches[i]; CHECK(!WUMessageCanConstruct(ClassMismatch.class)); Rejected(ClassMismatch.class,47); Rejected(InstanceMismatch.class,34); }
-    Rejected(SignatureThrows.class,34); Rejected(Nil,34); Rejected(NSObject.class,34);
+    // Direct init dispatch is governed by its Method encoding, not the forwarding signature override.
+    for(unsigned i=0;i<sizeof(mismatches)/sizeof(*mismatches);i++) { spoof=mismatches[i]; CHECK(WUMessageCanConstruct(ClassMismatch.class)); Accepted(ClassMismatch.class,47); Accepted(InstanceMismatch.class,34); }
+    Accepted(SignatureThrows.class,34); Rejected(Nil,34); Rejected(NSObject.class,34);
     @autoreleasepool { CHECK(!WUCreateMessage(ConstructI.class,34,@"")); CHECK(!WUCreateMessage(ConstructI.class,34,nil)); } CHECK(live==0);
     for(initMode=1;initMode<=3;initMode++) {
         NSUInteger before=calls;
@@ -180,8 +182,8 @@ int main(void) { @autoreleasepool {
         CHECK(live==0);
     }
     NSUInteger before=calls;
-    @autoreleasepool { CHECK(!WUCreateVoiceMessage(OneMismatch.class,34,@"account")); CHECK(!WUCreateVoiceMessage(Onei.class,(uint64_t)INT_MAX+1,@"account")); CHECK(!WUCreateVoiceMessage(OneI.class,34,@"")); }
-    CHECK(calls==before && live==0);
+    @autoreleasepool { CHECK(WUCreateVoiceMessage(OneMismatch.class,34,@"account")); CHECK(!WUCreateVoiceMessage(Onei.class,(uint64_t)INT_MAX+1,@"account")); CHECK(!WUCreateVoiceMessage(OneI.class,34,@"")); }
+    CHECK(calls==before+1 && live==0);
     bothMode=1; before=calls;
     @autoreleasepool { CHECK(WUCreateVoiceMessage(BothInit.class,34,@"account")); CHECK(calls==before+2 && seen==34); } CHECK(live==0);
     bothMode=2; before=calls;

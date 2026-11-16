@@ -1,9 +1,10 @@
 #import <Foundation/Foundation.h>
+#import <objc/runtime.h>
 #import "VoiceSendLogic.h"
 static NSUInteger checks;
 #define CHECK(...) do { checks++; if(!(__VA_ARGS__)) { NSLog(@"FAIL line %d",__LINE__); abort(); } } while(0)
 @interface VoiceWrap : NSObject
-@property(nonatomic) unsigned int m_uiMessageType, m_uiVoiceFormat, m_uiVoiceTime, m_uiVoiceEndFlag, m_uiCreateTime;
+@property(nonatomic) unsigned int m_uiMessageType, m_uiVoiceFormat, m_uiVoiceTime, m_uiVoiceEndFlag, m_uiCreateTime, m_uiStatus, m_uiDownloadStatus;
 @property(nonatomic,copy) NSData *m_dtVoice;
 @property(nonatomic,copy) NSString *m_nsContent, *m_nsFromUsr, *m_nsToUsr;
 - (instancetype)initWithMsgType:(unsigned int)n nsFromUsr:(NSString *)a;
@@ -13,14 +14,25 @@ static NSUInteger checks;
 @end
 @interface CExtendInfoOfVoiceMsg : NSObject
 @property(nonatomic,weak) id m_refMessageWrap;
+@property(nonatomic,strong) NSData *m_dtVoice;
+@property(nonatomic) unsigned int m_uiVoiceFormat, m_uiVoiceTime, m_uiVoiceEndFlag;
 @end
 @implementation CExtendInfoOfVoiceMsg @end
+// Like the 8.0.79 class dump, voice properties live on the extension, not the wrap.
+@interface CMessageWrap : NSObject
+@property(nonatomic,strong) CExtendInfoOfVoiceMsg *extension;
+@end
+@implementation CMessageWrap
+- (instancetype)init { if((self=[super init])) _extension=[CExtendInfoOfVoiceMsg new]; return self; }
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)s { return [super methodSignatureForSelector:s] ?: [self.extension methodSignatureForSelector:s]; }
+- (void)forwardInvocation:(NSInvocation *)inv { [inv invokeWithTarget:self.extension]; }
+@end
 @interface ExtendedVoiceWrap : VoiceWrap
 @property(nonatomic,strong) CExtendInfoOfVoiceMsg *m_extendInfoWithMsgType;
 @end
 @implementation ExtendedVoiceWrap @end
 @interface OneVoiceWrap : NSObject
-@property(nonatomic) unsigned int m_uiMessageType, m_uiVoiceFormat, m_uiVoiceTime, m_uiVoiceEndFlag, m_uiCreateTime;
+@property(nonatomic) unsigned int m_uiMessageType, m_uiVoiceFormat, m_uiVoiceTime, m_uiVoiceEndFlag, m_uiCreateTime, m_uiStatus, m_uiDownloadStatus;
 @property(nonatomic,copy) NSData *m_dtVoice;
 @property(nonatomic,copy) NSString *m_nsContent, *m_nsFromUsr, *m_nsToUsr;
 - (instancetype)initWithMsgType:(long long)n;
@@ -45,6 +57,7 @@ static NSUInteger checks;
 - (void)ResendVoiceMsg:(id)target MsgWrap:(id)wrap;
 @end
 @implementation VoiceHost
+- (id)m_upload { return self; }
 - (void)AddLocalMsg:(id)target MsgWrap:(id)wrap { self.inserts++; self.last=wrap; self.target=target; if(self.insertRaises) [NSException raise:@"fixture" format:@"after insertion"]; }
 - (void)ResendVoiceMsg:(id)target MsgWrap:(id)wrap { self.sends++; CHECK(self.last==wrap); CHECK([self.target isEqual:target]); if(self.sendRaises) [NSException raise:@"fixture" format:@"after request"]; }
 @end
@@ -57,13 +70,19 @@ static NSUInteger checks;
 @end
 @interface AudioSender : VoiceHost
 @property(nonatomic,strong) VoiceHost *manager;
+@property(nonatomic,strong) id uploadTarget;
 @end
 @implementation AudioSender
+- (id)m_upload { return self.uploadTarget ?: self; }
 - (void)ResendVoiceMsg:(id)target MsgWrap:(id)wrap {
     self.sends++; CHECK(self.manager.last==wrap); CHECK([self.manager.target isEqual:target]);
     if(self.sendRaises) [NSException raise:@"fixture" format:@"after audio request"];
 }
 @end
+@interface BaseUploadVoiceMgr : AudioSender @end
+@implementation BaseUploadVoiceMgr @end
+@interface MMNewUploadVoiceMgr : AudioSender @end
+@implementation MMNewUploadVoiceMgr @end
 @interface VoiceProxy : NSProxy
 @property(nonatomic,strong) VoiceHost *target;
 @property(nonatomic) BOOL badSignature;
@@ -79,9 +98,8 @@ static NSUInteger checks;
 @end
 @interface WrongWidth : VoiceWrap
 @end
-@implementation WrongWidth
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)s { if(s==@selector(setM_uiVoiceTime:)) return [NSMethodSignature signatureWithObjCTypes:"v@:Q"]; return [super methodSignatureForSelector:s]; }
-@end
+@implementation WrongWidth @end
+static void WrongWidthSetter(id object, SEL selector, unsigned long long value) { (void)object; (void)selector; (void)value; }
 @interface BooleanSender : NSObject
 - (BOOL)ResendVoiceMsg:(id)a MsgWrap:(id)b;
 @end
@@ -103,6 +121,10 @@ int main(void) { @autoreleasepool {
     CHECK(!WUVoiceMeasuredMS([silk subdataWithRange:NSMakeRange(0,13)]));
     NSMutableData *longVoice=[NSMutableData dataWithBytes:"#!AMR\n" length:6]; for(int i=0;i<61;i++) [longVoice appendData:[amr subdataWithRange:NSMakeRange(6,amr.length-6)]];
     CHECK(!WUVoiceMeasuredMS(longVoice)); [longVoice setLength:6+60*(amr.length-6)]; CHECK(WUVoiceMeasuredMS(longVoice)==60000);
+    CMessageWrap *dynamic=[CMessageWrap new];
+    CHECK(WUVoiceExactSignature(dynamic,@"setM_uiVoiceFormat:","v",@[@"I"]));
+    CHECK(WUVoiceExactSignature(dynamic,@"m_dtVoice","@",@[]));
+    CHECK(!WUVoiceExactSignature(dynamic,@"setM_uiVoiceFormat:","v",@[@"Q"]));
     VoiceWrap *source=[[VoiceWrap alloc] initWithMsgType:34 nsFromUsr:@"original"]; source.m_uiVoiceFormat=4; source.m_dtVoice=tencent;
     CHECK([WUVoiceSelectedData(source) isEqual:tencent]); source.m_uiVoiceFormat=0; CHECK(!WUVoiceSelectedData(source)); source.m_uiVoiceFormat=4; source.m_uiMessageType=1; CHECK(!WUVoiceSelectedData(source)); source.m_uiMessageType=34;
     CHECK(!WUVoiceSelectedData([NSObject new])); CHECK(!WUVoiceSelectedData(nil)); source.m_dtVoice=[NSData data]; CHECK(!WUVoiceSelectedData(source));
@@ -125,6 +147,7 @@ int main(void) { @autoreleasepool {
     VoiceHost *host=[VoiceHost new]; WUVoiceForwardOperation *op=Operation(tencent); CHECK([op.status isEqual:@"未提交"]); CHECK(op.milliseconds==1000);
     CHECK([Submit(op,host,^BOOL{ return YES; }) hasPrefix:@"已请求"]); CHECK(host.inserts==1 && host.sends==1);
     CHECK(host.last.m_uiMessageType==34 && host.last.m_uiVoiceFormat==4 && host.last.m_uiVoiceTime==1000 && host.last.m_uiVoiceEndFlag==1);
+    CHECK(host.last.m_uiStatus==1 && host.last.m_uiDownloadStatus==9);
     CHECK([host.last.m_dtVoice isEqual:tencent]); CHECK([host.last.m_nsFromUsr isEqual:@"self"] && [host.last.m_nsToUsr isEqual:@"recipient"]);
     CHECK([host.last.m_nsContent containsString:@"voicelength=\"1000\""]); CHECK(host.last.m_uiCreateTime>0);
     CHECK([Submit(op,host,^BOOL{ return YES; }) hasPrefix:@"已请求"]); CHECK(host.inserts==1 && host.sends==1);
@@ -133,6 +156,7 @@ int main(void) { @autoreleasepool {
     host=[VoiceHost new]; op=Operation(amr); CHECK([[op submitWithManager:host audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"失败"]); CHECK(host.inserts==0);
     op=Operation(amr); CHECK([[op submitWithManager:nil audioSender:host messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"失败"]); CHECK(host.sends==0);
     op=Operation(amr); CHECK([[op submitWithManager:host audioSender:[BooleanSender new] messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"失败"]); CHECK(host.inserts==0);
+    CHECK(class_addMethod(WrongWidth.class,@selector(setM_uiVoiceTime:),(IMP)WrongWidthSetter,"v@:Q"));
     op=Operation(amr); CHECK([[op submitWithManager:host audioSender:host messageClass:WrongWidth.class current:^BOOL{ return YES; }] hasPrefix:@"失败"]); CHECK(host.inserts==0);
     op=Operation(amr); CHECK([Submit(op,host,^BOOL{ return NO; }) hasPrefix:@"失败"]); Submit(op,host,^BOOL{ return YES; }); CHECK(host.inserts==0);
     __block NSUInteger calls=0; op=Operation(amr); CHECK([Submit(op,host,^BOOL{ return ++calls<2; }) hasPrefix:@"失败"]); CHECK(host.inserts==0);
@@ -140,37 +164,54 @@ int main(void) { @autoreleasepool {
     host=[VoiceHost new]; op=Operation([NSData data]); CHECK([Submit(op,host,^BOOL{ return YES; }) hasPrefix:@"失败"]); CHECK(host.inserts==0);
     op=[[WUVoiceForwardOperation alloc] initWithData:amr account:@"" target:@"recipient"]; CHECK([Submit(op,host,^BOOL{ return YES; }) hasPrefix:@"失败"]); CHECK(host.inserts==0);
     NSMutableData *mutable=[amr mutableCopy]; op=Operation(mutable); [mutable resetBytesInRange:NSMakeRange(0,mutable.length)]; CHECK([Submit(op,host,^BOOL{ return YES; }) hasPrefix:@"已请求"]); CHECK([host.last.m_dtVoice isEqual:amr]);
-    CMessageMgr *separateManager=[CMessageMgr new]; AudioSender *separateAudio=[AudioSender new]; separateAudio.manager=separateManager; separateAudio.sendRaises=YES; op=Operation(tencent);
-    CHECK([[op submitWithManager:separateManager audioSender:separateAudio messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"未知"]);
-    CHECK(separateManager.inserts==1 && separateManager.sends==0 && separateAudio.sends==1);
-    [op submitWithManager:separateManager audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }];
-    CHECK(separateManager.inserts==1 && separateManager.sends==0 && separateAudio.sends==1);
+    CMessageMgr *separateManager=[CMessageMgr new]; AudioSender *separateAudio=[AudioSender new]; separateAudio.manager=separateManager;
+    BaseUploadVoiceMgr *primary=[BaseUploadVoiceMgr new]; primary.manager=separateManager; primary.sendRaises=YES; separateAudio.uploadTarget=primary;
+    MMNewUploadVoiceMgr *alternate=[MMNewUploadVoiceMgr new]; alternate.manager=separateManager; op=Operation(tencent);
+    CHECK([[op submitWithManager:separateManager audioSender:separateAudio uploadManager:alternate messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"未知"]);
+    CHECK(separateManager.inserts==1 && separateManager.sends==0 && separateAudio.sends==0 && primary.sends==1 && alternate.sends==0);
+    [op submitWithManager:separateManager audioSender:nil uploadManager:alternate messageClass:VoiceWrap.class current:^BOOL{ return YES; }];
+    CHECK(separateManager.inserts==1 && primary.sends==1 && alternate.sends==0);
     separateManager=[CMessageMgr new]; op=Operation(amr);
     CHECK([[op submitWithManager:separateManager audioSender:[BooleanSender new] messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"失败"]);
     CHECK(separateManager.inserts==0 && separateManager.sends==0);
+    separateManager=[CMessageMgr new]; separateAudio=[AudioSender new]; separateAudio.manager=separateManager; separateAudio.uploadTarget=[BooleanSender new];
+    alternate=[MMNewUploadVoiceMgr new]; alternate.manager=separateManager; op=Operation(amr);
+    CHECK([[op submitWithManager:separateManager audioSender:separateAudio uploadManager:alternate messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
+    CHECK(separateManager.inserts==1 && separateAudio.sends==0 && alternate.sends==1);
+    separateManager=[CMessageMgr new]; separateAudio=[AudioSender new]; primary=[BaseUploadVoiceMgr new]; primary.manager=separateManager; separateAudio.uploadTarget=primary; op=Operation(amr);
+    VoiceProxy *audioProxy=[VoiceProxy proxy:separateAudio bad:NO];
+    CHECK([[op submitWithManager:separateManager audioSender:audioProxy uploadManager:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
+    CHECK(separateManager.inserts==1 && separateAudio.sends==0 && primary.sends==1);
+    separateManager=[CMessageMgr new]; alternate=[MMNewUploadVoiceMgr new]; alternate.manager=separateManager; op=Operation(amr);
+    VoiceProxy *uploadProxy=[VoiceProxy proxy:alternate bad:NO];
+    CHECK([[op submitWithManager:separateManager audioSender:nil uploadManager:uploadProxy messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
+    CHECK(separateManager.inserts==1 && alternate.sends==1);
     __block NSString *activeAccount=@"self"; __block NSUInteger accountChecks=0; separateManager=[CMessageMgr new]; op=Operation(amr);
     CHECK([[op submitWithManager:separateManager audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ if(++accountChecks==2) activeAccount=@"other"; return [activeAccount isEqual:@"self"]; }] hasPrefix:@"失败"]);
     [op submitWithManager:separateManager audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }];
     CHECK(separateManager.inserts==0 && separateManager.sends==0);
     CMessageMgr *fallback=[CMessageMgr new]; op=Operation(tencent);
-    CHECK([[op submitWithManager:fallback audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
+    CHECK([[op submitWithManager:fallback audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"失败"]);
+    CHECK(fallback.inserts==0 && fallback.sends==0);
+    op=Operation(tencent);
+    CHECK([[op submitWithManager:fallback audioSender:nil uploadManager:fallback messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
     CHECK(fallback.inserts==1 && fallback.sends==1);
-    [op submitWithManager:fallback audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }]; CHECK(fallback.inserts==1 && fallback.sends==1);
+    [op submitWithManager:fallback audioSender:nil uploadManager:fallback messageClass:VoiceWrap.class current:^BOOL{ return YES; }]; CHECK(fallback.inserts==1 && fallback.sends==1);
     fallback=[CMessageMgr new]; op=Operation(tencent);
     VoiceProxy *fallbackProxy=[VoiceProxy proxy:fallback bad:NO];
-    CHECK([[op submitWithManager:fallbackProxy audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
+    CHECK([[op submitWithManager:fallbackProxy audioSender:nil uploadManager:fallback messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
     CHECK(fallback.inserts==1 && fallback.sends==1);
     fallback=[CMessageMgr new]; op=Operation(tencent); calls=0;
-    CHECK([[op submitWithManager:fallback audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return ++calls<3; }] hasPrefix:@"未知"]);
-    [op submitWithManager:fallback audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }]; CHECK(fallback.inserts==1 && fallback.sends==0);
+    CHECK([[op submitWithManager:fallback audioSender:nil uploadManager:fallback messageClass:VoiceWrap.class current:^BOOL{ return ++calls<3; }] hasPrefix:@"未知"]);
+    [op submitWithManager:fallback audioSender:nil uploadManager:fallback messageClass:VoiceWrap.class current:^BOOL{ return YES; }]; CHECK(fallback.inserts==1 && fallback.sends==0);
     fallback=[CMessageMgr new]; fallback.sendRaises=YES; op=Operation(tencent);
-    CHECK([[op submitWithManager:fallback audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"未知"]);
-    [op submitWithManager:fallback audioSender:nil messageClass:VoiceWrap.class current:^BOOL{ return YES; }]; CHECK(fallback.inserts==1 && fallback.sends==1);
+    CHECK([[op submitWithManager:fallback audioSender:nil uploadManager:fallback messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"未知"]);
+    [op submitWithManager:fallback audioSender:nil uploadManager:fallback messageClass:VoiceWrap.class current:^BOOL{ return YES; }]; CHECK(fallback.inserts==1 && fallback.sends==1);
     host=[VoiceHost new]; op=Operation(tencent);
     VoiceProxy *proxy=[VoiceProxy proxy:host bad:NO];
-    CHECK([[op submitWithManager:proxy audioSender:proxy messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
-    CHECK(host.inserts==1 && host.sends==1); CHECK([[op submitWithManager:proxy audioSender:proxy messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]); CHECK(host.inserts==1 && host.sends==1);
+    CHECK([[op submitWithManager:proxy audioSender:nil uploadManager:host messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
+    CHECK(host.inserts==1 && host.sends==1); CHECK([[op submitWithManager:proxy audioSender:nil uploadManager:host messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]); CHECK(host.inserts==1 && host.sends==1);
     host=[VoiceHost new]; op=Operation(tencent); proxy=[VoiceProxy proxy:host bad:YES];
-    CHECK([[op submitWithManager:proxy audioSender:proxy messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"失败"]); CHECK(host.inserts==0 && host.sends==0);
+    CHECK([[op submitWithManager:host audioSender:nil uploadManager:proxy messageClass:VoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"失败"]); CHECK(host.inserts==0 && host.sends==0);
     printf("Voice forwarding production decode/ABI/one-shot mocks: %lu assertions passed\n",(unsigned long)checks);
 } return 0; }
