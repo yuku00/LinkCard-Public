@@ -12,11 +12,12 @@ static BOOL switchAccount;
 static unsigned notices;
 static void WURevokeNoticeInsert(id mgr, NSString *a, NSString *s, uint64_t mid, NSUInteger gen, NSString *from, NSString *to, uint32_t time, BOOL (^valid)(void)) {
     assert([a isEqual:@"me"] && [s isEqual:@"peer"] && mid==42 && gen==1);
-    assert([from isEqual:@"peer"] && [to isEqual:@"me"] && valid()); notices++;
+    assert([from isEqual:@"peer"] && [to isEqual:@"me"] && time==456 && valid()); notices++;
 }
 static BOOL WUEnabled(NSString *key) { return YES; }
 static NSString *Account(void) { return account; }
 static NSString *Str(id o, NSString *key) { return @"notice"; }
+static uint64_t Num(id o, NSString *key) { return 456; }
 static NSDictionary *WURevokeFields(NSString *s) { return @{@"session":@"peer",@"id":@42}; }
 static id Service(NSString *name) { return service; }
 static NSDictionary *Info(id o) { return o?:@{}; }

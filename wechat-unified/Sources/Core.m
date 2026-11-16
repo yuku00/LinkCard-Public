@@ -11,20 +11,24 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 NSString *const WUChanged = @"org.wechatunified.changed";
 static NSDictionary *snapshot;
 static NSMutableDictionary<NSString *, NSString *> *hooks;
 static int configDir = -1;
-static NSDictionary *ReadConfig(NSString *name) {
+static BOOL configReadOnly;
+BOOL WUConfigReadOnly(void) { return configReadOnly; }
+static NSDictionary *ReadConfig(NSString *name, BOOL *missing) {
+    if (missing) *missing=NO;
     int fd = openat(configDir, name.UTF8String, O_RDONLY | O_NOFOLLOW);
-    if (fd < 0) return nil;
+    if (fd < 0) { if (missing && errno==ENOENT) *missing=YES; return nil; }
     struct stat st; if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size > 65536) { close(fd); return nil; }
     NSMutableData *d = [NSMutableData dataWithLength:(NSUInteger)st.st_size];
     size_t n = 0; while (n < d.length) { ssize_t r = read(fd, (char *)d.mutableBytes+n, d.length-n); if (r <= 0) break; n += r; } close(fd);
     if (n != d.length) return nil;
     id x = [NSJSONSerialization JSONObjectWithData:d options:0 error:NULL];
     if (![x isKindOfClass:NSDictionary.class] || ![x[@"schema"] isEqual:@1]) return nil;
-    for (NSString *k in @[@"cardDirect",@"articleImage",@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress", @"voiceRealDuration", @"voiceCarry", @"voiceCountdown", @"voiceWaveform", @"voiceAlways", @"voicePulse", @"voiceSeek", @"enabled", @"ads", @"officialRecoFlow", @"officialRecCard", @"momentsAds", @"miniSplashAds", @"miniBannerAds", @"miniInterstitialAds", @"keywords", @"inputBorder", @"inputPulse", @"hideHomeSearch", @"textBubbleSurface", @"fileSurface", @"emoticonSurface", @"emoticonContentCorner", @"noticeBorder", @"separators", @"convenientMoments", @"chatSearch", @"callbackConfirm", @"antiRevoke", @"multiRevoke", @"enhancedLinks", @"repeatEmoticon", @"mergeGroup", @"mergePrivate", @"mergeBottom", @"redReminder", @"themes", @"sunMoon", @"searchSurface", @"referSurface", @"referMessageSurface", @"textPreviewSurface", @"hostPopupSurface", @"quickReplySurface", @"plusSurface", @"toastSurface",@"timeSurface",@"swipeSurface", @"chatSendSurface", @"chatAttachmentSurface"])
+    for (NSString *k in @[@"cardDirect",@"articleImage",@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress", @"voiceRealDuration", @"voiceCarry", @"voiceCountdown", @"voiceWaveform", @"voiceAlways", @"voicePulse", @"voiceSeek", @"enabled", @"ads", @"officialRecoFlow", @"officialRecCard", @"momentsAds", @"miniSplashAds", @"miniBannerAds", @"miniInterstitialAds", @"keywords", @"inputBorder", @"inputPulse", @"hideHomeSearch", @"textBubbleSurface", @"fileSurface", @"emoticonSurface", @"emoticonContentCorner", @"noticeBorder", @"separators", @"convenientMoments", @"chatSearch", @"callbackConfirm", @"antiRevoke", @"antiRevokeNotice", @"multiRevoke", @"enhancedLinks", @"repeatEmoticon", @"mergeGroup", @"mergePrivate", @"mergeBottom", @"redReminder", @"themes", @"sunMoon", @"searchSurface", @"referSurface", @"referMessageSurface", @"textPreviewSurface", @"hostPopupSurface", @"quickReplySurface", @"plusSurface", @"toastSurface",@"timeSurface",@"swipeSurface", @"chatSendSurface", @"chatAttachmentSurface"])
         if (x[k] && ![x[k] isKindOfClass:NSNumber.class]) return nil;
     if (x[@"words"] && (![x[@"words"] isKindOfClass:NSString.class] || [x[@"words"] length] > 2048)) return nil;
     for(NSString *k in @[@"themePack",@"bubblePack"]) if(x[k] && (![x[k] isKindOfClass:NSString.class] || ([x[k] length] && ![[NSUUID alloc] initWithUUIDString:x[k]]))) return nil;
@@ -35,6 +39,13 @@ static NSDictionary *ReadConfig(NSString *name) {
     if(x[@"themeOptions"] && !WUValidThemeOptions(x[@"themeOptions"])) return nil;
     if(x[@"surfaceStyles"] && !WUValidSurfaceStyles(x[@"surfaceStyles"])) return nil;
     return x;
+}
+static NSDictionary *LoadConfigSnapshot(void) {
+    BOOL mainMissing=NO, backupMissing=NO;
+    NSDictionary *loaded=ReadConfig(@"config.json",&mainMissing);
+    if (!loaded) loaded=ReadConfig(@"backup.json",&backupMissing);
+    configReadOnly=!loaded && !(mainMissing && backupMissing);
+    return loaded ?: @{@"schema":@1,@"enabled":@NO,@"words":@""};
 }
 static BOOL WriteConfig(NSData *d, NSString *name) {
     NSString *tmp = [@"pending-" stringByAppendingString:NSUUID.UUID.UUIDString];
@@ -52,7 +63,7 @@ id WUValue(NSString *key) { @synchronized(NSProcessInfo.processInfo) { return sn
 BOOL WUEnabled(NSString *key) { return [WUValue(@"enabled") boolValue] && [WUValue(key) boolValue]; }
 BOOL WUSave(NSString *key, id value) {
     NSCAssert(NSThread.isMainThread, @"UI configuration is main-thread owned");
-    if(![@[@"cardDirect",@"articleImage",@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress",@"voiceRealDuration",@"voiceCarry",@"voiceCountdown",@"voiceWaveform",@"voiceAlways",@"voicePulse",@"voiceSeek",@"enabled",@"ads",@"officialRecoFlow",@"officialRecCard",@"momentsAds",@"miniSplashAds", @"miniBannerAds", @"miniInterstitialAds",@"keywords",@"words",@"inputBorder",@"inputPulse",@"hideHomeSearch",@"textBubbleSurface",@"fileSurface",@"emoticonSurface",@"emoticonContentCorner",@"noticeBorder",@"separators",@"convenientMoments",@"chatSearch",@"callbackConfirm",@"antiRevoke",@"multiRevoke",@"enhancedLinks", @"repeatEmoticon",@"mergeGroup",@"mergePrivate",@"mergeBottom",@"redReminder",@"themes",@"sunMoon",@"themePack",@"bubblePack",@"searchSurface",@"referSurface",@"referMessageSurface",@"textPreviewSurface", @"hostPopupSurface", @"quickReplySurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"chatSendSurface",@"chatAttachmentSurface",@"accounts",@"themeOptions",@"surfaceStyles",@"native",@"repeatOptions"] containsObject:key]) return NO;
+    if(![@[@"cardDirect",@"articleImage",@"hideDictationIcon",@"dictationPreventMistouch",@"voiceProgress",@"voiceRealDuration",@"voiceCarry",@"voiceCountdown",@"voiceWaveform",@"voiceAlways",@"voicePulse",@"voiceSeek",@"enabled",@"ads",@"officialRecoFlow",@"officialRecCard",@"momentsAds",@"miniSplashAds", @"miniBannerAds", @"miniInterstitialAds",@"keywords",@"words",@"inputBorder",@"inputPulse",@"hideHomeSearch",@"textBubbleSurface",@"fileSurface",@"emoticonSurface",@"emoticonContentCorner",@"noticeBorder",@"separators",@"convenientMoments",@"chatSearch",@"callbackConfirm",@"antiRevoke",@"antiRevokeNotice",@"multiRevoke",@"enhancedLinks", @"repeatEmoticon",@"mergeGroup",@"mergePrivate",@"mergeBottom",@"redReminder",@"themes",@"sunMoon",@"themePack",@"bubblePack",@"searchSurface",@"referSurface",@"referMessageSurface",@"textPreviewSurface", @"hostPopupSurface", @"quickReplySurface",@"plusSurface",@"toastSurface",@"timeSurface",@"swipeSurface",@"chatSendSurface",@"chatAttachmentSurface",@"accounts",@"themeOptions",@"surfaceStyles",@"native",@"repeatOptions"] containsObject:key]) return NO;
     BOOL pack=[@[@"themePack",@"bubblePack"] containsObject:key];
     if(pack) { if(![value isKindOfClass:NSString.class] || ([value length] && ![[NSUUID alloc] initWithUUIDString:value])) return NO; }
     else if([key isEqual:@"repeatOptions"]) { if(!WUValidRepeatOptions(value)) return NO; }
@@ -61,7 +72,7 @@ BOOL WUSave(NSString *key, id value) {
     else if([key isEqual:@"themeOptions"]) { if(!WUValidThemeOptions(value)) return NO; }
     else if([key isEqual:@"surfaceStyles"]) { if(!WUValidSurfaceStyles(value)) return NO; }
     else if([key isEqual:@"words"] ? (![value isKindOfClass:NSString.class] || [value length]>2048) : ![value isKindOfClass:NSNumber.class]) return NO;
-    if(configDir<0) return NO;
+    if(configDir<0 || configReadOnly) return NO;
     NSMutableDictionary *next=[snapshot mutableCopy]; next[key]=value;
     NSData *data=[NSJSONSerialization dataWithJSONObject:next options:0 error:NULL];
     NSData *old=[NSJSONSerialization dataWithJSONObject:snapshot options:0 error:NULL];
@@ -116,7 +127,7 @@ __attribute__((constructor)) static void Start(void) {
         [NSFileManager.defaultManager createDirectoryAtPath:base withIntermediateDirectories:YES attributes:nil error:NULL];
         mkdir(dir.fileSystemRepresentation,0700);
         configDir=open(dir.fileSystemRepresentation,O_RDONLY|O_DIRECTORY|O_NOFOLLOW);
-        snapshot=ReadConfig(@"config.json") ?: ReadConfig(@"backup.json") ?: @{@"schema":@1,@"enabled":@NO,@"words":@""};
+        snapshot=LoadConfigSnapshot();
         // Persist the startup guard before registering any host override. UI stays on main.
         if(WUNativeStartGuard(configDir)) WUInstallNative();
         dispatch_async(dispatch_get_main_queue(), ^{

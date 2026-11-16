@@ -6,6 +6,11 @@ python3 tools/generate_candidates.py
 python3 tests/test_candidate_manifest.py
 python3 tests/test_release_closure.py
 python3 tests/test_card_settings_contract.py
+python3 tests/test_neo_individual_cards.py
+python3 tests/test_config_recovery_contract.py
+python3 tests/test_revoke_notice_timestamp.py
+WU_REQUIRE_APPLE_TESTS=1 python3 tests/run_voice_playback_proxy.py
+rm -r build/voice-proxy
 xcrun --sdk macosx clang -std=c11 -Wall -Wextra -Werror -I Sources tests/card_policy.c -o build/card-policy-tests
 build/card-policy-tests
 rm build/card-policy-tests
@@ -25,6 +30,7 @@ for test in tests/test_incremental_safety.py tests/test_chat_layout.py tests/tes
 done
 python3 tests/test_source.py
 python3 tests/test_home_count_abi.py
+python3 tests/test_home_background_snapshot.py
 python3 tests/test_theme_svg_abi.py
 python3 tests/test_account_generation_regression.py
 python3 tests/test_chat_input_toolbar_safety.py

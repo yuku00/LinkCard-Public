@@ -20,20 +20,20 @@ void WUEnsureSettingsListRow(UIViewController *owner) {
     if(ivar && ivar_getTypeEncoding(ivar)[0]=='@') {
         id manager=object_getIvar(owner,ivar);
         Class sectionClass=NSClassFromString(@"WCTableViewSectionManager"), cellClass=NSClassFromString(@"WCTableViewNormalCellManager");
-        NSString *factory=@"normalCellForSel:target:title:rightValue:canRightValueCopy:";
+        NSString *factory=@"normalCellForSel:target:title:accessoryType:";
         id table=Get(manager,@"getTableView"), sections=Get(manager,@"sections");
         id old=objc_getAssociatedObject(owner,&sectionKey);
         if(object_getClass(manager)==NSClassFromString(@"WCTableViewManager") && [table isKindOfClass:UITableView.class] && [table isDescendantOfView:owner.view] && [sections isKindOfClass:NSArray.class] &&
-           Match(sectionClass,@"defaultSection","@",@[]) && Match(cellClass,factory,"@",@[@":",@"@",@"@",@"@",[NSString stringWithUTF8String:@encode(BOOL)]]) &&
-           Match(manager,@"insertSection:At:","v",@[@"@",[NSString stringWithUTF8String:@encode(NSUInteger)]]) && WUMatches(class_getInstanceMethod(sectionClass,NSSelectorFromString(@"addCell:")),"v",@[@"@"])) {
+           Match(sectionClass,@"defaultSection","@",@[]) && Match(cellClass,factory,"@",@[@":",@"@",@"@",@"q"]) &&
+           Match(manager,@"insertSection:At:","v",@[@"@",[NSString stringWithUTF8String:@encode(unsigned int)]]) && WUMatches(class_getInstanceMethod(sectionClass,NSSelectorFromString(@"addCell:")),"v",@[@"@"])) {
             if(old && [sections indexOfObjectIdenticalTo:old]!=NSNotFound) return;
             WUSettingsRowTarget *target=objc_getAssociatedObject(owner,&entryKey);
             if(!target) { target=[WUSettingsRowTarget new]; target.owner=owner; objc_setAssociatedObject(owner,&entryKey,target,OBJC_ASSOCIATION_RETAIN_NONATOMIC); }
             id section=((id(*)(id,SEL))objc_msgSend)(sectionClass,NSSelectorFromString(@"defaultSection"));
-            id cell=((id(*)(id,SEL,SEL,id,id,id,BOOL))objc_msgSend)(cellClass,NSSelectorFromString(factory),@selector(open),target,@"微信整合",@"",NO);
+            id cell=((id(*)(id,SEL,SEL,id,id,long long))objc_msgSend)(cellClass,NSSelectorFromString(factory),@selector(open),target,@"微信整合",1LL);
             if(!section || object_getClass(section)!=sectionClass || !cell || object_getClass(cell)!=cellClass || Get(manager,@"sections")!=sections || object_getIvar(owner,ivar)!=manager) return;
             ((void(*)(id,SEL,id))objc_msgSend)(section,NSSelectorFromString(@"addCell:"),cell);
-            ((void(*)(id,SEL,id,NSUInteger))objc_msgSend)(manager,NSSelectorFromString(@"insertSection:At:"),section,(NSUInteger)0);
+            ((void(*)(id,SEL,id,unsigned int))objc_msgSend)(manager,NSSelectorFromString(@"insertSection:At:"),section,0U);
             objc_setAssociatedObject(owner,&sectionKey,section,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             [(UITableView *)table reloadData];
             return;

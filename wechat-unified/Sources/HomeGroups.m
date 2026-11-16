@@ -4,6 +4,8 @@
 #import "WUHostService.h"
 #import "WUVerifiedServiceProxy.h"
 static BOOL ready, applying;
+// Host setters may run concurrently; no safe writeback boundary is known.
+static BOOL WUHomeProjectionSafe(void) { return NO; }
 static IMP setters[3], countSetter;
 static BOOL countSigned;
 static NSArray<NSString *> *getNames, *setNames;
@@ -135,6 +137,7 @@ static void SetCount(id manager, BOOL projected, unsigned long long count, long 
 }
 - (BOOL)current { NSString *a=WUCurrentAccount(); return a.length && [a isEqual:self.account] && self.manager==CurrentManager(); }
 - (void)apply {
+    if(!WUHomeProjectionSafe()) return;
     if(applying || !NSThread.isMainThread || ![self current] || self.invalid || !self.countKnown || [self.source containsObject:NSNull.null]) return;
     NSDictionary *state=State(self.account); BOOL active=ready && self.countUsable && [WUValue(@"enabled") boolValue] && [state[@"enabled"] boolValue];
     NSMutableArray *output=[NSMutableArray array], *decoded=[NSMutableArray array]; NSDictionary *plan=nil;
@@ -261,7 +264,7 @@ static BOOL SearchOnlyHeader(UIView *header) {
         (void)Snapshot(manager);
     }
     for(WUHomeSnapshot *s in managers.allObjects) if([s current] && !s.invalid && s.countKnown && ![s.source containsObject:NSNull.null]) { [s apply]; available=s.filtered; }
-    if(!ready || !available || ![state[@"enabled"] boolValue] || ![WUValue(@"enabled") boolValue]) { [self restoreGroup]; return; }
+    if(!WUHomeProjectionSafe() || !ready || !available || ![state[@"enabled"] boolValue] || ![WUValue(@"enabled") boolValue]) { [self restoreGroup]; return; }
     if(![a isEqual:self.account]) [self restoreGroup];
     self.account=a; self.generation=WUContextGeneration();
     if(self.header && t.tableHeaderView!=self.header) [self restore];
@@ -281,6 +284,7 @@ void WURefreshHome(UIViewController *owner) {
 }
 static void Refresh(void) { for(WUHomeSnapshot *s in managers.allObjects) [s apply]; for(WUHomePage *p in homePages.allObjects) { [p refresh]; [p.table reloadData]; } }
 static void ReloadHost(void) {
+    if(!WUHomeProjectionSafe()) { Refresh(); return; }
     // Evidence: the native refresh path calls MainSessionMgr.onNeedReload with no parameters.
     // Rebuild native derived caches on tab/config changes; UITableView reload alone is not enough.
     BOOL relevant=ready && [WUValue(@"enabled") boolValue] && [State(WUCurrentAccount())[@"enabled"] boolValue];
@@ -305,11 +309,11 @@ static void ReloadHost(void) {
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 2; }
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return ![self current]?0:(s==0?2+Tabs(State(self.account)).count:self.users.count); }
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return s==0?@"账号独立页签":@"原会话标识 · 点按移动到自定义组"; }
-- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s==0?(ready?@"关闭恢复原列表。左滑只删除自定义组及成员映射，不删除聊天。页签仅在宿主已提供完整、可分类的三数组快照后显示；未知模型保持原列表。":@"宿主签名不匹配，首页分组不可用；不修改列表。"): @"标识取自原生session，非界面标题。置顶、未读与点击仍由宿主处理；无真机兼容承诺。"; }
+- (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s==0?(!WUHomeProjectionSafe()?@"为避免后台更新时覆盖会话，首页分组暂不可用；原会话列表及已保存的分组配置均保留。":(ready?@"关闭恢复原列表。左滑只删除自定义组及成员映射，不删除聊天。页签仅在宿主已提供完整、可分类的三数组快照后显示；未知模型保持原列表。":@"宿主签名不匹配，首页分组不可用；不修改列表。")): @"标识取自原生session，非界面标题。置顶、未读与点击仍由宿主处理；无真机兼容承诺。"; }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *c=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; NSDictionary *s=State(self.account);
     if(p.section==1) { c.textLabel.text=self.users[p.row]; c.detailTextLabel.text=@"未分组"; for(NSDictionary *g in s[@"groups"]) if([g[@"id"] isEqual:s[@"membership"][self.users[p.row]]]) c.detailTextLabel.text=g[@"name"]; }
-    else if(p.row==0) { c.textLabel.text=@"启用首页电报分组"; UISwitch *sw=[UISwitch new]; sw.enabled=ready; sw.on=[s[@"enabled"] boolValue]; [sw addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventValueChanged]; c.accessoryView=sw; }
+    else if(p.row==0) { c.textLabel.text=@"启用首页电报分组"; UISwitch *sw=[UISwitch new]; sw.enabled=ready && WUHomeProjectionSafe(); sw.on=WUHomeProjectionSafe() && [s[@"enabled"] boolValue]; [sw addTarget:self action:@selector(toggle:) forControlEvents:UIControlEventValueChanged]; c.accessoryView=sw; }
     else if(p.row==1) c.textLabel.text=@"＋ 创建自定义组";
     else { NSDictionary *g=Tabs(s)[p.row-2]; c.textLabel.text=g[@"name"]; if([s[@"selected"] isEqual:g[@"id"]]) c.accessoryType=UITableViewCellAccessoryCheckmark; } return WUNeoCell(c,@"person.2");
 }

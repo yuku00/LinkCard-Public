@@ -4,6 +4,7 @@
 @class UINavigationController, UIView, UIColor, UITraitCollection;
 BOOL WUEnabled(NSString *key);
 BOOL WUSave(NSString *key, id value);
+BOOL WUConfigReadOnly(void);
 id WUValue(NSString *key);
 BOOL WUMatches(Method method, const char *result, NSArray<NSString *> *arguments);
 BOOL WUHook(NSString *className, NSString *selector, BOOL meta, const char *result, NSArray<NSString *> *arguments, IMP replacement, IMP *original);

@@ -14,9 +14,15 @@ class ImageEntryContract(unittest.TestCase):
                      'Identity(self.wrap,self.account,self.session)', '[self.paths isEqual:Paths(self.wrap)]'):
             self.assertIn(part, SRC)
         for forbidden in ('valueForKey:', 'setValue:', 'UIDocumentPicker', 'NSURLSession',
-                          'dataWithContentsOfURL:', 'getMsgHdOrMiddleImgData:', 'getPathOfMsgImg:'):
+                          'dataWithContentsOfURL:', 'getMsgHdOrMiddleImgData:'):
             self.assertNotIn(forbidden, SRC)
         self.assertIn('@[@"m_nsImageHDPath",@"m_nsImagePath"]', SRC)
+
+    def test_verified_class_cache_path(self):
+        self.assertIn('Has(c,@"getPathOfMsgImg:","@",@[@"@"])', SRC)
+        self.assertIn('[wrap isKindOfClass:c]', SRC)
+        self.assertIn('if(path && ![path isKindOfClass:NSString.class]) return nil;', SRC)
+        self.assertIn('NOT a guarantee of original/HD bytes', SRC)
 
     def test_context_and_read_limits_reused(self):
         for part in ('WUCurrentAccount()', 'WUContextGeneration()', 'WUChatSession(owner)',

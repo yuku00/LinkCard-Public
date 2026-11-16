@@ -1,4 +1,5 @@
 #import "WU.h"
+BOOL WUOpenClickedLink(UIViewController *owner, NSString *text, BOOL (^current)(void));
 void WUOpenLinkInput(UIViewController *owner);
 void WUOpenSelectedLinks(UIViewController *owner, NSArray<NSDictionary *> *frozen, BOOL (^current)(void));
 void WUExportEmoticon(UIViewController *owner, NSString *path, BOOL (^current)(void));

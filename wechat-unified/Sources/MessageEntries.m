@@ -188,6 +188,17 @@ static NSString *StoreIcon(NSData *data) {
     BOOL ok=offset==data.length && fsync(fd)==0; if(close(fd)!=0) ok=NO;
     if(!ok) unlinkat(dir,identifier.UTF8String,0); else fsync(dir); close(dir); return ok?identifier:nil;
 }
+BOOL WUOpenClickedLink(UIViewController *owner, NSString *text, BOOL (^current)(void)) {
+    NSURL *url=WULinkSafeURL(text); if(!url) return NO;
+    WUMessageEntryFlow *flow=Begin(owner,current); if(!flow) return NO;
+    flow.linkFlow=YES;
+    @try { [flow destination:url]; }
+    @catch(__unused NSException *e) { [flow finish]; return NO; }
+    // Only suppress the host click after UIKit actually accepted our confirmation.
+    BOOL shown=!flow.finished && flow.controller && owner.presentedViewController==flow.controller;
+    if(!shown) [flow finish];
+    return shown;
+}
 void WUOpenSelectedLinks(UIViewController *owner,NSArray<NSDictionary *> *frozen,BOOL (^current)(void)) {
     WUMessageEntryFlow *flow=Begin(owner,current); if(!flow) { WURecordDiagnosticEvent(WUDiagRejectBegin); return; }
     flow.linkFlow=YES; [flow links:WULinkCandidates(frozen)];

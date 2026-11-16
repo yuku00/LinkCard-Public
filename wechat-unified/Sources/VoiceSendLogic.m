@@ -12,10 +12,11 @@ BOOL WUVoiceExactSignature(id o, NSString *name, const char *result, NSArray<NSS
         if(!m || method_getNumberOfArguments(m)!=args.count+2) return NO;
         NSMethodSignature *sig=[o methodSignatureForSelector:s];
         if(!sig || sig.numberOfArguments!=args.count+2 || strcmp(sig.methodReturnType,result)) return NO;
-        char *r=method_copyReturnType(m); BOOL ok=!strcmp(r,result); free(r);
-        for(NSUInteger i=0;i<args.count;i++) {
-            const char *expected=args[i].UTF8String; char *t=method_copyArgumentType(m,(unsigned)i+2);
-            ok=ok && !strcmp(t,expected) && !strcmp([sig getArgumentTypeAtIndex:i+2],expected); free(t);
+        char *r=method_copyReturnType(m); BOOL ok=r && !strcmp(r,result); free(r);
+        for(NSUInteger i=0;i<args.count+2;i++) {
+            const char *expected=i==0?"@":(i==1?":":args[i-2].UTF8String); char *t=method_copyArgumentType(m,(unsigned)i);
+            const char *actual=[sig getArgumentTypeAtIndex:i];
+            ok=ok && t && actual && !strcmp(t,expected) && !strcmp(actual,expected); free(t);
         }
         return ok;
     } @catch(NSException *e) { return NO; }
@@ -90,17 +91,28 @@ uint32_t WUVoiceMeasuredMS(NSData *data) {
             NSString *senderClass=audio?@"AudioSender":@"CMessageMgr";
             NSString *sendSelector=audio?@"ResendVoiceMsg:MsgWrap:":@"ResendMsg:MsgWrap:";
             if(!NSThread.isMainThread || !current || !current() || !self.account.length || !self.target.length || !self.data.length || !self.milliseconds || self.milliseconds>60000 || !VoiceServiceReady(manager,@"CMessageMgr",@"AddLocalMsg:MsgWrap:") || !VoiceServiceReady(sender,senderClass,sendSelector)) { self.status=@"失败：上下文或语音服务不可用，未提交"; return self.status; }
-            id message=WUCreateMessage(cls,34,self.account);
+            id message=WUCreateVoiceMessage(cls,34,self.account);
             if(!message) { self.status=@"失败：消息构造ABI不可用或初始化失败，未提交"; return self.status; }
             NSArray *objects=@[@"setM_nsContent:",@"setM_nsFromUsr:",@"setM_nsToUsr:",@"setM_dtVoice:"];
             NSArray *numbers=@[@"setM_uiVoiceTime:",@"setM_uiVoiceFormat:",@"setM_uiVoiceEndFlag:",@"setM_uiCreateTime:"];
+            NSArray *objectGetters=@[@"m_nsContent",@"m_nsFromUsr",@"m_nsToUsr",@"m_dtVoice"];
+            NSArray *numberGetters=@[@"m_uiVoiceTime",@"m_uiVoiceFormat",@"m_uiVoiceEndFlag",@"m_uiCreateTime"];
             for(NSString *s in objects) if(!WUVoiceExactSignature(message,s,"v",@[@"@"])) { self.status=@"失败：消息对象字段ABI不可用，未提交"; return self.status; }
             for(NSString *s in numbers) if(!WUVoiceExactSignature(message,s,"v",@[@"I"])) { self.status=@"失败：消息整数宽度不符，未提交"; return self.status; }
+            for(NSString *s in objectGetters) if(!WUVoiceExactSignature(message,s,"@",@[])) { self.status=@"失败：消息字段无法核验，未提交"; return self.status; }
+            for(NSString *s in numberGetters) if(!WUVoiceExactSignature(message,s,"I",@[])) { self.status=@"失败：消息字段无法核验，未提交"; return self.status; }
+            if(!WUVoiceExactSignature(message,@"m_uiMessageType","I",@[])) { self.status=@"失败：消息类型无法核验，未提交"; return self.status; }
             NSArray *values=@[[NSString stringWithFormat:@"<msg><voicemsg voicelength=\"%u\" voiceformat=\"4\" forwardflag=\"0\" /></msg>",self.milliseconds],self.account,self.target,self.data];
             for(NSUInteger i=0;i<objects.count;i++) ((void(*)(id,SEL,id))objc_msgSend)(message,NSSelectorFromString(objects[i]),values[i]);
             uint32_t ints[]={self.milliseconds,4,1,(uint32_t)NSDate.date.timeIntervalSince1970};
             for(NSUInteger i=0;i<numbers.count;i++) ((void(*)(id,SEL,unsigned))objc_msgSend)(message,NSSelectorFromString(numbers[i]),ints[i]);
-            if(!current()) { self.status=@"失败：确认已失效，未提交"; return self.status; }
+            if(((unsigned(*)(id,SEL))objc_msgSend)(message,NSSelectorFromString(@"m_uiMessageType"))!=34) { self.status=@"失败：消息类型核验不符，未提交"; return self.status; }
+            for(NSUInteger i=0;i<objectGetters.count;i++) {
+                id value=((id(*)(id,SEL))objc_msgSend)(message,NSSelectorFromString(objectGetters[i]));
+                if(![values[i] isEqual:value]) { self.status=@"失败：消息字段核验不符，未提交"; return self.status; }
+            }
+            for(NSUInteger i=0;i<numberGetters.count;i++) if(((unsigned(*)(id,SEL))objc_msgSend)(message,NSSelectorFromString(numberGetters[i]))!=ints[i]) { self.status=@"失败：消息字段核验不符，未提交"; return self.status; }
+            if(!current() || !VoiceServiceReady(manager,@"CMessageMgr",@"AddLocalMsg:MsgWrap:") || !VoiceServiceReady(sender,senderClass,sendSelector)) { self.status=@"失败：确认或语音服务已失效，未提交"; return self.status; }
             // Consume before the first host side effect. Repository invocation has no fallback.
             attempted=YES; self.status=@"未知：已尝试本地插入，未获发送回执";
             NSString *insert=VoiceServiceInvoke(manager,@"CMessageMgr",@"AddLocalMsg:MsgWrap:",self.target,message);

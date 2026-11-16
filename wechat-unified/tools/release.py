@@ -23,6 +23,7 @@ def upload():
     allowed += ['Sources/MomentsCache.m','Sources/MomentsCacheLogic.h','Sources/MomentsCacheLogic.m','tests/moments_cache_logic.m']
     allowed += ['Sources/VoiceSendLogic.h','Sources/VoiceSendLogic.m','tests/voice_send_logic.m']
     allowed += ['Sources/VoicePackLogic.h','Sources/VoicePackLogic.m','Sources/VoicePacks.h','Sources/VoicePacks.m','tests/voice_pack_logic.m']
+    allowed += ['tests/test_home_background_snapshot.py']
     allowed += ['tests/test_p0.py','tests/p0_config.m','tests/p0_message.m','tests/message_construction.m','Sources/MessageConstruction.h','Sources/MessageConstruction.m']
     allowed += ['Sources/InteractionLogic.h','Sources/InteractionLogic.m','tests/interaction_logic.m']
     allowed += ['Sources/ThemeCatalog.h','Sources/ThemeCatalog.m','Sources/ThemeColors.m','Sources/ThemePrimitives.h','Sources/ThemeLibrary.h','Sources/ThemeLibrary.m','Sources/ThemeRendering.h','Sources/ThemeRendering.m','Sources/SurfaceStyle.m','Sources/SurfaceSettings.m','tests/theme_primitives.c','tests/theme_catalog.m','tests/surface_style_ios.m','tests/run_ui_tests.sh','tests/make_theme_fixtures.py','tests/fixtures/themes/README.md']
@@ -53,6 +54,7 @@ def upload():
     allowed += ['tests/test_reply_surface.py','tests/test_quick_reply_surface.py','tests/test_host_popup_surface.py','tests/fixtures/host-popup-summary.json','tests/test_chat_surface.py','evidence/host-popups/PROVENANCE.md','tools/targeted_surface_ci.py']
     allowed += ['Sources/WUHostService.h','Sources/WUHostService.m','Sources/WUVerifiedServiceProxy.h','tests/host_service_native.m','tests/test_account_generation_regression.py','tools/test_host_service.sh']
     allowed += ['tests/test_child_surface_refresh.py','tests/test_home_service_resolution.py','tests/test_keyboard_playback_contract.py','tests/test_neo_search_tiles.py','tests/test_plus_switch_safety.py','tests/test_red_reminder_wiring.py','tests/test_text_bubble_surface.py']
+    allowed += ['tests/neo_cards_ios.m','tools/test_neo_cards_ios.py','tests/test_neo_individual_cards.py','tests/voice_playback_proxy.m','tests/run_voice_playback_proxy.py','tests/test_revoke_notice_timestamp.py','tests/test_config_recovery_contract.py']
     # Exact manifest closure only: no SDK repository/history, binaries or private media.
     vendor=json.loads((ROOT/'Vendor/manifest.json').read_text())
     for name,digest in vendor['sha256'].items():

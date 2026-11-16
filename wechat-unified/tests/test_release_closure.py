@@ -44,6 +44,20 @@ class ReleaseClosure(unittest.TestCase):
                             missing.add(ref)
         self.assertEqual(sorted(missing), [])
 
+    def test_targeted_apple_tests_are_published_and_run(self):
+        allowed = whitelist()
+        required = {'tests/neo_cards_ios.m', 'tools/test_neo_cards_ios.py',
+                    'tests/voice_playback_proxy.m', 'tests/run_voice_playback_proxy.py',
+                    'tests/test_revoke_notice_timestamp.py', 'tests/test_config_recovery_contract.py',
+                    'tests/link_flow_ios.m', 'tools/test_link_flow_ios.py',
+                    'tests/article_image_ui.m', 'tools/test_article_image_ios.py'}
+        self.assertFalse(required - allowed, sorted(required - allowed))
+        runners = (ROOT / 'tools/build.sh').read_text() + (ROOT / 'workflow/wechat-unified.yml').read_text()
+        for runner in ('tools/test_neo_cards_ios.py', 'tests/run_voice_playback_proxy.py',
+                       'tests/test_revoke_notice_timestamp.py', 'tests/test_config_recovery_contract.py',
+                       'tools/test_link_flow_ios.py', 'tools/test_article_image_ios.py'):
+            self.assertIn(runner, runners)
+
     def test_foundation_mocks_do_not_import_uikit(self):
         roots = ['tests/revoke_notice_mock.m', 'Sources/WURevokeNotice.m',
                  'Sources/MessageConstruction.m', 'tests/message_revoke_proxy.m',

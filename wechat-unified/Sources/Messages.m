@@ -144,9 +144,14 @@ static void Revoke(id self, SEL cmd, id notice) {
             id old=fields && a.length?Lookup(mgr,s,[fields[@"id"] unsignedLongLongValue]):nil;
             NSDictionary *m=Info(old);
             protect=old && [m[@"id"] isEqual:fields[@"id"]] && [a isEqual:Account()] && g==generation && InSession(m,a,s) && !WUOwnMessage(a,s,m[@"from"],m[@"real"]) && [m[@"from"] length] && (![s hasSuffix:@"@chatroom"] || [m[@"real"] length]);
-            if(protect) WURevokeNoticeInsert(mgr,a,s,[fields[@"id"] unsignedLongLongValue],g,m[@"from"],m[@"to"],[m[@"time"] unsignedIntValue],^BOOL{
-                return WUEnabled(@"antiRevoke") && [a isEqual:Account()] && g==generation;
-            });
+            if(protect) {
+                uint32_t noticeTime=0;
+                @try { noticeTime=(uint32_t)Num(notice,@"m_uiCreateTime"); } @catch(NSException *e) { }
+                if(!noticeTime) { uint32_t oldTime=[m[@"time"] unsignedIntValue]; noticeTime=oldTime<UINT32_MAX?oldTime+1:oldTime; }
+                WURevokeNoticeInsert(mgr,a,s,[fields[@"id"] unsignedLongLongValue],g,m[@"from"],m[@"to"],noticeTime,^BOOL{
+                    return WUEnabled(@"antiRevoke") && [a isEqual:Account()] && g==generation;
+                });
+            }
         }
     } @catch(NSException *e) { protect=NO; }
     // Insertion is best effort and cannot change the protection decision.

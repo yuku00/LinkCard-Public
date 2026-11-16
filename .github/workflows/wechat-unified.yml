@@ -45,6 +45,14 @@ jobs:
         if: ${{ !contains(github.event.head_commit.message, '[targeted-pluginhub]') && !contains(github.event.head_commit.message, '[capture-only]') }}
         working-directory: wechat-unified
         run: python3 tools/test_link_flow_ios.py "$RUNNER_TEMP/wu-link-flow"
+      - name: Settings cards UIKit simulator regression
+        if: ${{ !contains(github.event.head_commit.message, '[targeted-pluginhub]') && !contains(github.event.head_commit.message, '[capture-only]') }}
+        working-directory: wechat-unified
+        run: python3 tools/test_neo_cards_ios.py "$RUNNER_TEMP/wu-neo-cards"
+      - name: Article image UIKit simulator regression
+        if: ${{ !contains(github.event.head_commit.message, '[targeted-pluginhub]') && !contains(github.event.head_commit.message, '[capture-only]') }}
+        working-directory: wechat-unified
+        run: python3 tools/test_article_image_ios.py "$RUNNER_TEMP/wu-article-image"
       - name: Capture geometry UIKit regression
         if: ${{ contains(github.event.head_commit.message, '[capture-only]') }}
         working-directory: wechat-unified

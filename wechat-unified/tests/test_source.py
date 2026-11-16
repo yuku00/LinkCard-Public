@@ -39,7 +39,7 @@ class Guardrails(unittest.TestCase):
         submit=(ROOT/'Sources/EmoticonSubmission.m').read_text()
         self.assertIn('WUCreateMessage(NSClassFromString(@"CMessageWrap"),47,account)',submit)
         self.assertIn('WUSubmitEmoticonCopy(source,Service(@"CMessageMgr")',messages)
-        self.assertIn('WUCreateMessage(cls,34,self.account)',voice)
+        self.assertIn('WUCreateVoiceMessage(cls,34,self.account)',voice)
         self.assertEqual(messages.count('WUMessageCanConstruct('),1)
         self.assertNotIn('WUVoiceConstruct',voice)
         self.assertNotIn('WUMessageConstruct',messages)

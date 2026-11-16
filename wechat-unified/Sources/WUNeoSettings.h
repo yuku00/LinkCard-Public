@@ -113,4 +113,28 @@ static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol
     }
     return cell;
 }
+// A full top-to-bottom constraint chain lets UITableView measure multiline rows.
+static inline void WUNeoSubtitleContent(UITableViewCell *cell, UILabel **titleOut, UILabel **detailOut, UIImageView **iconOut) {
+    UILabel *title=[UILabel new], *detail=[UILabel new];
+    title.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    detail.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    title.adjustsFontForContentSizeCategory=YES; detail.adjustsFontForContentSizeCategory=YES;
+    title.numberOfLines=0; detail.numberOfLines=0; detail.textColor=UIColor.secondaryLabelColor;
+    UIStackView *text=[[UIStackView alloc] initWithArrangedSubviews:@[title,detail]];
+    text.axis=UILayoutConstraintAxisVertical; text.spacing=3; text.translatesAutoresizingMaskIntoConstraints=NO;
+    UIImageView *icon=[UIImageView new]; icon.translatesAutoresizingMaskIntoConstraints=NO;
+    icon.contentMode=UIViewContentModeScaleAspectFit; icon.isAccessibilityElement=NO;
+    [cell.contentView addSubview:icon]; [cell.contentView addSubview:text];
+    [NSLayoutConstraint activateConstraints:@[
+        [icon.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:34],
+        [icon.centerYAnchor constraintEqualToAnchor:cell.contentView.centerYAnchor],
+        [icon.widthAnchor constraintEqualToConstant:22], [icon.heightAnchor constraintEqualToConstant:22],
+        [text.leadingAnchor constraintEqualToAnchor:icon.trailingAnchor constant:12],
+        [text.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-34],
+        [text.topAnchor constraintEqualToAnchor:cell.contentView.topAnchor constant:14],
+        [text.bottomAnchor constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-14]
+    ]];
+    *titleOut=title; *detailOut=detail; *iconOut=icon;
+}
+
 #endif

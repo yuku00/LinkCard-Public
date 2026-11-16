@@ -11,6 +11,23 @@ static NSUInteger checks;
 @implementation VoiceWrap
 - (instancetype)initWithMsgType:(unsigned int)n nsFromUsr:(NSString *)a { if((self=[super init])) { _m_uiMessageType=n; _m_nsFromUsr=[a copy]; } return self; }
 @end
+@interface OneVoiceWrap : NSObject
+@property(nonatomic) unsigned int m_uiMessageType, m_uiVoiceFormat, m_uiVoiceTime, m_uiVoiceEndFlag, m_uiCreateTime;
+@property(nonatomic,copy) NSData *m_dtVoice;
+@property(nonatomic,copy) NSString *m_nsContent, *m_nsFromUsr, *m_nsToUsr;
+- (instancetype)initWithMsgType:(long long)n;
+@end
+@implementation OneVoiceWrap
+- (instancetype)initWithMsgType:(long long)n { if((self=[super init])) _m_uiMessageType=(unsigned int)n; return self; }
+@end
+@interface IgnoredFromVoice : OneVoiceWrap @end
+@implementation IgnoredFromVoice
+- (void)setM_nsFromUsr:(NSString *)value { (void)value; }
+@end
+@interface BadTypeVoice : OneVoiceWrap @end
+@implementation BadTypeVoice
+- (instancetype)initWithMsgType:(long long)n { return [super initWithMsgType:n+1]; }
+@end
 @interface VoiceHost : NSObject
 @property(nonatomic) NSUInteger inserts, sends;
 @property(nonatomic) BOOL insertRaises, sendRaises, invalidate;
@@ -81,6 +98,19 @@ int main(void) { @autoreleasepool {
     VoiceWrap *source=[[VoiceWrap alloc] initWithMsgType:34 nsFromUsr:@"original"]; source.m_uiVoiceFormat=4; source.m_dtVoice=tencent;
     CHECK([WUVoiceSelectedData(source) isEqual:tencent]); source.m_uiVoiceFormat=0; CHECK(!WUVoiceSelectedData(source)); source.m_uiVoiceFormat=4; source.m_uiMessageType=1; CHECK(!WUVoiceSelectedData(source)); source.m_uiMessageType=34;
     CHECK(!WUVoiceSelectedData([NSObject new])); CHECK(!WUVoiceSelectedData(nil)); source.m_dtVoice=[NSData data]; CHECK(!WUVoiceSelectedData(source));
+    VoiceHost *oneHost=[VoiceHost new]; WUVoiceForwardOperation *oneOp=Operation(tencent);
+    CHECK([[oneOp submitWithManager:oneHost audioSender:oneHost messageClass:OneVoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"已请求"]);
+    CHECK(oneHost.inserts==1 && oneHost.sends==1 && [oneHost.last.m_nsFromUsr isEqual:@"self"] && [oneHost.last.m_nsToUsr isEqual:@"recipient"]);
+    oneHost=[VoiceHost new]; oneHost.insertRaises=YES; oneOp=Operation(tencent);
+    CHECK([[oneOp submitWithManager:oneHost audioSender:oneHost messageClass:OneVoiceWrap.class current:^BOOL{ return YES; }] hasPrefix:@"未知"]);
+    [oneOp submitWithManager:oneHost audioSender:oneHost messageClass:OneVoiceWrap.class current:^BOOL{ return YES; }];
+    CHECK(oneHost.inserts==1 && oneHost.sends==0);
+    VoiceHost *badHost=[VoiceHost new];
+    for(Class bad in @[IgnoredFromVoice.class,BadTypeVoice.class]) {
+        WUVoiceForwardOperation *badOp=Operation(tencent);
+        CHECK([[badOp submitWithManager:badHost audioSender:badHost messageClass:bad current:^BOOL{ return YES; }] hasPrefix:@"失败"]);
+        CHECK(badHost.inserts==0 && badHost.sends==0);
+    }
     VoiceHost *host=[VoiceHost new]; WUVoiceForwardOperation *op=Operation(tencent); CHECK([op.status isEqual:@"未提交"]); CHECK(op.milliseconds==1000);
     CHECK([Submit(op,host,^BOOL{ return YES; }) hasPrefix:@"已请求"]); CHECK(host.inserts==1 && host.sends==1);
     CHECK(host.last.m_uiMessageType==34 && host.last.m_uiVoiceFormat==4 && host.last.m_uiVoiceTime==1000 && host.last.m_uiVoiceEndFlag==1);

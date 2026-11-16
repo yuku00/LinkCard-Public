@@ -24,8 +24,53 @@ CONSTRUCTOR(ConstructI,unsigned int)
 CONSTRUCTOR(Constructi,int)
 CONSTRUCTOR(Constructq,long long)
 CONSTRUCTOR(ConstructQ,unsigned long long)
+#define ONE_CONSTRUCTOR(NAME,TYPE) \
+@interface NAME : Tracked \
+- (instancetype)initWithMsgType:(TYPE)n; \
+@end \
+@implementation NAME \
+- (instancetype)initWithMsgType:(TYPE)n { if((self=[super init])) { calls++; seen=(uint64_t)n; } return self; } \
+@end
+ONE_CONSTRUCTOR(OneI,unsigned int)
+ONE_CONSTRUCTOR(Onei,int)
+ONE_CONSTRUCTOR(Oneq,long long)
+ONE_CONSTRUCTOR(OneQ,unsigned long long)
+@interface BothInit : OneI
+- (instancetype)initWithMsgType:(unsigned int)n nsFromUsr:(NSString *)a;
+@end
+static int bothMode;
+@implementation BothInit
+- (instancetype)initWithMsgType:(unsigned int)n nsFromUsr:(NSString *)a {
+    calls++;
+    if(bothMode==1) return nil;
+    if(bothMode==2) [NSException raise:@"fixture" format:@"preferred throws"];
+    return [super init];
+}
+@end
+@interface OneMismatch : OneI @end
+@implementation OneMismatch
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)s {
+    if(s==@selector(initWithMsgType:)) return [NSMethodSignature signatureWithObjCTypes:"@@:f"];
+    return [super methodSignatureForSelector:s];
+}
+@end
 @interface Replacement : Tracked @end
 @implementation Replacement @end
+@interface OneSpecial : Tracked
+- (instancetype)initWithMsgType:(long long)n;
+@end
+static int oneMode;
+@implementation OneSpecial
+- (instancetype)initWithMsgType:(long long)n {
+    if((self=[super init])) {
+        calls++;
+        if(oneMode==1) return nil;
+        if(oneMode==2) [NSException raise:@"fixture" format:@"one init throws"];
+        if(oneMode==3) self=(id)[Replacement new];
+    }
+    return self;
+}
+@end
 static int initMode;
 @interface SpecialInit : Tracked
 - (instancetype)initWithMsgType:(unsigned int)n nsFromUsr:(NSString *)a;
@@ -59,6 +104,11 @@ static Class BadShape(const char *encoding) {
     static unsigned index;
     Class cls=objc_allocateClassPair(Tracked.class,[[NSString stringWithFormat:@"BadConstructor%u",++index] UTF8String],0);
     CHECK(class_addMethod(cls,NSSelectorFromString(@"initWithMsgType:nsFromUsr:"),(IMP)NeverCalled,encoding)); objc_registerClassPair(cls); return cls;
+}
+static Class BadOneShape(const char *encoding) {
+    static unsigned index;
+    Class cls=objc_allocateClassPair(Tracked.class,[[NSString stringWithFormat:@"BadOneConstructor%u",++index] UTF8String],0);
+    CHECK(class_addMethod(cls,NSSelectorFromString(@"initWithMsgType:"),(IMP)NeverCalled,encoding)); objc_registerClassPair(cls); return cls;
 }
 @interface NoSendHost : NSObject
 @property(nonatomic) NSUInteger inserts,sends;
@@ -108,6 +158,36 @@ int main(void) { @autoreleasepool {
         }
         CHECK(live==0);
     }
+    Class ones[]={OneI.class,Onei.class,Oneq.class,OneQ.class};
+    for(unsigned i=0;i<4;i++) {
+        NSUInteger before=calls;
+        @autoreleasepool { CHECK(!WUCreateMessage(ones[i],34,@"account")); CHECK(WUCreateVoiceMessage(ones[i],34,@"account")); CHECK(calls==before+1 && seen==34); }
+        CHECK(live==0);
+    }
+    const char *badOne[]={"I@:I","v@:I","@@:","@@:I@","@@:@","@@:f","@@:d","@@:B","@@:^i","@@:s","@@:C","#@:I"};
+    for(unsigned i=0;i<sizeof(badOne)/sizeof(*badOne);i++) {
+        NSUInteger count=calls; Class cls=BadOneShape(badOne[i]);
+        @autoreleasepool { CHECK(!WUCreateVoiceMessage(cls,34,@"account")); }
+        CHECK(calls==count && live==0);
+    }
+    for(oneMode=1;oneMode<=3;oneMode++) {
+        NSUInteger beforeOne=calls;
+        @autoreleasepool {
+            __weak id weak;
+            @autoreleasepool { id result=WUCreateVoiceMessage(OneSpecial.class,34,@"account"); weak=result; CHECK(oneMode==3?[result isKindOfClass:Replacement.class]:result==nil); CHECK(calls==beforeOne+1); }
+            CHECK(weak==nil);
+        }
+        CHECK(live==0);
+    }
+    NSUInteger before=calls;
+    @autoreleasepool { CHECK(!WUCreateVoiceMessage(OneMismatch.class,34,@"account")); CHECK(!WUCreateVoiceMessage(Onei.class,(uint64_t)INT_MAX+1,@"account")); CHECK(!WUCreateVoiceMessage(OneI.class,34,@"")); }
+    CHECK(calls==before && live==0);
+    bothMode=1; before=calls;
+    @autoreleasepool { CHECK(WUCreateVoiceMessage(BothInit.class,34,@"account")); CHECK(calls==before+2 && seen==34); } CHECK(live==0);
+    bothMode=2; before=calls;
+    @autoreleasepool { CHECK(!WUCreateVoiceMessage(BothInit.class,34,@"account")); CHECK(calls==before+1); } CHECK(live==0);
+    bothMode=0; before=calls;
+    @autoreleasepool { CHECK(WUCreateVoiceMessage(BothInit.class,34,@"account")); CHECK(calls==before+1); } CHECK(live==0);
     NSData *data=Fixture(); NoSendHost *host=[NoSendHost new];
     for(initMode=1;initMode<=3;initMode++) { @autoreleasepool {
         WUVoiceForwardOperation *op=[[WUVoiceForwardOperation alloc] initWithData:data account:@"account" target:@"recipient"];

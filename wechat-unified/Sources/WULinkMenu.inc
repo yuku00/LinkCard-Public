@@ -1,6 +1,6 @@
 // Included by Messages.m: private menu methods are checked before every invocation.
 #import "LinkLogic.h"
-static IMP wuLinkMenuOriginal;
+static IMP wuLinkMenuOriginal, wuLinkClickOriginal;
 static char wuLinkMenuLeaseKey, wuLinkMenuItemKey, wuEmoticonMenuTokenKey, wuOwnerMenuLeaseKey;
 static NSUInteger wuLinkMenuSerial;
 
@@ -105,7 +105,7 @@ static id WUMenuAddImage(id original, UIView *cell) {
     if(!itemClass || !WUMatches(class_getInstanceMethod(itemClass,init),"@",@[@"@",@"@",@":"])) return original;
     UIViewController *owner=Chat(cell); id model=Obj(cell,@"viewModel"), wrap=Obj(model,@"messageWrap");
     if(!owner || !cell.window || !model || !wrap || !WULinkMessageReady(wrap)) return original;
-    if(!Has(wrap,@"m_nsImageHDPath","@",@[]) && !Has(wrap,@"m_nsImagePath","@",@[])) return original;
+    if(!Has(wrap,@"m_nsImageHDPath","@",@[]) && !Has(wrap,@"m_nsImagePath","@",@[]) && !Has(NSClassFromString(@"CMessageWrap"),@"getPathOfMsgImg:","@",@[@"@"])) return original;
     Class editor=NSClassFromString(@"EmoticonPickViewController");
     if(!editor || ![editor isSubclassOfClass:UIViewController.class] || !WUMatches(class_getInstanceMethod(editor,@selector(init)),"@",@[]) || !WUMatches(class_getInstanceMethod(editor,NSSelectorFromString(@"setM_image:")),"v",@[@"@"])) return original;
     NSDictionary *identity=Info(wrap); NSString *account=Account(), *session=Session(owner); NSUInteger gen=generation;
@@ -170,7 +170,30 @@ static id WULinkFilteredMenu(id cell, SEL cmd, id input) {
         return [original arrayByAddingObject:item];
     } @catch(__unused NSException *e) { return original; }
 }
+// 8.0.79 ILinkEventExt: NSString * + CGRect, not a URL/model object.
+static void WULinkClicked(id cell, SEL cmd, id text, CGRect rect) {
+    @try {
+        if(NSThread.isMainThread && WUEnabled(@"enhancedLinks") && [cell isKindOfClass:UIView.class] && [text isKindOfClass:NSString.class] && WULinkSafeURL(text)) {
+            UIViewController *owner=Chat(cell); id model=Obj(cell,@"viewModel"), wrap=Obj(model,@"messageWrap");
+            NSString *account=Account(), *session=Session(owner); NSUInteger gen=generation;
+            NSDictionary *identity=WULinkMessageReady(wrap)?Info(wrap):nil;
+            if(owner && [(UIView *)cell window] && model && identity && [identity[@"type"] unsignedIntegerValue]==1 && account.length && session.length && InSession(identity,account,session) && ([identity[@"id"] unsignedLongLongValue] || [identity[@"local"] unsignedLongLongValue])) {
+                __weak UIView *weakCell=cell; __weak UIViewController *weakOwner=owner; __weak id weakModel=model, weakWrap=wrap;
+                NSString *clicked=[text copy], *content=[Str(wrap,@"m_nsContent") copy];
+                BOOL (^current)(void)=^BOOL {
+                    @try {
+                        UIView *c=weakCell; UIViewController *v=weakOwner; id m=weakModel,w=weakWrap;
+                        return c && v && m && w && (c.window || WUMessageEntriesOwnsController(v.presentedViewController)) && Chat(c)==v && Obj(c,@"viewModel")==m && Obj(m,@"messageWrap")==w && WULinkMessageReady(w) && [Info(w) isEqual:identity] && [content isEqual:Str(w,@"m_nsContent")] && WUEnabled(@"enhancedLinks") && [account isEqual:Account()] && gen==generation && [session isEqual:Session(v)];
+                    } @catch(__unused NSException *e) { return NO; }
+                };
+                if(current() && WUOpenClickedLink(owner,clicked,current)) return;
+            }
+        }
+    } @catch(__unused NSException *e) {}
+    ((void(*)(id,SEL,id,CGRect))wuLinkClickOriginal)(cell,cmd,text,rect);
+}
 static void WUInstallLinkMenu(void) {
+    WUHook(@"TextMessageCellView",@"onLinkClicked:withRect:",NO,"v",@[@"@",[NSString stringWithUTF8String:@encode(CGRect)]],(IMP)WULinkClicked,&wuLinkClickOriginal);
     Class cell=NSClassFromString(@"BaseMessageCellView"), item=NSClassFromString(@"MMMenuItem");
     if(!cell || !item || !WUMatches(class_getInstanceMethod(item,NSSelectorFromString(@"initWithTitle:svgName:action:")),"@",@[@"@",@"@",@":"])) return;
     WUHook(@"BaseMessageCellView",@"filteredMenuItems:",NO,"@",@[@"@"],(IMP)WULinkFilteredMenu,&wuLinkMenuOriginal);

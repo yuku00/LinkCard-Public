@@ -13,8 +13,8 @@ class Contract(unittest.TestCase):
         s=(ROOT/'Sources/WUSettingsListEntry.m').read_text()
         for part in ('m_tableViewMgr','WCTableViewManager','WCTableViewSectionManager',
                      'WCTableViewNormalCellManager','defaultSection','insertSection:At:',
-                     'normalCellForSel:target:title:rightValue:canRightValueCopy:',
-                     '@encode(NSUInteger)', '@encode(BOOL)'):
+                     'normalCellForSel:target:title:accessoryType:',
+                     '@encode(unsigned int)', 'long long))objc_msgSend'):
             self.assertIn(part, s)
         card=(ROOT/'Sources/WUCardDirect.m').read_text()
         for part in ('WUCardRouteKind(', 'if(routeKind==1)', 'void(*)(id,SEL,id)',

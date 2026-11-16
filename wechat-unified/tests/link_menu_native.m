@@ -54,6 +54,15 @@ static NSString *Str(id o,NSString *name) { id x=Obj(o,name); return [x isKindOf
 @implementation BaseMessageCellView
 - (id)filteredMenuItems:(id)items { calls++; return items; }
 @end
+static NSUInteger clickCalls;
+static id lastClick;
+static CGRect lastRect;
+@interface TextMessageCellView : BaseMessageCellView
+- (void)onLinkClicked:(id)text withRect:(CGRect)rect;
+@end
+@implementation TextMessageCellView
+- (void)onLinkClicked:(id)text withRect:(CGRect)rect { clickCalls++; lastClick=text; lastRect=rect; }
+@end
 @interface MMMenuItem : NSObject
 @property(nonatomic) SEL action;
 #if WU_TEST_BAD_MENU_ABI
@@ -73,6 +82,10 @@ static NSDictionary *Info(MockMessage *m) { return @{@"from":m.m_nsFromUsr?:@"",
 static BOOL InSession(NSDictionary *m,NSString *a,NSString *s) { return [m[@"from"] isEqual:s] && [m[@"to"] isEqual:a]; }
 NSArray *WULinkCandidates(NSArray *messages) { return [messages[0][@"content"] containsString:@"https://"]?@[@1]:@[]; }
 void WUOpenSelectedLinks(UIViewController *owner,NSArray *messages,BOOL (^current)(void)) { opened=current() && [messages[0][@"content"] containsString:@"https://"]; }
+static BOOL clickAccepted=YES;
+static BOOL (^clickGuard)(void);
+NSURL *WULinkSafeURL(NSString *text) { return [text isKindOfClass:NSString.class] && [text hasPrefix:@"https://"]?[NSURL URLWithString:text]:nil; }
+BOOL WUOpenClickedLink(UIViewController *owner,NSString *text,BOOL (^current)(void)) { clickGuard=[current copy]; return clickAccepted && current(); }
 BOOL WUHook(NSString *name,NSString *selector,BOOL meta,const char *result,NSArray *args,IMP replacement,IMP *original) {
     Class cls=NSClassFromString(name); SEL sel=NSSelectorFromString(selector); Method m=class_getInstanceMethod(cls,sel);
     if(!WUMatches(m,result,args)) return NO;
@@ -85,6 +98,17 @@ int main(void) { @autoreleasepool {
     MockMessage *msg=[MockMessage new]; msg.m_nsFromUsr=@"peer"; msg.m_nsToUsr=@"me"; msg.m_nsRealChatUsr=@""; msg.m_nsContent=@"https://example.com"; msg.m_uiMessageType=1; msg.m_uiMesLocalID=7;
     cell.viewModel=[MockModel new]; cell.viewModel.messageWrap=msg;
     WUInstallLinkMenu();
+    assert(wuLinkClickOriginal);
+    TextMessageCellView *textCell=[TextMessageCellView new]; [window addSubview:textCell]; textCell.viewModel=cell.viewModel;
+    CGRect rect=CGRectMake(1,2,3,4);
+    [textCell onLinkClicked:msg.m_nsContent withRect:rect]; assert(clickCalls==0 && clickGuard());
+    generation++; assert(!clickGuard());
+    clickAccepted=NO; [textCell onLinkClicked:msg.m_nsContent withRect:rect]; assert(clickCalls==1 && lastClick==msg.m_nsContent && CGRectEqualToRect(lastRect,rect));
+    clickAccepted=YES; enabled=NO; [textCell onLinkClicked:msg.m_nsContent withRect:rect]; assert(clickCalls==2); enabled=YES;
+    [textCell onLinkClicked:@"weixin://test" withRect:rect]; assert(clickCalls==3);
+    [textCell onLinkClicked:@42 withRect:rect]; assert(clickCalls==4);
+    account=@"other"; [textCell onLinkClicked:msg.m_nsContent withRect:rect]; assert(clickCalls==5); account=@"me";
+    [textCell onLinkClicked:msg.m_nsContent withRect:rect]; assert(clickGuard()); textCell.viewModel=[MockModel new]; assert(!clickGuard());
 #if WU_TEST_BAD_MENU_ABI
     assert(!wuLinkMenuOriginal); NSArray *original=@[@"host"]; assert([cell filteredMenuItems:original]==original && calls==1); puts("menu ABI fallback passed"); return 0;
 #endif

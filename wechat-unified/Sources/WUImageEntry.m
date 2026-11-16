@@ -43,6 +43,16 @@ static NSArray *Paths(id wrap) {
         if(path && ![path isKindOfClass:NSString.class]) return nil;
         if([path length]) [out addObject:@{@"getter":selector,@"path":[path copy]}];
     }
+    // 8.0.79 CMessageWrap.h:226; WCRefine 0xfb0098 also calls this class API.
+    // It supplies a cache path, NOT a guarantee of original/HD bytes.
+    if(!out.count && !Has(wrap,@"m_nsImageHDPath","@",@[]) && !Has(wrap,@"m_nsImagePath","@",@[])) {
+        Class c=NSClassFromString(@"CMessageWrap");
+        if(c && [wrap isKindOfClass:c] && Has(c,@"getPathOfMsgImg:","@",@[@"@"])) {
+            id path=((id(*)(id,SEL,id))objc_msgSend)(c,NSSelectorFromString(@"getPathOfMsgImg:"),wrap);
+            if(path && ![path isKindOfClass:NSString.class]) return nil;
+            if([path length]) [out addObject:@{@"getter":@"+getPathOfMsgImg:",@"path":[path copy]}];
+        }
+    }
     return [out copy];
 }
 static NSString *LocalPath(NSString *path) {

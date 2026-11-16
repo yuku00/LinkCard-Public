@@ -11,7 +11,8 @@ class SettingsLayoutTests(unittest.TestCase):
         keys = re.findall(r'@\[(@"[^"]+"|WUDictation\w+),', rows)
         ranges = re.search(r'NSRange ranges\[\] = \{([^;]+)\};', SOURCE).group(1)
         ranges = [(int(a), int(b)) for a, b in re.findall(r'\{(\d+),(\d+)\}', ranges)]
-        self.assertEqual(len(keys), 55)
+        self.assertEqual(len(keys), 56)
+        self.assertIn('@"antiRevokeNotice"', keys)
         self.assertIn('@"emoticonContentCorner"', keys)
         self.assertEqual(len(set(keys)), len(keys))
         self.assertEqual([i for start, count in ranges for i in range(start, start + count)], list(range(len(keys))))
@@ -31,7 +32,7 @@ class SettingsLayoutTests(unittest.TestCase):
             self.assertIn(f'@"{key}"', keys[start:start + count])
             self.assertIn(f'@"{key}"', available)
             self.assertIn('return WUAdsAvailable(key)', available)
-            detail = SOURCE.split(f'if([key isEqual:@"{key}"]) cell.detailTextLabel.text=', 1)[1].split(';\n', 1)[0]
+            detail = SOURCE.split(f'if([key isEqual:@"{key}"]) detail.text=', 1)[1].split(';\n', 1)[0]
             for phrase in ('默认关闭', '影响推荐内容', '关闭时透传宿主原行为'):
                 self.assertIn(phrase, detail)
         self.assertIn('stringByAppendingString:@" 尚未观察到', SOURCE)

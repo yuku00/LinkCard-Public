@@ -33,12 +33,16 @@ NSDictionary *WUAccountOptions(NSString *a) { return @{@"toolbar":selectedTool?@
     if(src) CFRelease(src); return image;
 }
 @end
+static id classImagePath;
 @interface CMessageWrap : NSObject
++ (id)getPathOfMsgImg:(id)message;
 @property(nonatomic) unsigned int m_uiMessageType, m_uiMesLocalID, m_uiCreateTime;
 @property(nonatomic) unsigned long long m_n64MesSvrID;
 @property(nonatomic,copy) NSString *m_nsFromUsr, *m_nsToUsr, *m_nsRealChatUsr, *m_nsImageHDPath, *m_nsImagePath;
 @end
-@implementation CMessageWrap @end
+@implementation CMessageWrap
++ (id)getPathOfMsgImg:(id)message { return classImagePath; }
+@end
 @interface ImageChat : UIViewController
 @property(nonatomic,copy) NSArray *selection;
 - (id)getSelectedMsgs;
@@ -172,6 +176,13 @@ int main(int argc, const char *argv[]) { @autoreleasepool {
             CHECK(entries.count==0 && nav.changes==changes && clearCalls==0 && editor.accepted!=nil);
             CHECK([WUEmoticonRead(path) isEqual:image]);
         }
+        Setup(png); classImagePath=path;
+        BadGetterClass(wrap,@"Host8079NoHDGetter",@"m_nsImageHDPath");
+        BadGetterClass(wrap,@"Host8079NoPathGetter",@"m_nsImagePath");
+        CHECK([Paths(wrap).firstObject[@"path"] isEqual:path]);
+        Open(); CHECK([((ImageEditorBase *)nav.topViewController).accepted.mockBytes isEqual:png]);
+        classImagePath=@42; CHECK(Paths(wrap)==nil); Tick(); CHECK(entries.count==0);
+        classImagePath=nil; CHECK(Paths(wrap).count==0);
         // Single-message menu uses the same cache validation without host multi-select or toolbar membership.
         Setup(png); selectedTool=NO; chat.selection=@[]; __block BOOL menuCurrent=YES;
         WUOpenMessageImageEditor(chat,wrap,^BOOL { return menuCurrent; });

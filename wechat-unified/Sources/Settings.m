@@ -29,7 +29,7 @@ NSString *WUSurfaceTitle(NSString *role);
     NSString *words=self.editor.text ?: @""; BOOL valid=words.length<=2048;
     for(NSString *word in [words componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) if(word.length>128) valid=NO;
     if(valid && WUSave(@"words",words)) { [self.navigationController popViewControllerAnimated:YES]; return; }
-    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"未保存" message:@"词表超限或文件写入失败，原配置未更改。" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *a=[UIAlertController alertControllerWithTitle:@"未保存" message:WUConfigReadOnly()?@"配置及备份无有效可读数据，已禁止保存并保留原文件。请备份、检查或恢复配置后重启微信。":@"词表超限或文件写入失败，原配置未更改。" preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]]; [self presentViewController:a animated:YES completion:nil];
 }
 @end
@@ -43,7 +43,7 @@ NSString *WUSurfaceTitle(NSString *role);
 @implementation WUSettings
 - (void)viewDidLoad {
     [super viewDidLoad]; self.title=@"微信整合 · 0.3.1"; WUNeoPrepareTable(self);
-    self.rows=@[@[@"enabled",@"启用已实现功能"],@[@"articleImage",@"公众号单图 → 表情编辑（手动确认）"],@[@"voiceProgress",@"语音真实播放进度（本地）"],@[@"voiceRealDuration",@"语音：显示PCM实测时长"],@[@"voiceCarry",@"语音：分秒格式"],@[@"voiceCountdown",@"语音：倒数显示"],@[@"voiceWaveform",@"语音：真实PCM采样波形"],@[@"voiceAlways",@"语音：未播放常显波形"],@[@"voicePulse",@"语音：播放脉冲"],@[@"voiceSeek",@"语音：拖动松手定位"],@[@"ads",@"公众号列表去广告"],@[@"officialRecoFlow",@"看一看 · 推荐流过滤"],@[@"officialRecCard",@"看一看 · 推荐卡过滤"],@[@"momentsAds",@"朋友圈广告有效性过滤"],@[@"miniSplashAds",@"小程序非激励开屏广告过滤"],@[@"miniBannerAds",@"WA当前JSC · Banner展示过滤"],@[@"miniInterstitialAds",@"WA当前JSC · 插屏展示过滤"],@[@"keywords",@"朋友圈字面关键词屏蔽"],@[@"inputBorder",@"输入框描边"],@[WUDictationHideKey,@"隐藏语音转述图标"],@[WUDictationGuardKey,@"语音转述防误触"],@[@"inputPulse",@"输入呼吸灯 · 仅正在编辑"],@[@"hideHomeSearch",@"隐藏首页搜索表头（已识别布局）"],@[@"textBubbleSurface",@"文本消息气泡颜色与圆角"],@[@"fileSurface",@"文件消息背景卡片美化"],@[@"emoticonSurface",@"表情消息背景卡片美化"],@[@"noticeBorder",@"聊天系统通知描边"],@[@"separators",@"首页列表隐藏分割线"],@[@"convenientMoments",@"半屏朋友圈 · 聊天输入 rp"],@[@"chatSearch",@"聊天页头当前会话搜索"],@[@"callbackConfirm",@"通话记录回拨前确认"],@[@"antiRevoke",@"保留收到的被撤回消息（本地提示，兼容版本）"],@[@"multiRevoke",@"多选撤回自身消息（不删除）"],@[@"enhancedLinks",@"所选消息增强链接识别（手动工具）"],@[@"repeatEmoticon",@"表情标签 · 常规复读 / 长按文件下载"],@[@"mergeGroup",@"群聊相邻头像合并显示"],@[@"mergePrivate",@"私聊相邻头像合并显示"],@[@"mergeBottom",@"合并头像置底"],@[@"redReminder",@"红包前台提醒（部分定位）"],@[@"themes",@"本地多格式主题 / 独立气泡"],@[@"sunMoon",@"设置页日月开关外观"],@[@"searchSurface",@"搜索栏圆角柔和背景"],@[@"referSurface",@"引用卡片共享美化"],@[@"referMessageSurface",@"文本消息内引用卡片独立覆盖"],@[@"textPreviewSurface",@"聊天文本预览底部工具栏美化"],@[@"hostPopupSurface",@"微信纯文字提示背景（限定页面）"],@[@"quickReplySurface",@"微信顶部快速回复横幅美化"],@[@"plusSurface",@"首页右上角加号菜单美化（暂不可用）"],@[@"toastSurface",@"宿主Toast圆角背景"],@[@"timeSurface",@"聊天时间标签胶囊背景"],@[@"swipeSurface",@"首页左滑菜单圆角卡片"],@[@"chatSendSurface",@"聊天发送按钮美化"],@[@"chatAttachmentSurface",@"聊天附件按钮美化"],@[@"cardDirect",@"小店与卡包 · 直接进入卡包（实验）"],@[@"emoticonContentCorner",@"聊天表情本体圆角"]];
+    self.rows=@[@[@"enabled",@"启用已实现功能"],@[@"articleImage",@"公众号单图 → 表情编辑（手动确认）"],@[@"voiceProgress",@"语音真实播放进度（本地）"],@[@"voiceRealDuration",@"语音：显示PCM实测时长"],@[@"voiceCarry",@"语音：分秒格式"],@[@"voiceCountdown",@"语音：倒数显示"],@[@"voiceWaveform",@"语音：真实PCM采样波形"],@[@"voiceAlways",@"语音：未播放常显波形"],@[@"voicePulse",@"语音：播放脉冲"],@[@"voiceSeek",@"语音：拖动松手定位"],@[@"ads",@"公众号列表去广告"],@[@"officialRecoFlow",@"看一看 · 推荐流过滤"],@[@"officialRecCard",@"看一看 · 推荐卡过滤"],@[@"momentsAds",@"朋友圈广告有效性过滤"],@[@"miniSplashAds",@"小程序非激励开屏广告过滤"],@[@"miniBannerAds",@"WA当前JSC · Banner展示过滤"],@[@"miniInterstitialAds",@"WA当前JSC · 插屏展示过滤"],@[@"keywords",@"朋友圈字面关键词屏蔽"],@[@"inputBorder",@"输入框描边"],@[WUDictationHideKey,@"隐藏语音转述图标"],@[WUDictationGuardKey,@"语音转述防误触"],@[@"inputPulse",@"输入呼吸灯 · 仅正在编辑"],@[@"hideHomeSearch",@"隐藏首页搜索表头（已识别布局）"],@[@"textBubbleSurface",@"文本消息气泡颜色与圆角"],@[@"fileSurface",@"文件消息背景卡片美化"],@[@"emoticonSurface",@"表情消息背景卡片美化"],@[@"noticeBorder",@"聊天系统通知描边"],@[@"separators",@"首页列表隐藏分割线"],@[@"convenientMoments",@"半屏朋友圈 · 聊天输入 rp"],@[@"chatSearch",@"聊天页头当前会话搜索"],@[@"callbackConfirm",@"通话记录回拨前确认"],@[@"antiRevoke",@"保留收到的被撤回消息"],@[@"antiRevokeNotice",@"显示防撤回本地提示（兼容版本）"],@[@"multiRevoke",@"多选撤回自身消息（不删除）"],@[@"enhancedLinks",@"所选消息增强链接识别（手动工具）"],@[@"repeatEmoticon",@"表情标签 · 常规复读 / 长按文件下载"],@[@"mergeGroup",@"群聊相邻头像合并显示"],@[@"mergePrivate",@"私聊相邻头像合并显示"],@[@"mergeBottom",@"合并头像置底"],@[@"redReminder",@"红包前台提醒（部分定位）"],@[@"themes",@"本地多格式主题 / 独立气泡"],@[@"sunMoon",@"设置页日月开关外观"],@[@"searchSurface",@"搜索栏圆角柔和背景"],@[@"referSurface",@"引用卡片共享美化"],@[@"referMessageSurface",@"文本消息内引用卡片独立覆盖"],@[@"textPreviewSurface",@"聊天文本预览底部工具栏美化"],@[@"hostPopupSurface",@"微信纯文字提示背景（限定页面）"],@[@"quickReplySurface",@"微信顶部快速回复横幅美化"],@[@"plusSurface",@"首页右上角加号菜单美化（暂不可用）"],@[@"toastSurface",@"宿主Toast圆角背景"],@[@"timeSurface",@"聊天时间标签胶囊背景"],@[@"swipeSurface",@"首页左滑菜单圆角卡片"],@[@"chatSendSurface",@"聊天发送按钮美化"],@[@"chatAttachmentSurface",@"聊天附件按钮美化"],@[@"cardDirect",@"小店与卡包 · 直接进入卡包（实验）"],@[@"emoticonContentCorner",@"聊天表情本体圆角"]];
     self.navigationItem.rightBarButtonItem=[[UIBarButtonItem alloc] initWithTitle:@"完成" style:UIBarButtonItemStyleDone target:self action:@selector(done)];
     UISearchController *search=[[UISearchController alloc] initWithSearchResultsController:nil];
     search.searchResultsUpdater=self; search.obscuresBackgroundDuringPresentation=NO;
@@ -76,7 +76,7 @@ NSString *WUSurfaceTitle(NSString *role);
     self.overview=[[UIStackView alloc] initWithArrangedSubviews:@[card,self.categories]]; self.overview.axis=UILayoutConstraintAxisVertical; self.overview.spacing=14; self.overview.layoutMargins=UIEdgeInsetsMake(12,20,8,20); self.overview.layoutMarginsRelativeArrangement=YES;
     self.tableView.tableHeaderView=self.overview; [self updateOverview];
 }
-- (void)updateOverview { self.statusLabel.text=[WUValue(@"enabled") boolValue]?@"已启用 · 各功能仍可单独设置":@"已暂停 · 配置保留，可在常用中启用"; }
+- (void)updateOverview { self.statusLabel.text=WUConfigReadOnly()?@"配置主文件及备份均无有效可读数据，已禁止保存并保留原文件；当前显示安全默认值。请先备份 Application Support/WeChatUnified 中的 config.json 和 backup.json，检查或恢复后重启微信。":([WUValue(@"enabled") boolValue]?@"已启用 · 各功能仍可单独设置":@"已暂停 · 配置保留，可在常用中启用"); }
 - (void)categoryChanged:(UISegmentedControl *)sender { [self.tableView reloadData]; }
 - (BOOL)showsSection:(NSInteger)section {
     NSInteger category=self.categories.selectedSegmentIndex;
@@ -92,7 +92,7 @@ NSString *WUSurfaceTitle(NSString *role);
 - (void)done { [self dismissViewControllerAnimated:YES completion:nil]; }
 // Ranges follow the existing row order so keys, defaults and handlers remain unchanged.
 - (NSRange)featureRangeForSection:(NSInteger)section {
-    static const NSRange ranges[] = {{0,2},{2,8},{10,8},{18,4},{22,6},{28,11},{39,16}};
+    static const NSRange ranges[] = {{0,2},{2,8},{10,8},{18,4},{22,6},{28,12},{40,16}};
     return ranges[section];
 }
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return 9; }
@@ -154,7 +154,7 @@ NSString *WUSurfaceTitle(NSString *role);
     if([@[@"chatSendSurface",@"chatAttachmentSurface"] containsObject:key]) return WUChatButtonSurfaceAvailable(key);
     if([key hasPrefix:@"voice"]) return WUVoiceAvailable(key);
     if([@[@"officialRecoFlow",@"officialRecCard",@"momentsAds",@"miniSplashAds",@"miniBannerAds",@"miniInterstitialAds"] containsObject:key]) return WUAdsAvailable(key);
-    if([key isEqual:@"enabled"] || [key isEqual:@"sunMoon"]) return YES;
+    if([key isEqual:@"enabled"] || [key isEqual:@"sunMoon"] || [key isEqual:@"antiRevokeNotice"]) return YES;
     NSDictionary *map=@{@"ads":@"BrandTL",@"keywords":@"WCFacade",@"inputBorder":@"MMGrowTextView",@"noticeBorder":@"SystemMessageCellView",@"separators":@"NewMainFrameViewController",@"themes":@"MMThemeManager",@"searchSurface":@"WCSearchBar",@"referSurface":@"MMInputMsgReferView",@"referMessageSurface":@"MMInputMsgReferView",@"plusSurface":@"MainFrameActionFloatView",@"toastSurface":@"MMToastView",@"timeSurface":@"ChatTimeCellView",@"swipeSurface":@"NewMainFrameCell",@"chatSendSurface":@"MMInputToolView",@"chatAttachmentSurface":@"MMInputToolView"};
     if(!map[key]) return WUMessageAvailable(key);
     for(NSString *line in WUHookStatus()) if([line containsString:map[key]] && [line hasSuffix:@"— installed"]) return YES;
@@ -163,50 +163,48 @@ NSString *WUSurfaceTitle(NSString *role);
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     p=[self originalPath:p];
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
-    cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0;
-    cell.textLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-    cell.textLabel.adjustsFontForContentSizeCategory=YES;
-    cell.detailTextLabel.font=[UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
-    cell.detailTextLabel.adjustsFontForContentSizeCategory=YES;
-    cell.detailTextLabel.textColor=UIColor.secondaryLabelColor;
+    UILabel *title, *detail; UIImageView *icon;
+    WUNeoSubtitleContent(cell,&title,&detail,&icon);
     cell.backgroundColor=UIColor.secondarySystemGroupedBackgroundColor;
     if(p.section<7) {
         NSArray<NSString *> *sectionSymbols=@[@"switch.2",@"waveform",@"line.3.horizontal.decrease.circle",@"keyboard",@"rectangle.and.pencil.and.ellipsis",@"bubble.left.and.bubble.right",@"paintpalette"];
-        cell.imageView.image=[UIImage systemImageNamed:sectionSymbols[p.section]];
-        cell.imageView.tintColor=UIColor.systemGreenColor;
+        icon.image=[UIImage systemImageNamed:sectionSymbols[p.section]];
+        icon.tintColor=UIColor.systemGreenColor;
     }
     if(p.section<7) {
         NSUInteger row=[self featureRangeForSection:p.section].location+p.row;
-        NSString *key=self.rows[row][0]; cell.textLabel.text=[self titleForOriginalPath:p];
-        if([self isSurfacePath:p]) { cell.detailTextLabel.text=@"在逐项界面样式中设置"; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; return WUNeoCell(cell,nil); }
-        UISwitch *sw=[UISwitch new]; sw.accessibilityIdentifier=key; sw.accessibilityLabel=cell.textLabel.text;
-        sw.on=WUValue(key)?[WUValue(key) boolValue]:([key hasPrefix:@"voice"] && ![@[@"voiceProgress",@"voiceCountdown"] containsObject:key]); sw.enabled=[self available:key] || sw.on;
-        if([key hasPrefix:@"voice"]) cell.detailTextLabel.text=@"仅在兼容接口和气泡留有安全空间时显示；单条不满足条件则保持微信原样。支持关闭总开关。";
-        if([key isEqual:@"articleImage"]) cell.detailTextLabel.text=@"仅微信已打开的mp.weixin.qq.com文章：实际长按一张已加载图片，在原菜单或12秒导航按钮选择，再确认来源与预览。只支持可核验未缩放布局的静态PNG/JPEG；GIF/APNG、iframe、未知布局拒绝。联网只在你确认后请求一张，无Cookie/账号凭据，不代表已添加表情。";
-        if([key isEqual:@"enhancedLinks"]) cell.detailTextLabel.text=@"兼容版本在含可识别网址的单条消息长按菜单显示“识别链接”；也可在账号工具栏使用多选入口。需选择网址并确认域名与浏览器；签名或上下文不匹配时保留原菜单。";
-        if([key isEqual:@"hostPopupSurface"]) cell.detailTextLabel.text=@"仅已核验主页/聊天页的 WeToast 非阻塞纯文字提示 backgroundView；不修改支付、授权、MMTips、系统弹窗。首次出现匹配提示后重开设置；字体仅对背景内实际文字生效。";
-        if([key isEqual:@"quickReplySurface"]) cell.detailTextLabel.text=@"仅微信内 QuickReply 横幅内容视图，不修改 iOS 通知或系统权限/支付弹窗；需先出现匹配横幅后重开设置。";
-        if([key isEqual:@"textPreviewSurface"]) cell.detailTextLabel.text=@"仅识别文本消息所属预览的底部工具栏，不修改系统或支付弹窗；首次需打开匹配预览再重开设置。";
-        if([key isEqual:@"referMessageSurface"]) cell.detailTextLabel.text=@"仅核验为文本消息内 msgReplyView 时覆盖共享引用样式；关闭后回到共享样式或宿主原样。其他引用类型不保证覆盖。";
-        if([key isEqual:@"inputPulse"]) cell.detailTextLabel.text=@"仅可见聊天输入正在编辑时动画；关闭、离窗、后台及减少动态时取消，不操作键盘焦点。";
-        if([key isEqual:@"textBubbleSurface"]) cell.detailTextLabel.text=@"仅已确认的文本消息背景；接收与发送使用同一颜色，启用后原气泡图片被圆角纯色替代（无原尾巴/纹理），关闭恢复。先查看文本消息后重开设置。";
-        if([@[@"fileSurface",@"emoticonSurface"] containsObject:key]) cell.detailTextLabel.text=@"仅已确认消息背景UIImageView，不改媒体、动画、下载、点击或文字。首次需查看对应消息后重开设置。";
-        if([key isEqual:@"hideHomeSearch"]) cell.detailTextLabel.text=@"仅NewMainFrame真实纯搜索表头；混合或未知布局不隐藏。首次需访问首页后重开设置，关闭恢复原表头和高度。";
-        if([key isEqual:WUDictationHideKey]) cell.detailTextLabel.text=@"仅隐藏聊天输入框所属语音转述图标；关闭恢复宿主状态，不修改系统键盘听写。需先打开聊天观察布局。";
-        if([key isEqual:WUDictationGuardKey]) cell.detailTextLabel.text=@"未聚焦时，图标内短于0.35秒的单点按仅额外聚焦，再使用语音转述；无确认弹窗，不重放发送。取消、拖出或多触点不额外聚焦。";
-        if([@[@"miniBannerAds",@"miniInterstitialAds"] containsObject:key]) cell.detailTextLabel.text=[@"默认关；仅匹配协议的当前WA JSC对象。展示被禁用时Promise以本地错误拒绝，不伪报奖励；同一对象本地拒绝8次后原路显示，广告可能出现。创建/加载仍可能联网；不覆盖WebView、其他引擎或全部小程序。关闭后下次show立即原路，无需下一次native事件；自有属性惰性恢复，已恢复旧对象不重接，重新启用须桥事件后新建对象。 " stringByAppendingString:WUMiniAdsStatus()];
-        if([key isEqual:@"officialRecoFlow"]) cell.detailTextLabel.text=@"默认关闭；开启后请求隐藏看一看推荐流，会影响推荐内容，并非仅过滤广告。关闭时透传宿主原行为；效果取决于宿主接口。";
-        if([key isEqual:@"officialRecCard"]) cell.detailTextLabel.text=@"默认关闭；开启后请求隐藏看一看推荐卡，会影响推荐内容，并非仅过滤广告。关闭时透传宿主原行为；效果取决于宿主接口。";
-        if([key isEqual:@"cardDirect"]) cell.detailTextLabel.text=WUCardDirectAvailable()?@"实验功能：仅匹配“小店与卡包”的兼容路径；实际跳转仍需真机验证。":@"暂不可用：宿主卡包路由或入口方法缺失、签名不匹配或挂钩失败；将保留微信原行为。";
-        if(!sw.enabled) cell.detailTextLabel.text=cell.detailTextLabel.text.length ? [cell.detailTextLabel.text stringByAppendingString:@" 尚未观察到可核验的宿主接口/布局；不会启用空开关。"] : @"尚未观察到可核验的宿主接口/布局；不会启用空开关";
-        if([key isEqual:@"plusSurface"]) cell.detailTextLabel.text=@"暂不可用：为避免首页白屏已暂停；旧开关可关闭，样式配置保留。";
+        NSString *key=self.rows[row][0]; title.text=[self titleForOriginalPath:p];
+        if([self isSurfacePath:p]) { detail.text=@"在逐项界面样式中设置"; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; return WUNeoCell(cell,nil); }
+        UISwitch *sw=[UISwitch new]; sw.accessibilityIdentifier=key; sw.accessibilityLabel=title.text;
+        sw.on=WUValue(key)?[WUValue(key) boolValue]:([key isEqual:@"antiRevokeNotice"] || ([key hasPrefix:@"voice"] && ![@[@"voiceProgress",@"voiceCountdown"] containsObject:key])); sw.enabled=[self available:key] || sw.on;
+        if([key isEqual:@"antiRevokeNotice"]) detail.text=@"默认显示；仅影响本地提示，不改变防撤回保护。接口不兼容时不会插入提示。";
+        if([key hasPrefix:@"voice"]) detail.text=@"仅在兼容接口和气泡留有安全空间时显示；单条不满足条件则保持微信原样。支持关闭总开关。";
+        if([key isEqual:@"articleImage"]) detail.text=@"仅微信已打开的mp.weixin.qq.com文章：实际长按一张已加载图片，在原菜单或12秒导航按钮选择，再确认来源与预览。只支持可核验未缩放布局的静态PNG/JPEG；GIF/APNG、iframe、未知布局拒绝。联网只在你确认后请求一张，无Cookie/账号凭据，不代表已添加表情。";
+        if([key isEqual:@"enhancedLinks"]) detail.text=@"兼容版本在含可识别网址的单条消息长按菜单显示“识别链接”；也可在账号工具栏使用多选入口。需选择网址并确认域名与浏览器；签名或上下文不匹配时保留原菜单。";
+        if([key isEqual:@"hostPopupSurface"]) detail.text=@"仅已核验主页/聊天页的 WeToast 非阻塞纯文字提示 backgroundView；不修改支付、授权、MMTips、系统弹窗。首次出现匹配提示后重开设置；字体仅对背景内实际文字生效。";
+        if([key isEqual:@"quickReplySurface"]) detail.text=@"仅微信内 QuickReply 横幅内容视图，不修改 iOS 通知或系统权限/支付弹窗；需先出现匹配横幅后重开设置。";
+        if([key isEqual:@"textPreviewSurface"]) detail.text=@"仅识别文本消息所属预览的底部工具栏，不修改系统或支付弹窗；首次需打开匹配预览再重开设置。";
+        if([key isEqual:@"referMessageSurface"]) detail.text=@"仅核验为文本消息内 msgReplyView 时覆盖共享引用样式；关闭后回到共享样式或宿主原样。其他引用类型不保证覆盖。";
+        if([key isEqual:@"inputPulse"]) detail.text=@"仅可见聊天输入正在编辑时动画；关闭、离窗、后台及减少动态时取消，不操作键盘焦点。";
+        if([key isEqual:@"textBubbleSurface"]) detail.text=@"仅已确认的文本消息背景；接收与发送使用同一颜色，启用后原气泡图片被圆角纯色替代（无原尾巴/纹理），关闭恢复。先查看文本消息后重开设置。";
+        if([@[@"fileSurface",@"emoticonSurface"] containsObject:key]) detail.text=@"仅已确认消息背景UIImageView，不改媒体、动画、下载、点击或文字。首次需查看对应消息后重开设置。";
+        if([key isEqual:@"hideHomeSearch"]) detail.text=@"仅NewMainFrame真实纯搜索表头；混合或未知布局不隐藏。首次需访问首页后重开设置，关闭恢复原表头和高度。";
+        if([key isEqual:WUDictationHideKey]) detail.text=@"仅隐藏聊天输入框所属语音转述图标；关闭恢复宿主状态，不修改系统键盘听写。需先打开聊天观察布局。";
+        if([key isEqual:WUDictationGuardKey]) detail.text=@"未聚焦时，图标内短于0.35秒的单点按仅额外聚焦，再使用语音转述；无确认弹窗，不重放发送。取消、拖出或多触点不额外聚焦。";
+        if([@[@"miniBannerAds",@"miniInterstitialAds"] containsObject:key]) detail.text=[@"默认关；仅匹配协议的当前WA JSC对象。展示被禁用时Promise以本地错误拒绝，不伪报奖励；同一对象本地拒绝8次后原路显示，广告可能出现。创建/加载仍可能联网；不覆盖WebView、其他引擎或全部小程序。关闭后下次show立即原路，无需下一次native事件；自有属性惰性恢复，已恢复旧对象不重接，重新启用须桥事件后新建对象。 " stringByAppendingString:WUMiniAdsStatus()];
+        if([key isEqual:@"officialRecoFlow"]) detail.text=@"默认关闭；开启后请求隐藏看一看推荐流，会影响推荐内容，并非仅过滤广告。关闭时透传宿主原行为；效果取决于宿主接口。";
+        if([key isEqual:@"officialRecCard"]) detail.text=@"默认关闭；开启后请求隐藏看一看推荐卡，会影响推荐内容，并非仅过滤广告。关闭时透传宿主原行为；效果取决于宿主接口。";
+        if([key isEqual:@"cardDirect"]) detail.text=WUCardDirectAvailable()?@"实验功能：仅匹配“小店与卡包”的兼容路径；实际跳转仍需真机验证。":@"暂不可用：宿主卡包路由或入口方法缺失、签名不匹配或挂钩失败；将保留微信原行为。";
+        if(!sw.enabled) detail.text=detail.text.length ? [detail.text stringByAppendingString:@" 尚未观察到可核验的宿主接口/布局；不会启用空开关。"] : @"尚未观察到可核验的宿主接口/布局；不会启用空开关";
+        if([key isEqual:@"plusSurface"]) detail.text=@"暂不可用：为避免首页白屏已暂停；旧开关可关闭，样式配置保留。";
+        sw.accessibilityHint=detail.text;
         [sw addTarget:self action:@selector(change:) forControlEvents:UIControlEventValueChanged]; cell.accessoryView=sw; cell.selectionStyle=UITableViewCellSelectionStyleNone;
-    } else { cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; cell.textLabel.text=[self titleForOriginalPath:p]; }
+    } else { cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator; title.text=[self titleForOriginalPath:p]; }
     if(p.section>=7) {
         NSArray<NSString *> *symbols=@[@"text.alignleft",@"link",@"paintpalette",@"face.smiling",@"tray.full",@"slider.horizontal.3",@"arrow.2.squarepath"];
         NSString *symbol=p.section==8?@"checkmark.shield":symbols[p.row];
-        cell.imageView.image=[UIImage systemImageNamed:symbol];
-        cell.imageView.tintColor=UIColor.systemTealColor;
+        icon.image=[UIImage systemImageNamed:symbol];
+        icon.tintColor=UIColor.systemTealColor;
     }
     return WUNeoCell(cell,nil);
 }
@@ -217,7 +215,7 @@ NSString *WUSurfaceTitle(NSString *role);
     NSString *key=sender.accessibilityIdentifier;
     if([key isEqual:@"plusSurface"] && sender.on) { sender.on=NO; return; }
     if([key hasPrefix:@"voice"] && !WUVoiceAvailable(key) && sender.on) { sender.on=NO; return; }
-    if(!WUSave(key,@(sender.on))) { sender.on=[WUValue(key) boolValue]; [self alert:@"保存失败，原配置保留。请检查可用空间；未以开关动画冒充保存成功。"]; }
+    if(!WUSave(key,@(sender.on))) { sender.on=WUValue(key)?[WUValue(key) boolValue]:[key isEqual:@"antiRevokeNotice"]; [self alert:WUConfigReadOnly()?@"配置及备份无有效可读数据，已禁止保存并保留原文件。请备份、检查或恢复配置后重启微信。":@"保存失败，原配置保留。请检查可用空间；未以开关动画冒充保存成功。"]; }
 }
 - (void)tableView:(UITableView *)t didSelectRowAtIndexPath:(NSIndexPath *)p {
     [t deselectRowAtIndexPath:p animated:YES]; p=[self originalPath:p];

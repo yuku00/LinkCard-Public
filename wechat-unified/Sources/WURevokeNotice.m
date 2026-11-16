@@ -1,5 +1,6 @@
 #import "WURevokeNotice.h"
 #import "MessageConstruction.h"
+extern id WUValue(NSString *key);
 #import <objc/runtime.h>
 #import <objc/message.h>
 #include <string.h>
@@ -52,11 +53,17 @@ static BOOL SetNumber(id obj, NSString *name, uint32_t value) {
     return NO;
 }
 static BOOL CanInsert(id manager) {
-    Class host=NSClassFromString(@"CMessageMgr"), cls=object_getClass(manager); BOOL instance=NO;
-    for (Class c=cls;c;c=class_getSuperclass(c)) if (c==host && host) instance=YES;
-    if (!instance) return NO; // No guessed forwarding/proxy ABI.
-    NSMethodSignature *s=Signature(cls,NSSelectorFromString(@"AddLocalMsg:MsgWrap:fixTime:NewMsgArriveNotify:"));
-    return Match(s,"v",@[@"@",@"@",@"B",@"B"]) || Match(s,"v",@[@"@",@"@",@"c",@"c"]);
+    Class host=NSClassFromString(@"CMessageMgr"), cls=object_getClass(manager); BOOL instance=NO, proxy=NO;
+    for (Class c=cls;c;c=class_getSuperclass(c)) { if (c==host && host) instance=YES; if (c==objc_getClass("NSProxy")) proxy=YES; }
+    SEL sel=NSSelectorFromString(@"AddLocalMsg:MsgWrap:fixTime:NewMsgArriveNotify:");
+    NSMethodSignature *s=Signature(instance?cls:host,sel);
+    BOOL boolABI=Match(s,"v",@[@"@",@"@",@"B",@"B"]);
+    BOOL charABI=Match(s,"v",@[@"@",@"@",@"c",@"c"]);
+    if (!boolABI && !charABI) return NO;
+    if (instance) return YES;
+    if (!proxy || class_getInstanceMethod(cls,sel)) return NO;
+    NSMethodSignature *forward=[manager methodSignatureForSelector:sel];
+    return boolABI ? Match(forward,"v",@[@"@",@"@",@"B",@"B"]) : Match(forward,"v",@[@"@",@"@",@"c",@"c"]);
 }
 void WURevokeNoticeInsert(id manager, NSString *account, NSString *session,
                           uint64_t serverID, NSUInteger generation,
@@ -64,10 +71,10 @@ void WURevokeNoticeInsert(id manager, NSString *account, NSString *session,
                           BOOL (^valid)(void)) {
     @try {
         if (!manager || !account.length || !session.length || !serverID || !generation ||
-            !from.length || !to.length || !valid) return;
+            !from.length || !to.length || !valid || ![(WUValue(@"antiRevokeNotice") ?: @YES) boolValue]) return;
         static NSMutableSet *seen; static NSString *lastAccount; static NSUInteger lastGeneration;
         @synchronized ([NSProcessInfo class]) {
-            if (!valid()) return;
+            if (!valid() || ![(WUValue(@"antiRevokeNotice") ?: @YES) boolValue]) return;
             if (!seen) seen=[NSMutableSet set];
             if (lastGeneration!=generation || ![lastAccount isEqualToString:account]) {
                 [seen removeAllObjects]; lastAccount=[account copy]; lastGeneration=generation;
@@ -78,7 +85,7 @@ void WURevokeNoticeInsert(id manager, NSString *account, NSString *session,
             if (!wrap || !SetObject(wrap,@"setM_nsFromUsr:",from) ||
                 !SetObject(wrap,@"setM_nsToUsr:",to) || !SetNumber(wrap,@"setM_uiStatus:",4) ||
                 !SetObject(wrap,@"setM_nsContent:",@"对方撤回了一条消息") ||
-                (createTime && createTime<UINT32_MAX && !SetNumber(wrap,@"setM_uiCreateTime:",createTime+1)) || !valid()) return;
+                (createTime && !SetNumber(wrap,@"setM_uiCreateTime:",createTime)) || !valid()) return;
             // Reserve before the call: an exception may follow a partial local insertion.
             [seen addObject:key];
             ((void(*)(id,SEL,id,id,BOOL,BOOL))objc_msgSend)(manager,NSSelectorFromString(@"AddLocalMsg:MsgWrap:fixTime:NewMsgArriveNotify:"),session,wrap,YES,NO);
