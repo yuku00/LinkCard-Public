@@ -55,8 +55,11 @@ static void WUInputSyncChecked(UIViewController *owner, NSArray<NSDictionary *> 
         if(!child.userInteractionEnabled && [tool.subviews indexOfObjectIdenticalTo:child]<[tool.subviews indexOfObjectIdenticalTo:container]) continue;
         if(CGRectIntersectsRect(CGRectInset(inTool,0,0.5),[child convertRect:child.bounds toView:tool])) { WUInputStop(owner); return; }
     }
+    NSUInteger tableIndex=[root.subviews indexOfObjectIdenticalTo:table];
     for(UIView *child in root.subviews) {
         if(child==tool || child==table || child==s.toolbar || child.hidden || child.alpha<=0.01) continue;
+        // A sibling behind the host table cannot obscure the reserved strip.
+        if([root.subviews indexOfObjectIdenticalTo:child]<tableIndex) continue;
         if(!child.userInteractionEnabled && [root.subviews indexOfObjectIdenticalTo:child]<[root.subviews indexOfObjectIdenticalTo:tool]) continue;
         if(CGRectIntersectsRect(CGRectInset(strip,0,0.5),[child convertRect:child.bounds toView:root])) { WUInputStop(owner); return; }
     }

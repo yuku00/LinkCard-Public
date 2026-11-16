@@ -1,6 +1,7 @@
 #import "WUNativeAction.h"
 #import "MessageConstruction.h"
 #include <limits.h>
+extern BOOL WUNativeGameFieldAvailable(Class cls, NSString *selector, const char *ret, NSArray *args);
 static IMP sendOriginal;
 static BOOL ready;
 static BOOL Has(id x,NSString *s,const char *ret,NSArray *args) {
@@ -116,13 +117,12 @@ void WUInstallNativeGames(void) {
            !WUMatches(class_getInstanceMethod(c,NSSelectorFromString(setter)),"v",@[@"@"])) return;
     }
     for(NSString *key in @[@"m_uiMessageType",@"m_uiGameType",@"m_uiGameContent"]) {
-        Method m=class_getInstanceMethod(c,NSSelectorFromString(key));
-        if(!WUMatches(m,"I",@[]) && !WUMatches(m,"Q",@[]) && !WUMatches(m,"q",@[])) return;
+        if(!WUNativeGameFieldAvailable(c,key,"I",@[]) && !WUNativeGameFieldAvailable(c,key,"Q",@[]) && !WUNativeGameFieldAvailable(c,key,"q",@[])) return;
     }
-    Method setter=class_getInstanceMethod(c,NSSelectorFromString(@"setM_uiGameContent:"));
-    if(!WUMatches(setter,"v",@[@"I"]) && !WUMatches(setter,"v",@[@"Q"]) && !WUMatches(setter,"v",@[@"q"])) return;
+    NSString *setter=@"setM_uiGameContent:";
+    if(!WUNativeGameFieldAvailable(c,setter,"v",@[@"I"]) && !WUNativeGameFieldAvailable(c,setter,"v",@[@"Q"]) && !WUNativeGameFieldAvailable(c,setter,"v",@[@"q"])) return;
     if(!WUMatches(class_getInstanceMethod(c,NSSelectorFromString(@"copyToMsg:")),"v",@[@"@"]) ||
-       !WUMatches(class_getInstanceMethod(c,NSSelectorFromString(@"setM_nsEmoticonMD5:")),"v",@[@"@"])) return;
+       !WUNativeGameFieldAvailable(c,@"setM_nsEmoticonMD5:","v",@[@"@"])) return;
     id game=NSClassFromString(@"GameController");
     if(!Has(game,@"getMD5ByGameContent:","@",@[@"I"]) && !Has(game,@"getMD5ByGameContent:","@",@[@"Q"]) && !Has(game,@"getMD5ByGameContent:","@",@[@"q"])) return;
     ready=WUHook(@"CMessageMgr",@"AddEmoticonMsg:MsgWrap:",NO,"v",@[@"@",@"@"],(IMP)Send,&sendOriginal) && sendOriginal;

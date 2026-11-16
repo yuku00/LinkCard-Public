@@ -99,8 +99,30 @@ static void Notice(UIViewController *v, NSString *text) {
     UIAlertController *a=[UIAlertController alertControllerWithTitle:@"微信整合" message:text preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleCancel handler:nil]]; [v presentViewController:a animated:YES completion:nil];
 }
-static IMP searchRelayAppearOriginal, searchRelayDisappearOriginal;
+static IMP searchRelayAppearOriginal, searchRelayDisappearOriginal, searchRelayCancelOriginal, searchRelayDismissOriginal;
 static char searchRelayKey;
+static void SearchRelayFinishCancel(UIViewController *relay) {
+    NSMutableDictionary *state=objc_getAssociatedObject(relay,&searchRelayKey);
+    if(![state[@"cancelled"] boolValue]) return;
+    UINavigationController *nav=relay.navigationController; UIViewController *owner=state[@"owner"];
+    dispatch_async(dispatch_get_main_queue(),^{
+        NSArray *stack=nav.viewControllers; NSUInteger index=[stack indexOfObjectIdenticalTo:relay];
+        if(objc_getAssociatedObject(relay,&searchRelayKey)==state && index!=NSNotFound && index>0 && index+1==stack.count && stack[index-1]==owner && nav.topViewController==relay && !relay.presentedViewController) {
+            objc_setAssociatedObject(relay,&searchRelayKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [nav popViewControllerAnimated:NO];
+        }
+    });
+}
+static void SearchRelayCancel(UIViewController *relay, SEL cmd) {
+    NSMutableDictionary *state=objc_getAssociatedObject(relay,&searchRelayKey);
+    if([state[@"started"] boolValue]) state[@"cancelled"]=@YES;
+    ((void(*)(id,SEL))searchRelayCancelOriginal)(relay,cmd);
+    SearchRelayFinishCancel(relay);
+}
+static void SearchRelayDismissed(UIViewController *relay, SEL cmd) {
+    ((void(*)(id,SEL))searchRelayDismissOriginal)(relay,cmd);
+    SearchRelayFinishCancel(relay);
+}
 static void SearchRelayDisappeared(UIViewController *relay, SEL cmd, BOOL animated) {
     ((void(*)(id,SEL,BOOL))searchRelayDisappearOriginal)(relay,cmd,animated);
     NSMutableDictionary *state=objc_getAssociatedObject(relay,&searchRelayKey);
@@ -117,7 +139,7 @@ static void SearchRelayDisappeared(UIViewController *relay, SEL cmd, BOOL animat
 }
 static BOOL ChatSearchReady(void) {
     Class cls=NSClassFromString(@"AddContactToChatRoomViewController");
-    return searchRelayAppearOriginal && searchRelayDisappearOriginal && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"setM_contact:")),"v",@[@"@"]) && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"initMsgSearchHelper:")),"v",@[@"i"]) && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"onEditAndSearch")),"v",@[]);
+    return searchRelayAppearOriginal && searchRelayDisappearOriginal && searchRelayCancelOriginal && searchRelayDismissOriginal && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"setM_contact:")),"v",@[@"@"]) && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"initMsgSearchHelper:")),"v",@[@"i"]) && WUMatches(class_getInstanceMethod(cls,NSSelectorFromString(@"onEditAndSearch")),"v",@[]);
 }
 static void SearchRelayAppeared(UIViewController *relay, SEL cmd, BOOL animated) {
     ((void(*)(id,SEL,BOOL))searchRelayAppearOriginal)(relay,cmd,animated);
@@ -700,6 +722,8 @@ void WUInstallMessages(void) {
     });
     WUHook(@"AddContactToChatRoomViewController",@"viewDidAppear:",NO,"v",@[@"B"],(IMP)SearchRelayAppeared,&searchRelayAppearOriginal);
     WUHook(@"AddContactToChatRoomViewController",@"viewDidDisappear:",NO,"v",@[@"B"],(IMP)SearchRelayDisappeared,&searchRelayDisappearOriginal);
+    WUHook(@"AddContactToChatRoomViewController",@"msgSearchBarCancel",NO,"v",@[],(IMP)SearchRelayCancel,&searchRelayCancelOriginal);
+    WUHook(@"AddContactToChatRoomViewController",@"msgSearchDidDismiss",NO,"v",@[],(IMP)SearchRelayDismissed,&searchRelayDismissOriginal);
     WUHook(@"BaseMsgContentViewController",@"viewDidLayoutSubviews",NO,"v",@[],(IMP)ChatLayout,&chatLayoutOriginal);
     WUHook(@"BaseMsgContentViewController",@"viewDidAppear:",NO,"v",@[@"B"],(IMP)ChatAppeared,&chatAppearOriginal);
     WUHook(@"BaseMsgContentViewController",@"viewDidDisappear:",NO,"v",@[@"B"],(IMP)ChatDisappeared,&chatDisappearOriginal);

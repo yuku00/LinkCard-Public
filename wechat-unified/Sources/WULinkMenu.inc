@@ -1,6 +1,7 @@
 // Included by Messages.m: private menu methods are checked before every invocation.
 #import "LinkLogic.h"
 extern void WUSaveSelectedEmoticonToPhotos(UIViewController *, id, BOOL (^)(void));
+extern void WUExportOriginalEmoticonForWrap(UIViewController *, id, BOOL (^)(void));
 static IMP wuLinkMenuOriginal, wuLinkClickOriginal, wuEmoticonOperationMenuOriginal;
 static char wuLinkMenuLeaseKey, wuLinkMenuItemKey, wuEmoticonMenuTokenKey, wuOwnerMenuLeaseKey;
 static NSUInteger wuLinkMenuSerial;
@@ -61,13 +62,16 @@ static void WUMenuEmoticonAction(id receiver, SEL cmd, id argument) {
         objc_setAssociatedObject(cell,&wuLinkMenuLeaseKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         BOOL (^current)(void)=lease[@"current"]; id wrap=lease[@"wrap"];
         if(!current || !current() || owner.presentedViewController) return;
-        UIAlertController *choice=[UIAlertController alertControllerWithTitle:@"保存表情" message:@"文件保留微信缓存原字节；WxAM 保存到图库时由微信转换为 GIF，原文件不会改变。" preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertController *choice=[UIAlertController alertControllerWithTitle:@"保存表情" message:@"WxAM 会尝试转换为 GIF 并校验帧数和时长；转换失败时可另存原文件。" preferredStyle:UIAlertControllerStyleAlert];
         __weak UIAlertController *weakChoice=choice;
         [choice addAction:[UIAlertAction actionWithTitle:@"保存到文件" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
             [weakChoice dismissViewControllerAnimated:YES completion:^{ if(current()) WUExportEmoticonForWrap(owner,wrap,current); }];
         }]];
         [choice addAction:[UIAlertAction actionWithTitle:@"保存到图库" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
             [weakChoice dismissViewControllerAnimated:YES completion:^{ if(current()) WUSaveSelectedEmoticonToPhotos(owner,wrap,current); }];
+        }]];
+        [choice addAction:[UIAlertAction actionWithTitle:@"保存原文件（可能为 WxAM）" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+            [weakChoice dismissViewControllerAnimated:YES completion:^{ if(current()) WUExportOriginalEmoticonForWrap(owner,wrap,current); }];
         }]];
         [choice addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
         [owner presentViewController:choice animated:YES completion:nil];

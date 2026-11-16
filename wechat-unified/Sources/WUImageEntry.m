@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <stdatomic.h>
+#include <math.h>
 
 static BOOL Has(id o, NSString *s, const char *r, NSArray *a) {
     return o && WUMatches(class_getInstanceMethod(object_getClass(o),NSSelectorFromString(s)),r,a);
@@ -122,35 +123,52 @@ static NSData *WUSelectedEmoticonData(id wrap, NSString **kind) {
     return [data copy];
 }
 static NSData *WUWxAMPhotoGIF(NSData *data) {
-    Class util=NSClassFromString(@"EmoticonUtil"), decoder=NSClassFromString(@"WxAMAnimatedImageDecoder");
-    NSString *convert=@"createGifFromWxAMData:", *frames=@"frameCountForImageData:";
-    if(!Has(util,convert,"@",@[@"@"]) || !Has(decoder,frames,"i",@[@"@"])) return nil;
+    Class util=NSClassFromString(@"EmoticonUtil"), decoder=NSClassFromString(@"WxAMAnimatedImageDecoder"), animated=NSClassFromString(@"MMAnimatedImageDecoder");
+    NSString *convert=@"createGifFromWxAMData:", *frames=@"frameCountForImageData:", *decode=@"framesOfData:";
+    if(!Has(util,convert,"@",@[@"@"]) || !Has(decoder,frames,"i",@[@"@"]) || !Has(animated,decode,"@",@[@"@"])) return nil;
     int count=((int(*)(id,SEL,id))objc_msgSend)(decoder,NSSelectorFromString(frames),data);
     if(count<1 || count>500) return nil;
     id gif=((id(*)(id,SEL,id))objc_msgSend)(util,NSSelectorFromString(convert),data);
     if(![WUEmoticonType(gif) isEqual:@"com.compuserve.gif"]) return nil;
     CGImageSourceRef source=CGImageSourceCreateWithData((__bridge CFDataRef)gif,NULL);
     BOOL valid=source && CGImageSourceGetCount(source)==(size_t)count;
+    id decoded=valid?((id(*)(id,SEL,id))objc_msgSend)(animated,NSSelectorFromString(decode),data):nil;
+    if(![decoded isKindOfClass:NSArray.class] || [decoded count]!=(NSUInteger)count) valid=NO;
+    for(int i=0;valid && i<count;i++) {
+        id frame=decoded[i];
+        if(!Has(frame,@"duration","d",@[])) { valid=NO; break; }
+        double duration=((double(*)(id,SEL))objc_msgSend)(frame,NSSelectorFromString(@"duration"));
+        NSDictionary *props=CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source,(size_t)i,NULL));
+        NSDictionary *gifProps=props[(id)kCGImagePropertyGIFDictionary];
+        NSNumber *delay=gifProps[(id)kCGImagePropertyGIFUnclampedDelayTime] ?: gifProps[(id)kCGImagePropertyGIFDelayTime];
+        // GIF stores delays in centiseconds; never silently alter the animation timing.
+        if(![delay isKindOfClass:NSNumber.class] || !isfinite(duration) || duration<=0 || fabs(delay.doubleValue-duration)>0.011) valid=NO;
+    }
     if(source) CFRelease(source);
     return valid?gif:nil;
 }
 void WUSaveSelectedEmoticonToPhotos(UIViewController *owner, id wrap, BOOL (^current)(void)) {
     if(!NSThread.isMainThread || !owner || !wrap || !current || !current() || owner.presentedViewController) return;
     @try {
-        id usage=[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSPhotoLibraryAddUsageDescription"];
-        if(![usage isKindOfClass:NSString.class] || ![usage length]) { ExportNotice(owner,@"宿主缺少添加照片权限声明，未保存。"); return; }
-        PHAuthorizationStatus status=[PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelAddOnly];
+        id addUsage=[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSPhotoLibraryAddUsageDescription"];
+        id readUsage=[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSPhotoLibraryUsageDescription"];
+        BOOL hasAdd=[addUsage isKindOfClass:NSString.class] && [addUsage length];
+        BOOL hasRead=[readUsage isKindOfClass:NSString.class] && [readUsage length];
+        if(!hasAdd && !hasRead) { ExportNotice(owner,@"宿主缺少照片权限声明，未保存。"); return; }
+        PHAccessLevel level=hasAdd?PHAccessLevelAddOnly:PHAccessLevelReadWrite;
+        PHAuthorizationStatus status=[PHPhotoLibrary authorizationStatusForAccessLevel:level];
         if(status==PHAuthorizationStatusNotDetermined) {
-            [PHPhotoLibrary requestAuthorizationForAccessLevel:PHAccessLevelAddOnly handler:^(PHAuthorizationStatus result) {
+            [PHPhotoLibrary requestAuthorizationForAccessLevel:level handler:^(PHAuthorizationStatus result) {
                 dispatch_async(dispatch_get_main_queue(),^{ if(current()) ExportNotice(owner,@"权限请求已结束，请再次选择保存到图库。"); });
             }];
             return;
         }
-        if(status!=PHAuthorizationStatusAuthorized) { ExportNotice(owner,@"没有添加照片权限，未保存。"); return; }
+        if(status!=PHAuthorizationStatusAuthorized && status!=PHAuthorizationStatusLimited) { ExportNotice(owner,@"没有添加照片权限，未保存。"); return; }
         NSString *kind=nil; NSData *raw=WUSelectedEmoticonData(wrap,&kind);
         NSData *photo=[kind isEqual:@"wxam"]?WUWxAMPhotoGIF(raw):raw;
         NSString *uti=WUEmoticonType(photo);
-        if(!uti || !current()) { if(current()) ExportNotice(owner,@"无法读取完整表情或转换动画，未保存；没有使用静图替代。"); return; }
+        if(!uti || !current()) { if(current()) ExportNotice(owner,@"无法读取完整表情或验证转换后的帧数、时长，未保存；没有使用静图替代。可尝试另存原文件。"); return; }
+        if([uti isEqual:@"public.png"] && !StaticImage(photo)) { ExportNotice(owner,@"图库保存暂不支持动态 PNG；可保存原文件，不会用静图替代。"); return; }
         __weak UIViewController *weak=owner;
         __block BOOL added=NO;
         [PHPhotoLibrary.sharedPhotoLibrary performChanges:^{
@@ -162,15 +180,20 @@ void WUSaveSelectedEmoticonToPhotos(UIViewController *owner, id wrap, BOOL (^cur
             PHAssetCreationRequest *request=[PHAssetCreationRequest creationRequestForAsset];
             if(request) { [request addResourceWithType:PHAssetResourceTypePhoto data:photo options:options]; added=YES; }
         } completionHandler:^(BOOL success,NSError *error){ dispatch_async(dispatch_get_main_queue(),^{
-            if(current()) ExportNotice(weak,added && success && !error?([kind isEqual:@"wxam"]?@"已保存微信转换的 GIF 动画；原 WxAM 文件可另存到文件。":@"Photos 已确认保存原表情。"): @"Photos 未确认保存成功，请检查图库。");
+            if(current()) ExportNotice(weak,added && success && !error?([kind isEqual:@"wxam"]?@"Photos 已确认保存微信转换的 GIF；原 WxAM 文件可另存到文件。":@"Photos 已确认保存原表情。"): @"Photos 未确认保存成功，请检查图库。");
         }); }];
     } @catch(__unused NSException *e) { ExportNotice(owner,@"准备表情失败，未保存。"); }
 }
-void WUExportEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(void)) {
+static void WUExportEmoticon(UIViewController *owner, id wrap, BOOL (^current)(void), BOOL original) {
     if(!NSThread.isMainThread || !owner || !wrap || !current || !current() || owner.presentedViewController) return;
     @try {
         NSString *type=nil; NSData *data=WUSelectedEmoticonData(wrap,&type);
         if(!data || !current()) { if(current()) ExportNotice(owner,@"无法读取微信已缓存的完整表情，未导出缩略图。"); return; }
+        if([type isEqual:@"wxam"] && !original) {
+            data=WUWxAMPhotoGIF(data);
+            if(!data) { ExportNotice(owner,@"微信无法转换为帧数和时长均可验证的 GIF，未导出静图；可选择导出 WxAM 原文件。"); return; }
+            type=@"com.compuserve.gif";
+        }
         NSString *ext=[type isEqual:@"wxam"]?@"wxam":([type isEqual:@"com.compuserve.gif"]?@"gif":([type isEqual:@"public.png"]?@"png":@"jpg"));
         NSURL *dir=[[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES] URLByAppendingPathComponent:NSUUID.UUID.UUIDString isDirectory:YES];
         NSError *error=nil;
@@ -181,8 +204,10 @@ void WUExportEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(v
         UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc] initForExportingURLs:@[file] asCopy:YES];
         picker.delegate=lease; objc_setAssociatedObject(picker,&WUEmoticonExportKey,lease,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [owner presentViewController:picker animated:YES completion:nil];
-    } @catch(__unused NSException *e) { ExportNotice(owner,@"原表情导出准备失败，未保存。"); }
+    } @catch(__unused NSException *e) { ExportNotice(owner,@"表情导出准备失败，未保存。"); }
 }
+void WUExportEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(void)) { WUExportEmoticon(owner,wrap,current,NO); }
+void WUExportOriginalEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(void)) { WUExportEmoticon(owner,wrap,current,YES); }
 @interface WUImageEntry : NSObject { _Atomic(BOOL) _cancelled; }
 @property(nonatomic,weak) UIViewController *owner;
 @property(nonatomic,weak) UINavigationController *nav;

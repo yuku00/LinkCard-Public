@@ -1,7 +1,40 @@
 #import "WUNative.h"
 #include <limits.h>
+#include <string.h>
+// The 8.0.79 header declares these extension properties @dynamic; they can
+// be forwarded by CMessageWrap rather than installed as concrete Methods.
+static NSString *GameProperty(NSString *selector) {
+    if([selector isEqual:@"m_uiGameType"]) return @"m_uiGameType";
+    if([selector isEqual:@"m_uiGameContent"] || [selector isEqual:@"setM_uiGameContent:"]) return @"m_uiGameContent";
+    if([selector isEqual:@"setM_nsEmoticonMD5:"]) return @"m_nsEmoticonMD5";
+    return nil;
+}
+BOOL WUNativeGameFieldAvailable(Class cls, NSString *selector, const char *ret, NSArray *args) {
+    SEL sel=NSSelectorFromString(selector);
+    Method method=cls?class_getInstanceMethod(cls,sel):NULL;
+    if(method) return WUMatches(method,ret,args);
+    NSString *key=GameProperty(selector);
+    if(!key || cls!=NSClassFromString(@"CMessageWrap")) return NO;
+    objc_property_t property=class_getProperty(cls,key.UTF8String);
+    const char *attrs=property?property_getAttributes(property):NULL;
+    if(!attrs || attrs[0]!='T') return NO;
+    BOOL object=[key isEqual:@"m_nsEmoticonMD5"];
+    if(object ? attrs[1]!='@' : !(attrs[1]=='I' && attrs[2]==',')) return NO;
+    if([selector hasPrefix:@"set"]) return !strcmp(ret,"v") && args.count==1 && [args[0] isEqual:(object?@"@":@"I")];
+    return !object && !strcmp(ret,"I") && !args.count;
+}
 static BOOL Has(id x,NSString *s,const char *ret,NSArray *args) {
-    return x && WUMatches(class_getInstanceMethod(object_getClass(x),NSSelectorFromString(s)),ret,args);
+    if(!x) return NO;
+    Class cls=object_getClass(x); SEL sel=NSSelectorFromString(s);
+    Method method=class_getInstanceMethod(cls,sel);
+    if(method) return WUMatches(method,ret,args);
+    if(!WUNativeGameFieldAvailable(cls,s,ret,args)) return NO;
+    @try {
+        NSMethodSignature *sig=[x methodSignatureForSelector:sel];
+        if(!sig || sig.numberOfArguments!=args.count+2 || strcmp(sig.methodReturnType,ret)) return NO;
+        for(NSUInteger i=0;i<args.count;i++) if(strcmp([sig getArgumentTypeAtIndex:i+2],[args[i] UTF8String])) return NO;
+        return YES;
+    } @catch(NSException *e) { return NO; }
 }
 unsigned WUNativeGameNumber(id x,NSString *s) {
     SEL sel=NSSelectorFromString(s);
