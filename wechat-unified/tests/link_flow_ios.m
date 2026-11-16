@@ -143,7 +143,19 @@ static void Swap(Class c, SEL a, SEL b, BOOL classMethod) {
     id<UIAdaptivePresentationControllerDelegate> delegate=safari.presentationController.delegate;
     XCTAssertNotNil(delegate); [delegate presentationControllerDidDismiss:safari.presentationController]; Pump(.3);
     XCTAssertNil(self.owner.presentedViewController); XCTAssertFalse(WUMessageEntriesOwnsController(safari));
-    [self start]; [self.nav pushViewController:[UIViewController new] animated:NO]; Pump(.5);
+    [self start]; [self alert];
+    UIViewController *next=[UIViewController new]; [self.nav pushViewController:next animated:NO];
+    XCTAssertEqual(self.nav.topViewController,next);
+    NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:3];
+    while(self.owner.presentedViewController && deadline.timeIntervalSinceNow>0) Pump(.01);
+    XCTAssertNil(self.owner.presentedViewController);
+}
+- (void)testCancellationDuringPresentationDoesNotLeaveAlert {
+    WUOpenSelectedLinks(self.owner,@[@{@"type":@1,@"content":@"https://example.com/a"}],^BOOL{ return YES; });
+    WUCancelMessageEntries();
+    Pump(1.5);
+    NSDate *deadline=[NSDate dateWithTimeIntervalSinceNow:3];
+    while(self.owner.presentedViewController && deadline.timeIntervalSinceNow>0) Pump(.01);
     XCTAssertNil(self.owner.presentedViewController);
 }
 - (void)testAccountInvalidationBlocksStaleConfirmation {

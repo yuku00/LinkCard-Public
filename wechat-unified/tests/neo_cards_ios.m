@@ -15,6 +15,22 @@
     return WUNeoCell(cell,@"gearshape");
 }
 @end
+@interface WUNeoPreviewController : UITableViewController @end
+@implementation WUNeoPreviewController
+- (void)viewDidLoad { [super viewDidLoad]; WUNeoPrepareTable(self); }
+- (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section { return 1; }
+- (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
+    UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+    cell.textLabel.text=@"这是很长的主题名称，必须完整显示而不能被固定高度裁切。这是很长的主题名称，必须完整显示而不能被固定高度裁切。这是很长的主题名称，必须完整显示而不能被固定高度裁切。";
+    cell.detailTextLabel.text=@"主题预览 · 本地资源";
+    cell.imageView.image=[UIImage systemImageNamed:@"photo"];
+    cell.imageView.contentMode=UIViewContentModeScaleAspectFit;
+    NSLayoutConstraint *minimum=[cell.contentView.heightAnchor constraintGreaterThanOrEqualToConstant:148];
+    minimum.priority=999; minimum.active=YES;
+    return WUNeoCell(cell,@"paintpalette");
+}
+@end
+
 @interface WUNeoLongSubtitleController : UITableViewController @end
 @implementation WUNeoLongSubtitleController
 - (void)viewDidLoad { [super viewDidLoad]; WUNeoPrepareTable(self); }
@@ -85,6 +101,57 @@ static UIView *WUNeoFindView(UIView *root, NSString *identifier) {
                 XCTAssertTrue(CGRectContainsRect(CGRectInset(cardRect,-0.5,-0.5),[detail convertRect:detail.bounds toView:cell]));
             }
         }
+        window.hidden=YES; window.rootViewController=nil;
+    }
+}
+- (void)testThemePreviewMinimumGrowsForLongNames {
+    WUNeoPreviewController *vc=[[WUNeoPreviewController alloc] initWithStyle:UITableViewStylePlain];
+    UIWindow *window=[[UIWindow alloc] initWithFrame:CGRectMake(0,0,320,844)];
+    window.rootViewController=vc; [window makeKeyAndVisible];
+    [vc.view layoutIfNeeded]; [vc.tableView reloadData]; [vc.tableView layoutIfNeeded];
+    UITableViewCell *cell=[vc.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
+    XCTAssertNotNil(cell); [cell layoutIfNeeded];
+    UILabel *title=(UILabel *)WUNeoFindView(cell,@"WUNeoTitle");
+    XCTAssertNotNil(title); XCTAssertGreaterThan(CGRectGetHeight(cell.bounds),148);
+    XCTAssertGreaterThan(CGRectGetWidth(title.bounds),0);
+    XCTAssertGreaterThanOrEqual(CGRectGetHeight(title.bounds)+0.5,[title sizeThatFits:CGSizeMake(CGRectGetWidth(title.bounds),CGFLOAT_MAX)].height);
+    window.hidden=YES; window.rootViewController=nil;
+}
+- (void)testReusedCellReplacesVisibleText {
+    UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"stat"];
+    cell.textLabel.text=@"旧统计"; WUNeoCell(cell,nil);
+    XCTAssertEqualObjects(((UILabel *)WUNeoFindView(cell,@"WUNeoTitle")).text,@"旧统计");
+    cell.textLabel.text=@"新统计"; WUNeoCell(cell,nil);
+    XCTAssertEqualObjects(((UILabel *)WUNeoFindView(cell,@"WUNeoTitle")).text,@"新统计");
+    NSUInteger count=0;
+    for(UIView *view in cell.contentView.subviews) if([view.accessibilityIdentifier isEqualToString:@"WUNeoCustomContent"]) count++;
+    XCTAssertEqual(count,1u);
+}
+- (void)testSystemSubtitleCardsFitAtAccessibleSizes {
+    for(NSNumber *width in @[@320,@430]) for(NSString *category in @[UIContentSizeCategoryLarge,UIContentSizeCategoryAccessibilityExtraExtraExtraLarge]) {
+        UIViewController *host=[UIViewController new];
+        WUNeoTestController *vc=[[WUNeoTestController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+        [host addChildViewController:vc];
+        [host setOverrideTraitCollection:[UITraitCollection traitCollectionWithPreferredContentSizeCategory:category] forChildViewController:vc];
+        UIWindow *window=[[UIWindow alloc] initWithFrame:CGRectMake(0,0,width.doubleValue,2400)];
+        window.rootViewController=host;
+        vc.view.frame=host.view.bounds; vc.view.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;
+        [host.view addSubview:vc.view]; [vc didMoveToParentViewController:host]; [window makeKeyAndVisible];
+        [host.view layoutIfNeeded]; [vc.tableView reloadData]; [vc.tableView layoutIfNeeded];
+        UITableViewCell *cell=[vc.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:2 inSection:0]];
+        XCTAssertNotNil(cell); [cell layoutIfNeeded]; [cell.backgroundView layoutIfNeeded];
+        UILabel *title=(UILabel *)WUNeoFindView(cell,@"WUNeoTitle"), *detail=(UILabel *)WUNeoFindView(cell,@"WUNeoDetail");
+        XCTAssertNotNil(title); XCTAssertNotNil(detail);
+        if([category isEqualToString:UIContentSizeCategoryAccessibilityExtraExtraExtraLarge]) XCTAssertGreaterThan(title.font.pointSize,20);
+        UIView *card=cell.backgroundView.subviews.firstObject;
+        CGRect cardRect=[card convertRect:card.bounds toView:cell];
+        CGRect titleRect=[title convertRect:title.bounds toView:cell], detailRect=[detail convertRect:detail.bounds toView:cell];
+        XCTAssertTrue(CGRectContainsRect(CGRectInset(cardRect,-0.5,-0.5),titleRect));
+        XCTAssertTrue(CGRectContainsRect(CGRectInset(cardRect,-0.5,-0.5),detailRect));
+        XCTAssertLessThanOrEqual(CGRectGetMaxY(titleRect),CGRectGetMinY(detailRect)+0.5);
+        XCTAssertGreaterThan(CGRectGetWidth(detail.bounds),0);
+        XCTAssertGreaterThanOrEqual(CGRectGetHeight(title.bounds)+0.5,[title sizeThatFits:CGSizeMake(CGRectGetWidth(title.bounds),CGFLOAT_MAX)].height);
+        XCTAssertGreaterThanOrEqual(CGRectGetHeight(detail.bounds)+0.5,[detail sizeThatFits:CGSizeMake(CGRectGetWidth(detail.bounds),CGFLOAT_MAX)].height);
         window.hidden=YES; window.rootViewController=nil;
     }
 }

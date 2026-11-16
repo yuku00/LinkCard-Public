@@ -295,14 +295,20 @@ static UIImage *PreviewImage(NSString *identifier,BOOL dark) {
 - (NSInteger)tableView:(UITableView *)t numberOfRowsInSection:(NSInteger)s { return s==0?3:self.packs.count; }
 - (NSString *)tableView:(UITableView *)t titleForHeaderInSection:(NSInteger)s { return s==0?@"独立选择 / 恢复 / 样式":@"本地资源 · 置顶优先"; }
 - (NSString *)tableView:(UITableView *)t titleForFooterInSection:(NSInteger)s { return s==0?@"主题与气泡可分别选择。更换后部分页面需重新进入。":@"本地导入：压缩包不超过32MB，解压后不超过64MB；单文件不超过8MB，最多510项资源。"; }
-- (CGFloat)tableView:(UITableView *)t heightForRowAtIndexPath:(NSIndexPath *)p { return p.section==1&&[[self options][@"cards"] boolValue]&&!UIContentSizeCategoryIsAccessibilityCategory(t.traitCollection.preferredContentSizeCategory)?[UIFontMetrics.defaultMetrics scaledValueForValue:148]:UITableViewAutomaticDimension; }
 - (UITableViewCell *)tableView:(UITableView *)t cellForRowAtIndexPath:(NSIndexPath *)p {
     UITableViewCell *cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil]; cell.textLabel.numberOfLines=0; cell.detailTextLabel.numberOfLines=0; cell.accessoryType=UITableViewCellAccessoryDisclosureIndicator;
     if(p.section==0) { cell.textLabel.text=@[@"清除主题选择",@"气泡跟随主题",@"逐项圆角 / 颜色 / 字体 / 尺寸"][p.row]; return WUNeoCell(cell,@"paintpalette"); }
     NSDictionary *pack=self.packs[p.row]; NSString *uuid=pack[@"id"]; BOOL pin=[[self options][@"pinned"] containsObject:uuid];
     cell.textLabel.text=[NSString stringWithFormat:@"%@%@",pin?@"📌 ":@"",pack[@"name"]];
     cell.detailTextLabel.text=[NSString stringWithFormat:@"%@%@ · %@项 · %.1f MB",[WUValue(@"themePack") isEqual:uuid]?@"主题 ":@"",[WUValue(@"bubblePack") isEqual:uuid]?@"独立气泡 ":@"",pack[@"resources"]?:pack[@"png"]?:@0,[pack[@"size"] doubleValue]/1024/1024];
-    if([[self options][@"cards"] boolValue]) { cell.imageView.image=PreviewImage(uuid,self.traitCollection.userInterfaceStyle==UIUserInterfaceStyleDark); cell.imageView.contentMode=UIViewContentModeScaleAspectFit; } return WUNeoCell(cell,@"paintpalette");
+    if([[self options][@"cards"] boolValue]) {
+        cell.imageView.image=PreviewImage(uuid,self.traitCollection.userInterfaceStyle==UIUserInterfaceStyleDark); cell.imageView.contentMode=UIViewContentModeScaleAspectFit;
+        if(!UIContentSizeCategoryIsAccessibilityCategory(t.traitCollection.preferredContentSizeCategory)) {
+            NSLayoutConstraint *minimum=[cell.contentView.heightAnchor constraintGreaterThanOrEqualToConstant:[UIFontMetrics.defaultMetrics scaledValueForValue:148 compatibleWithTraitCollection:t.traitCollection]];
+            minimum.priority=999; minimum.active=YES;
+        }
+    }
+    return WUNeoCell(cell,@"paintpalette");
 }
 - (void)select:(NSString *)uuid key:(NSString *)key { if(!WUSave(key,uuid)) [self message:@"选择未保存，旧配置保留"]; else [self reload]; }
 - (void)exportPack:(NSDictionary *)pack {

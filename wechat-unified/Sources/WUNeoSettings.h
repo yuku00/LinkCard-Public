@@ -63,6 +63,11 @@ static inline UIView *WUNeoCardBackground(UIColor *color) {
 }
 
 static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol) {
+    // Reused cells must not accumulate stale copies of their previous labels.
+    for(UIView *view in cell.contentView.subviews.copy) {
+        if([view.accessibilityIdentifier isEqualToString:@"WUNeoCustomContent"]) [view removeFromSuperview];
+    }
+    cell.textLabel.hidden=NO; cell.detailTextLabel.hidden=NO; cell.imageView.hidden=NO;
     // The cell and its selected state each own a complete, independently rounded card.
     cell.backgroundConfiguration=nil;
     cell.backgroundColor=UIColor.clearColor;
@@ -85,6 +90,7 @@ static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol
     cell.detailTextLabel.numberOfLines=0;
     cell.detailTextLabel.textColor=UIColor.secondaryLabelColor;
     // Existing thumbnails, checkmarks, accessory controls and disabled text survive.
+    BOOL hasThumbnail=cell.imageView.image != nil;
     if(symbol.length && !cell.imageView.image) {
         UIImage *glyph=[UIImage systemImageNamed:symbol withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightMedium]];
         if(glyph) {
@@ -114,7 +120,7 @@ static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol
         title.textAlignment=originalTitle.textAlignment; title.enabled=originalTitle.enabled;
         title.numberOfLines=0; title.adjustsFontForContentSizeCategory=YES;
         title.accessibilityIdentifier=@"WUNeoTitle";
-        detail.text=originalDetail.text; detail.font=originalDetail.font; detail.textColor=originalDetail.textColor;
+        if(originalDetail) { detail.text=originalDetail.text; detail.font=originalDetail.font; detail.textColor=originalDetail.textColor; }
         detail.numberOfLines=0; detail.adjustsFontForContentSizeCategory=YES;
         detail.accessibilityIdentifier=@"WUNeoDetail";
         UIStackView *text=[[UIStackView alloc] initWithArrangedSubviews:@[title,detail]];
@@ -122,6 +128,7 @@ static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol
         detail.hidden=!detail.text.length;
         UIStackView *content=[[UIStackView alloc] init];
         content.axis=UILayoutConstraintAxisHorizontal; content.alignment=UIStackViewAlignmentCenter; content.spacing=12;
+        content.accessibilityIdentifier=@"WUNeoCustomContent";
         content.translatesAutoresizingMaskIntoConstraints=NO;
         UIImageView *originalImage=cell.imageView;
         if(originalImage.image) {
@@ -129,7 +136,7 @@ static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol
             image.contentMode=originalImage.contentMode; image.tintColor=originalImage.tintColor;
             image.backgroundColor=originalImage.backgroundColor; image.layer.cornerRadius=originalImage.layer.cornerRadius;
             image.clipsToBounds=originalImage.clipsToBounds; image.isAccessibilityElement=NO;
-            CGFloat side=originalImage.backgroundColor ? 34 : 80;
+            CGFloat side=hasThumbnail ? 80 : 34;
             [NSLayoutConstraint activateConstraints:@[[image.widthAnchor constraintEqualToConstant:side], [image.heightAnchor constraintEqualToConstant:side]]];
             [content addArrangedSubview:image]; originalImage.hidden=YES;
         }

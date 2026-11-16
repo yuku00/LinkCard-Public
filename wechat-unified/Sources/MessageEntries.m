@@ -73,7 +73,15 @@ static WUMessageEntryFlow *Begin(UIViewController *owner,BOOL (^current)(void)) 
     if(![self valid] || self.owner.presentedViewController) { if(self.linkFlow) WURecordDiagnosticEvent(WUDiagPresentRejected); [self finish]; return; }
     self.controller=controller; self.transitioning=YES;
     __weak WUMessageEntryFlow *weak=self;
-    @try { [self.owner presentViewController:controller animated:YES completion:^{ weak.transitioning=NO; if(![controller isKindOfClass:UIAlertController.class]) controller.presentationController.delegate=weak; }]; }
+    __weak UIViewController *owner=self.owner;
+    @try { [self.owner presentViewController:controller animated:YES completion:^{
+        WUMessageEntryFlow *flow=weak;
+        if(!flow || flow.finished) {
+            if(owner.presentedViewController==controller) [owner dismissViewControllerAnimated:NO completion:nil];
+            return;
+        }
+        flow.transitioning=NO; if(![controller isKindOfClass:UIAlertController.class]) controller.presentationController.delegate=flow;
+    }]; }
     @catch(__unused NSException *e) { if(self.linkFlow) WURecordDiagnosticEvent(WUDiagPresentException); [self finish]; }
 }
 - (void)chooseController:(UIViewController *)expected action:(void (^)(void))action {
