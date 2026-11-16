@@ -23,7 +23,20 @@ BOOL WUVoiceExactSignature(id o, NSString *name, const char *result, NSArray<NSS
         // Forwarded dynamic voice properties still require the live signature.
         BOOL forwarded=class_getInstanceMethod(object_getClass(o),s)==NULL;
         NSMethodSignature *sig=forwarded?[o methodSignatureForSelector:s]:nil;
-        if(forwarded && (!sig || sig.numberOfArguments!=args.count+2 || strcmp(sig.methodReturnType,result))) return NO;
+        if(forwarded && !sig) {
+            // NSObject fast forwarding may work without a method signature. Only
+            // accept the exact voice extension currently bound to this wrap.
+            if(!WUVoiceExactSignature(o,@"m_extendInfoWithMsgType","@",@[]) ||
+               !WUVoiceExactSignature(o,@"forwardingTargetForSelector:","@",@[@":"])) return NO;
+            id bound=((id(*)(id,SEL))objc_msgSend)(o,NSSelectorFromString(@"m_extendInfoWithMsgType"));
+            id target=((id(*)(id,SEL,SEL))objc_msgSend)(o,@selector(forwardingTargetForSelector:),s);
+            Class ext=NSClassFromString(@"CExtendInfoOfVoiceMsg");
+            if(!bound || target!=bound || !ext || ![target isKindOfClass:ext]) return NO;
+            m=class_getInstanceMethod(object_getClass(target),s);
+            if(!m || method_getNumberOfArguments(m)!=args.count+2) return NO;
+            forwarded=NO; // Validate the actual forwarding target's concrete Method.
+        }
+        if(forwarded && (sig.numberOfArguments!=args.count+2 || strcmp(sig.methodReturnType,result))) return NO;
         char *r=method_copyReturnType(m); BOOL ok=r && !strcmp(r,result); free(r);
         for(NSUInteger i=0;i<args.count+2;i++) {
             const char *expected=i==0?"@":(i==1?":":args[i-2].UTF8String); char *t=method_copyArgumentType(m,(unsigned)i);
