@@ -33,6 +33,12 @@
 }
 @end
 
+static UIView *WUNeoFindView(UIView *root, NSString *identifier) {
+    if([root.accessibilityIdentifier isEqualToString:identifier]) return root;
+    for(UIView *subview in root.subviews) { UIView *found=WUNeoFindView(subview,identifier); if(found) return found; }
+    return nil;
+}
+
 @interface WUNeoCardTests : XCTestCase @end
 @implementation WUNeoCardTests
 - (void)testProductionCards {
@@ -66,7 +72,18 @@
                 UIView *hit=[cell hitTest:center withEvent:nil];
                 XCTAssertTrue(hit==toggle || [hit isDescendantOfView:toggle]);
             }
-            if(row==2) XCTAssertGreaterThan(CGRectGetHeight(cell.bounds),64);
+            if(row==2) {
+                XCTAssertGreaterThan(CGRectGetHeight(cell.bounds),64);
+                UILabel *title=(UILabel *)WUNeoFindView(cell,@"WUNeoTitle");
+                UILabel *detail=(UILabel *)WUNeoFindView(cell,@"WUNeoDetail");
+                XCTAssertNotNil(title); XCTAssertNotNil(detail);
+                XCTAssertEqualObjects(detail.text,cell.detailTextLabel.text);
+                XCTAssertGreaterThan(CGRectGetWidth(detail.bounds),0);
+                XCTAssertGreaterThanOrEqual(CGRectGetHeight(detail.bounds)+0.5,[detail sizeThatFits:CGSizeMake(CGRectGetWidth(detail.bounds),CGFLOAT_MAX)].height);
+                CGRect cardRect=[card convertRect:card.bounds toView:cell];
+                XCTAssertTrue(CGRectContainsRect(CGRectInset(cardRect,-0.5,-0.5),[title convertRect:title.bounds toView:cell]));
+                XCTAssertTrue(CGRectContainsRect(CGRectInset(cardRect,-0.5,-0.5),[detail convertRect:detail.bounds toView:cell]));
+            }
         }
         window.hidden=YES; window.rootViewController=nil;
     }

@@ -84,18 +84,6 @@ static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol
     cell.detailTextLabel.adjustsFontForContentSizeCategory=YES;
     cell.detailTextLabel.numberOfLines=0;
     cell.detailTextLabel.textColor=UIColor.secondaryLabelColor;
-    if (cell.detailTextLabel.text.length && cell.textLabel.superview && cell.detailTextLabel.superview &&
-        ![cell.contentView.constraints filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"identifier == %@", @"WUNeoSubtitleBottom"]].count) {
-        UILabel *title=cell.textLabel, *detail=cell.detailTextLabel;
-        [title setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisVertical];
-        [detail setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisVertical];
-        NSLayoutConstraint *bottom=[detail.bottomAnchor constraintLessThanOrEqualToAnchor:cell.contentView.bottomAnchor constant:-14];
-        bottom.identifier=@"WUNeoSubtitleBottom";
-        [NSLayoutConstraint activateConstraints:@[
-            [title.topAnchor constraintGreaterThanOrEqualToAnchor:cell.contentView.topAnchor constant:14],
-            [detail.topAnchor constraintGreaterThanOrEqualToAnchor:title.bottomAnchor constant:3], bottom
-        ]];
-    }
     // Existing thumbnails, checkmarks, accessory controls and disabled text survive.
     if(symbol.length && !cell.imageView.image) {
         UIImage *glyph=[UIImage systemImageNamed:symbol withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightMedium]];
@@ -116,6 +104,43 @@ static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol
             cell.imageView.clipsToBounds=YES;
             cell.imageView.isAccessibilityElement=NO;
         }
+    }
+    // UIKit's built-in subtitle labels do not supply a reliable multiline sizing chain.
+    // Keep their values for callers, and display equivalent self-sizing plugin-owned views.
+    UILabel *originalTitle=cell.textLabel, *originalDetail=cell.detailTextLabel;
+    if(originalTitle.text.length) {
+        UILabel *title=[UILabel new], *detail=[UILabel new];
+        title.text=originalTitle.text; title.font=originalTitle.font; title.textColor=originalTitle.textColor;
+        title.textAlignment=originalTitle.textAlignment; title.enabled=originalTitle.enabled;
+        title.numberOfLines=0; title.adjustsFontForContentSizeCategory=YES;
+        title.accessibilityIdentifier=@"WUNeoTitle";
+        detail.text=originalDetail.text; detail.font=originalDetail.font; detail.textColor=originalDetail.textColor;
+        detail.numberOfLines=0; detail.adjustsFontForContentSizeCategory=YES;
+        detail.accessibilityIdentifier=@"WUNeoDetail";
+        UIStackView *text=[[UIStackView alloc] initWithArrangedSubviews:@[title,detail]];
+        text.axis=UILayoutConstraintAxisVertical; text.spacing=3;
+        detail.hidden=!detail.text.length;
+        UIStackView *content=[[UIStackView alloc] init];
+        content.axis=UILayoutConstraintAxisHorizontal; content.alignment=UIStackViewAlignmentCenter; content.spacing=12;
+        content.translatesAutoresizingMaskIntoConstraints=NO;
+        UIImageView *originalImage=cell.imageView;
+        if(originalImage.image) {
+            UIImageView *image=[[UIImageView alloc] initWithImage:originalImage.image];
+            image.contentMode=originalImage.contentMode; image.tintColor=originalImage.tintColor;
+            image.backgroundColor=originalImage.backgroundColor; image.layer.cornerRadius=originalImage.layer.cornerRadius;
+            image.clipsToBounds=originalImage.clipsToBounds; image.isAccessibilityElement=NO;
+            CGFloat side=originalImage.backgroundColor ? 34 : 80;
+            [NSLayoutConstraint activateConstraints:@[[image.widthAnchor constraintEqualToConstant:side], [image.heightAnchor constraintEqualToConstant:side]]];
+            [content addArrangedSubview:image]; originalImage.hidden=YES;
+        }
+        [content addArrangedSubview:text]; [cell.contentView addSubview:content];
+        [NSLayoutConstraint activateConstraints:@[
+            [content.leadingAnchor constraintEqualToAnchor:cell.contentView.leadingAnchor constant:34],
+            [content.trailingAnchor constraintEqualToAnchor:cell.contentView.trailingAnchor constant:-34],
+            [content.topAnchor constraintEqualToAnchor:cell.contentView.topAnchor constant:14],
+            [content.bottomAnchor constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-14]
+        ]];
+        originalTitle.hidden=YES; originalDetail.hidden=YES;
     }
     if([cell.accessoryView isKindOfClass:UISwitch.class]) {
         UISwitch *toggle=(UISwitch *)cell.accessoryView;
