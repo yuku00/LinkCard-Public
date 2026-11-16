@@ -84,6 +84,18 @@ static inline UITableViewCell *WUNeoCell(UITableViewCell *cell, NSString *symbol
     cell.detailTextLabel.adjustsFontForContentSizeCategory=YES;
     cell.detailTextLabel.numberOfLines=0;
     cell.detailTextLabel.textColor=UIColor.secondaryLabelColor;
+    if (cell.detailTextLabel.text.length && cell.textLabel.superview && cell.detailTextLabel.superview &&
+        ![cell.contentView.constraints filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"identifier == %@", @"WUNeoSubtitleBottom"]].count) {
+        UILabel *title=cell.textLabel, *detail=cell.detailTextLabel;
+        [title setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisVertical];
+        [detail setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisVertical];
+        NSLayoutConstraint *bottom=[detail.bottomAnchor constraintLessThanOrEqualToAnchor:cell.contentView.bottomAnchor constant:-14];
+        bottom.identifier=@"WUNeoSubtitleBottom";
+        [NSLayoutConstraint activateConstraints:@[
+            [title.topAnchor constraintGreaterThanOrEqualToAnchor:cell.contentView.topAnchor constant:14],
+            [detail.topAnchor constraintGreaterThanOrEqualToAnchor:title.bottomAnchor constant:3], bottom
+        ]];
+    }
     // Existing thumbnails, checkmarks, accessory controls and disabled text survive.
     if(symbol.length && !cell.imageView.image) {
         UIImage *glyph=[UIImage systemImageNamed:symbol withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:20 weight:UIImageSymbolWeightMedium]];
