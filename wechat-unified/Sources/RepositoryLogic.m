@@ -130,7 +130,7 @@ NSString *WURepositorySendText(id manager, id sessionManager, id wrap, NSString 
         for(NSUInteger i=0;i<setters.count;i++) ((void(*)(id,SEL,id))objc_msgSend)(wrap,NSSelectorFromString(setters[i]),values[i]);
         ((void(*)(id,SEL,unsigned))objc_msgSend)(wrap,NSSelectorFromString(@"setM_uiStatus:"),1);
         ((void(*)(id,SEL,unsigned))objc_msgSend)(wrap,NSSelectorFromString(@"setM_uiCreateTime:"),time);
-        for(NSUInteger i=0;i<getters.count;i++) if(![values[i] isEqual:((id(*)(id,SEL))objc_msgSend)(wrap,NSSelectorFromString(getters[i])]) return @"失败：文本字段核验不符，未提交";
+        for(NSUInteger i=0;i<getters.count;i++) if(![values[i] isEqual:((id(*)(id,SEL))objc_msgSend)(wrap,NSSelectorFromString(getters[i]))]) return @"失败：文本字段核验不符，未提交";
         if(((unsigned(*)(id,SEL))objc_msgSend)(wrap,NSSelectorFromString(@"m_uiStatus"))!=1 || ((unsigned(*)(id,SEL))objc_msgSend)(wrap,NSSelectorFromString(@"m_uiCreateTime"))!=time) return @"失败：文本整数核验不符，未提交";
         if(!current() || !RepoMethod(manager,@"AddMsg:MsgWrap:","v",@[@"@",@"@"],@"CMessageMgr")) return @"失败：确认或发送服务已失效，未提交";
         submitted=YES;
