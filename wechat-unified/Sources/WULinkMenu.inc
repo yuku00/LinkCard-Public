@@ -1,6 +1,7 @@
 // Included by Messages.m: private menu methods are checked before every invocation.
 #import "LinkLogic.h"
 extern void WUSaveSelectedEmoticonToPhotos(UIViewController *, id, BOOL (^)(void));
+extern void WUExportOriginalEmoticonForWrap(UIViewController *, id, BOOL (^)(void));
 static IMP wuLinkMenuOriginal, wuLinkClickOriginal, wuEmoticonOperationMenuOriginal;
 static char wuLinkMenuLeaseKey, wuLinkMenuItemKey, wuEmoticonMenuTokenKey, wuOwnerMenuLeaseKey;
 static NSUInteger wuLinkMenuSerial;
@@ -20,7 +21,7 @@ static UIView *WUMenuActionCell(id receiver, SEL cmd, id argument) {
     if(!cell && [receiver isKindOfClass:UIViewController.class]) {
         NSDictionary *lease=objc_getAssociatedObject(receiver,&wuOwnerMenuLeaseKey);
         UIView *(^source)(void)=lease[@"cell"];
-        if([lease[@"selector"] isEqual:NSStringFromSelector(cmd)] && source) cell=source();
+        if(([lease[@"selector"] isEqual:NSStringFromSelector(cmd)] || [lease[@"copySelector"] isEqual:NSStringFromSelector(cmd)]) && source) cell=source();
     }
     if(!cell && [argument isKindOfClass:UIView.class]) cell=argument;
     return cell;
@@ -28,7 +29,9 @@ static UIView *WUMenuActionCell(id receiver, SEL cmd, id argument) {
 static void WUMenuStoreLease(UIView *cell, UIViewController *owner, NSDictionary *lease) {
     __weak UIView *weakCell=cell;
     objc_setAssociatedObject(cell,&wuLinkMenuLeaseKey,lease,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    objc_setAssociatedObject(owner,&wuOwnerMenuLeaseKey,@{@"selector":lease[@"selector"],@"cell":[^UIView *{ return weakCell; } copy]},OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    NSMutableDictionary *ownerLease=[@{@"selector":lease[@"selector"],@"cell":[^UIView *{ return weakCell; } copy]} mutableCopy];
+    if(lease[@"copySelector"]) ownerLease[@"copySelector"]=lease[@"copySelector"];
+    objc_setAssociatedObject(owner,&wuOwnerMenuLeaseKey,ownerLease,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 static void WULinkMenuAction(id receiver, SEL cmd, id argument) {
     @try {
@@ -61,13 +64,16 @@ static void WUMenuEmoticonAction(id receiver, SEL cmd, id argument) {
         objc_setAssociatedObject(cell,&wuLinkMenuLeaseKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         BOOL (^current)(void)=lease[@"current"]; id wrap=lease[@"wrap"];
         if(!current || !current() || owner.presentedViewController) return;
-        UIAlertController *choice=[UIAlertController alertControllerWithTitle:@"保存表情" message:@"文件保留微信缓存原字节；WxAM 保存到图库时由微信转换为 GIF，原文件不会改变。" preferredStyle:UIAlertControllerStyleAlert];
+        UIAlertController *choice=[UIAlertController alertControllerWithTitle:@"保存表情" message:@"WxAM 优先转换为 GIF 并校验帧数和时长；图库保存若校验失败，会尝试保存不含动画的静态 PNG。也可另存原文件。" preferredStyle:UIAlertControllerStyleAlert];
         __weak UIAlertController *weakChoice=choice;
         [choice addAction:[UIAlertAction actionWithTitle:@"保存到文件" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
             [weakChoice dismissViewControllerAnimated:YES completion:^{ if(current()) WUExportEmoticonForWrap(owner,wrap,current); }];
         }]];
         [choice addAction:[UIAlertAction actionWithTitle:@"保存到图库" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
             [weakChoice dismissViewControllerAnimated:YES completion:^{ if(current()) WUSaveSelectedEmoticonToPhotos(owner,wrap,current); }];
+        }]];
+        [choice addAction:[UIAlertAction actionWithTitle:@"保存原文件（可能为 WxAM）" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a){
+            [weakChoice dismissViewControllerAnimated:YES completion:^{ if(current()) WUExportOriginalEmoticonForWrap(owner,wrap,current); }];
         }]];
         [choice addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
         [owner presentViewController:choice animated:YES completion:nil];
@@ -123,6 +129,17 @@ static void WUMenuImageAction(id receiver, SEL cmd, id argument) {
         if(current && current()) WUOpenMessageImageEditor(owner,lease[@"wrap"],current);
     } @catch(__unused NSException *e) {}
 }
+static void WUMenuCopyImageAction(id receiver, SEL cmd, id argument) {
+    @try {
+        if(!NSThread.isMainThread) return;
+        UIView *cell=WUMenuActionCell(receiver,cmd,argument); if(!cell) return;
+        NSDictionary *lease=objc_getAssociatedObject(cell,&wuLinkMenuLeaseKey); UIViewController *owner=Chat(cell);
+        if(!lease || ![lease[@"copySelector"] isEqual:NSStringFromSelector(cmd)] || !owner || (receiver!=owner && receiver!=cell)) return;
+        objc_setAssociatedObject(cell,&wuLinkMenuLeaseKey,nil,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        BOOL (^current)(void)=lease[@"current"];
+        if(current && current()) WUCopyMessageImage(owner,lease[@"wrap"],current);
+    } @catch(__unused NSException *e) {}
+}
 static id WUMenuAddImage(id original, UIView *cell) {
     if(![WUValue(@"enabled") boolValue]) return original;
     Class itemClass=NSClassFromString(@"MMMenuItem"); SEL init=NSSelectorFromString(@"initWithTitle:svgName:action:");
@@ -131,7 +148,7 @@ static id WUMenuAddImage(id original, UIView *cell) {
     if(!owner || !cell.window || !model || !wrap || !WULinkMessageReady(wrap)) return original;
     if(!Has(wrap,@"m_nsImageHDPath","@",@[]) && !Has(wrap,@"m_nsImagePath","@",@[]) && !Has(NSClassFromString(@"CMessageWrap"),@"getPathOfMsgImg:","@",@[@"@"])) return original;
     Class editor=NSClassFromString(@"EmoticonPickViewController");
-    if(!editor || ![editor isSubclassOfClass:UIViewController.class] || !WUMatches(class_getInstanceMethod(editor,@selector(init)),"@",@[]) || !WUMatches(class_getInstanceMethod(editor,NSSelectorFromString(@"setM_image:")),"v",@[@"@"])) return original;
+    BOOL editorAvailable=editor && [editor isSubclassOfClass:UIViewController.class] && WUMatches(class_getInstanceMethod(editor,@selector(init)),"@",@[]) && WUMatches(class_getInstanceMethod(editor,NSSelectorFromString(@"setM_image:")),"v",@[@"@"]);
     NSDictionary *identity=Info(wrap); NSString *account=Account(), *session=Session(owner); NSUInteger gen=generation;
     if([identity[@"type"] unsignedIntegerValue]!=3 || !account.length || !session.length || !InSession(identity,account,session) || (![identity[@"id"] unsignedLongLongValue] && ![identity[@"local"] unsignedLongLongValue])) return original;
     NSObject *token=[NSObject new]; objc_setAssociatedObject(cell,&wuEmoticonMenuTokenKey,token,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -143,14 +160,23 @@ static id WUMenuAddImage(id original, UIView *cell) {
         } @catch(__unused NSException *e) { return NO; }
     };
     if(!current() || wuLinkMenuSerial>=4096) return original;
-    SEL action=NSSelectorFromString([NSString stringWithFormat:@"wu_imageToEmoticon_%lu:",(unsigned long)++wuLinkMenuSerial]);
+    NSUInteger serial=++wuLinkMenuSerial;
+    SEL action=NSSelectorFromString([NSString stringWithFormat:@"wu_imageToEmoticon_%lu:",(unsigned long)serial]);
+    SEL copyAction=NSSelectorFromString([NSString stringWithFormat:@"wu_copyChatImage_%lu:",(unsigned long)serial]);
     Class ownerClass=object_getClass(owner),cellClass=object_getClass(cell);
-    if(class_getInstanceMethod(ownerClass,action) || class_getInstanceMethod(cellClass,action) || !class_addMethod(ownerClass,action,(IMP)WUMenuImageAction,"v@:@") || !class_addMethod(cellClass,action,(IMP)WUMenuImageAction,"v@:@")) return original;
-    id item=((id(*)(id,SEL,id,id,SEL))objc_msgSend)([itemClass alloc],init,@"图片转表情",@"",action);
-    if(!item || ![item isKindOfClass:itemClass] || !current()) return original;
-    objc_setAssociatedObject(item,&wuLinkMenuItemKey,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    WUMenuStoreLease(cell,owner,@{@"selector":NSStringFromSelector(action),@"current":[current copy],@"wrap":wrap});
-    return [original arrayByAddingObject:item];
+    if(class_getInstanceMethod(ownerClass,copyAction) || class_getInstanceMethod(cellClass,copyAction) || !class_addMethod(ownerClass,copyAction,(IMP)WUMenuCopyImageAction,"v@:@") || !class_addMethod(cellClass,copyAction,(IMP)WUMenuCopyImageAction,"v@:@")) return original;
+    id copyItem=((id(*)(id,SEL,id,id,SEL))objc_msgSend)([itemClass alloc],init,@"复制图片",@"",copyAction);
+    if(!copyItem || ![copyItem isKindOfClass:itemClass] || !current()) return original;
+    NSMutableArray *result=[original mutableCopy];
+    if(editorAvailable && !class_getInstanceMethod(ownerClass,action) && !class_getInstanceMethod(cellClass,action) && class_addMethod(ownerClass,action,(IMP)WUMenuImageAction,"v@:@") && class_addMethod(cellClass,action,(IMP)WUMenuImageAction,"v@:@")) {
+        id item=((id(*)(id,SEL,id,id,SEL))objc_msgSend)([itemClass alloc],init,@"图片转表情",@"",action);
+        if(item && [item isKindOfClass:itemClass]) { objc_setAssociatedObject(item,&wuLinkMenuItemKey,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [result addObject:item]; }
+    }
+    if(!current()) return original;
+    objc_setAssociatedObject(copyItem,&wuLinkMenuItemKey,@YES,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [result addObject:copyItem];
+    WUMenuStoreLease(cell,owner,@{@"selector":NSStringFromSelector(action),@"copySelector":NSStringFromSelector(copyAction),@"current":[current copy],@"wrap":wrap});
+    return [result copy];
 }
 static id WULinkFilteredMenu(id cell, SEL cmd, id input) {
     id original=((id(*)(id,SEL,id))wuLinkMenuOriginal)(cell,cmd,input);

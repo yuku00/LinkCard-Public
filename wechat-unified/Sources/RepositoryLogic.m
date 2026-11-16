@@ -78,14 +78,35 @@ NSString *WURepositoryInvoke(id receiver, NSString *selector, id first, id secon
     } @catch(NSException *exception) { return submitted?@"未知：调用异常，请核对宿主，勿盲重发":@"失败：未提交"; }
 }
 
-// Verify both the declared host method and the live service signature.  The only
-// accepted forwarded services are the two named 8.0.79 service methods below.
+// Verify direct methods, full-forwarding NSProxy signatures, or a verified fast target.
+static BOOL RepoMethod(id object, NSString *selector, const char *result, NSArray<NSString *> *args, NSString *hostName);
+BOOL WURepositoryFastService(id receiver, NSString *hostName, NSString *selector, const char *result, NSArray<NSString *> *args) {
+    @try {
+        if(!receiver || !hostName) return NO;
+        SEL sel=NSSelectorFromString(selector);
+        Class host=NSClassFromString(hostName);
+        if(!host || class_getInstanceMethod(object_getClass(receiver),sel) ||
+           !RepoMethod(receiver,@"forwardingTargetForSelector:","@",@[@":"],nil)) return NO;
+        id target=((id(*)(id,SEL,SEL))objc_msgSend)(receiver,@selector(forwardingTargetForSelector:),sel);
+        if(!target || target==receiver || ![target isKindOfClass:host]) return NO;
+        // Check both the declared host ABI and the actual target's override.
+        Method declared=class_getInstanceMethod(host,sel);
+        if(!declared || method_getNumberOfArguments(declared)!=args.count+2) return NO;
+        char *r=method_copyReturnType(declared); BOOL ok=r && !strcmp(r,result); free(r);
+        for(NSUInteger i=0;i<args.count+2;i++) {
+            const char *expected=i==0?"@":i==1?":":args[i-2].UTF8String;
+            char *t=method_copyArgumentType(declared,(unsigned)i); ok=ok && t && !strcmp(t,expected); free(t);
+        }
+        return ok && RepoMethod(target,selector,result,args,nil);
+    } @catch(NSException *e) { return NO; }
+}
 static BOOL RepoMethod(id object, NSString *selector, const char *result, NSArray<NSString *> *args, NSString *hostName) {
     @try {
         if(!object) return NO;
         SEL sel=NSSelectorFromString(selector);
         Method method=class_getInstanceMethod(object_getClass(object),sel);
         BOOL forwarded=method==NULL;
+        if(forwarded && hostName && WURepositoryFastService(object,hostName,selector,result,args)) return YES;
         if(forwarded && hostName) {
             BOOL proxy=NO;
             for(Class c=object_getClass(object); c; c=class_getSuperclass(c)) if(c==objc_getClass("NSProxy")) { proxy=YES; break; }

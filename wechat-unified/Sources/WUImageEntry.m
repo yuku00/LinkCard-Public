@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <stdatomic.h>
+#include <math.h>
 
 static BOOL Has(id o, NSString *s, const char *r, NSArray *a) {
     return o && WUMatches(class_getInstanceMethod(object_getClass(o),NSSelectorFromString(s)),r,a);
@@ -122,35 +123,63 @@ static NSData *WUSelectedEmoticonData(id wrap, NSString **kind) {
     return [data copy];
 }
 static NSData *WUWxAMPhotoGIF(NSData *data) {
-    Class util=NSClassFromString(@"EmoticonUtil"), decoder=NSClassFromString(@"WxAMAnimatedImageDecoder");
-    NSString *convert=@"createGifFromWxAMData:", *frames=@"frameCountForImageData:";
-    if(!Has(util,convert,"@",@[@"@"]) || !Has(decoder,frames,"i",@[@"@"])) return nil;
+    Class util=NSClassFromString(@"EmoticonUtil"), decoder=NSClassFromString(@"WxAMAnimatedImageDecoder"), animated=NSClassFromString(@"MMAnimatedImageDecoder");
+    NSString *convert=@"createGifFromWxAMData:", *frames=@"frameCountForImageData:", *decode=@"framesOfData:";
+    if(!Has(util,convert,"@",@[@"@"]) || !Has(decoder,frames,"i",@[@"@"]) || !Has(animated,decode,"@",@[@"@"])) return nil;
     int count=((int(*)(id,SEL,id))objc_msgSend)(decoder,NSSelectorFromString(frames),data);
     if(count<1 || count>500) return nil;
     id gif=((id(*)(id,SEL,id))objc_msgSend)(util,NSSelectorFromString(convert),data);
     if(![WUEmoticonType(gif) isEqual:@"com.compuserve.gif"]) return nil;
     CGImageSourceRef source=CGImageSourceCreateWithData((__bridge CFDataRef)gif,NULL);
     BOOL valid=source && CGImageSourceGetCount(source)==(size_t)count;
+    id decoded=valid?((id(*)(id,SEL,id))objc_msgSend)(animated,NSSelectorFromString(decode),data):nil;
+    if(![decoded isKindOfClass:NSArray.class] || [decoded count]!=(NSUInteger)count) valid=NO;
+    for(int i=0;valid && i<count;i++) {
+        id frame=decoded[i];
+        if(!Has(frame,@"duration","d",@[])) { valid=NO; break; }
+        double duration=((double(*)(id,SEL))objc_msgSend)(frame,NSSelectorFromString(@"duration"));
+        NSDictionary *props=CFBridgingRelease(CGImageSourceCopyPropertiesAtIndex(source,(size_t)i,NULL));
+        NSDictionary *gifProps=props[(id)kCGImagePropertyGIFDictionary];
+        NSNumber *delay=gifProps[(id)kCGImagePropertyGIFUnclampedDelayTime] ?: gifProps[(id)kCGImagePropertyGIFDelayTime];
+        // GIF stores delays in centiseconds; never silently alter the animation timing.
+        if(![delay isKindOfClass:NSNumber.class] || !isfinite(duration) || duration<=0 || fabs(delay.doubleValue-duration)>0.011) valid=NO;
+    }
     if(source) CFRelease(source);
     return valid?gif:nil;
+}
+static NSData *WUWxAMPhotoPNG(NSData *data) {
+    Class converter=NSClassFromString(@"WxamImageConvert");
+    NSString *selector=@"decodeWxamToUIImage:scene:";
+    if(!Has(converter,selector,"@",@[@"@",@"Q"])) return nil;
+    id image=((id(*)(id,SEL,id,unsigned long long))objc_msgSend)(converter,NSSelectorFromString(selector),data,0ULL);
+    if(![image isKindOfClass:UIImage.class]) return nil;
+    NSData *png=UIImagePNGRepresentation(image);
+    return StaticImage(png)?png:nil;
 }
 void WUSaveSelectedEmoticonToPhotos(UIViewController *owner, id wrap, BOOL (^current)(void)) {
     if(!NSThread.isMainThread || !owner || !wrap || !current || !current() || owner.presentedViewController) return;
     @try {
-        id usage=[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSPhotoLibraryAddUsageDescription"];
-        if(![usage isKindOfClass:NSString.class] || ![usage length]) { ExportNotice(owner,@"宿主缺少添加照片权限声明，未保存。"); return; }
-        PHAuthorizationStatus status=[PHPhotoLibrary authorizationStatusForAccessLevel:PHAccessLevelAddOnly];
+        id addUsage=[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSPhotoLibraryAddUsageDescription"];
+        id readUsage=[NSBundle.mainBundle objectForInfoDictionaryKey:@"NSPhotoLibraryUsageDescription"];
+        BOOL hasAdd=[addUsage isKindOfClass:NSString.class] && [addUsage length];
+        BOOL hasRead=[readUsage isKindOfClass:NSString.class] && [readUsage length];
+        if(!hasAdd && !hasRead) { ExportNotice(owner,@"宿主缺少照片权限声明，未保存。"); return; }
+        PHAccessLevel level=hasAdd?PHAccessLevelAddOnly:PHAccessLevelReadWrite;
+        PHAuthorizationStatus status=[PHPhotoLibrary authorizationStatusForAccessLevel:level];
         if(status==PHAuthorizationStatusNotDetermined) {
-            [PHPhotoLibrary requestAuthorizationForAccessLevel:PHAccessLevelAddOnly handler:^(PHAuthorizationStatus result) {
+            [PHPhotoLibrary requestAuthorizationForAccessLevel:level handler:^(PHAuthorizationStatus result) {
                 dispatch_async(dispatch_get_main_queue(),^{ if(current()) ExportNotice(owner,@"权限请求已结束，请再次选择保存到图库。"); });
             }];
             return;
         }
-        if(status!=PHAuthorizationStatusAuthorized) { ExportNotice(owner,@"没有添加照片权限，未保存。"); return; }
+        if(status!=PHAuthorizationStatusAuthorized && status!=PHAuthorizationStatusLimited) { ExportNotice(owner,@"没有添加照片权限，未保存。"); return; }
         NSString *kind=nil; NSData *raw=WUSelectedEmoticonData(wrap,&kind);
         NSData *photo=[kind isEqual:@"wxam"]?WUWxAMPhotoGIF(raw):raw;
+        BOOL staticFallback=[kind isEqual:@"wxam"] && !photo;
+        if(staticFallback) photo=WUWxAMPhotoPNG(raw);
         NSString *uti=WUEmoticonType(photo);
-        if(!uti || !current()) { if(current()) ExportNotice(owner,@"无法读取完整表情或转换动画，未保存；没有使用静图替代。"); return; }
+        if(!uti || !current()) { if(current()) ExportNotice(owner,@"无法读取表情或转换为可保存图片，未保存；可尝试另存原文件。"); return; }
+        if([uti isEqual:@"public.png"] && !StaticImage(photo)) { ExportNotice(owner,@"图库保存暂不支持动态 PNG；可保存原文件，不会用静图替代。"); return; }
         __weak UIViewController *weak=owner;
         __block BOOL added=NO;
         [PHPhotoLibrary.sharedPhotoLibrary performChanges:^{
@@ -162,15 +191,20 @@ void WUSaveSelectedEmoticonToPhotos(UIViewController *owner, id wrap, BOOL (^cur
             PHAssetCreationRequest *request=[PHAssetCreationRequest creationRequestForAsset];
             if(request) { [request addResourceWithType:PHAssetResourceTypePhoto data:photo options:options]; added=YES; }
         } completionHandler:^(BOOL success,NSError *error){ dispatch_async(dispatch_get_main_queue(),^{
-            if(current()) ExportNotice(weak,added && success && !error?([kind isEqual:@"wxam"]?@"已保存微信转换的 GIF 动画；原 WxAM 文件可另存到文件。":@"Photos 已确认保存原表情。"): @"Photos 未确认保存成功，请检查图库。");
+            if(current()) ExportNotice(weak,added && success && !error?(staticFallback?@"Photos 已确认保存静态 PNG，不含动画；原 WxAM 文件可另存到文件。":([kind isEqual:@"wxam"]?@"Photos 已确认保存微信转换的 GIF；原 WxAM 文件可另存到文件。":@"Photos 已确认保存原表情。")): @"Photos 未确认保存成功，请检查图库。");
         }); }];
     } @catch(__unused NSException *e) { ExportNotice(owner,@"准备表情失败，未保存。"); }
 }
-void WUExportEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(void)) {
+static void WUExportEmoticon(UIViewController *owner, id wrap, BOOL (^current)(void), BOOL original) {
     if(!NSThread.isMainThread || !owner || !wrap || !current || !current() || owner.presentedViewController) return;
     @try {
         NSString *type=nil; NSData *data=WUSelectedEmoticonData(wrap,&type);
         if(!data || !current()) { if(current()) ExportNotice(owner,@"无法读取微信已缓存的完整表情，未导出缩略图。"); return; }
+        if([type isEqual:@"wxam"] && !original) {
+            data=WUWxAMPhotoGIF(data);
+            if(!data) { ExportNotice(owner,@"微信无法转换为帧数和时长均可验证的 GIF，未导出静图；可选择导出 WxAM 原文件。"); return; }
+            type=@"com.compuserve.gif";
+        }
         NSString *ext=[type isEqual:@"wxam"]?@"wxam":([type isEqual:@"com.compuserve.gif"]?@"gif":([type isEqual:@"public.png"]?@"png":@"jpg"));
         NSURL *dir=[[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES] URLByAppendingPathComponent:NSUUID.UUID.UUIDString isDirectory:YES];
         NSError *error=nil;
@@ -181,8 +215,10 @@ void WUExportEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(v
         UIDocumentPickerViewController *picker=[[UIDocumentPickerViewController alloc] initForExportingURLs:@[file] asCopy:YES];
         picker.delegate=lease; objc_setAssociatedObject(picker,&WUEmoticonExportKey,lease,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [owner presentViewController:picker animated:YES completion:nil];
-    } @catch(__unused NSException *e) { ExportNotice(owner,@"原表情导出准备失败，未保存。"); }
+    } @catch(__unused NSException *e) { ExportNotice(owner,@"表情导出准备失败，未保存。"); }
 }
+void WUExportEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(void)) { WUExportEmoticon(owner,wrap,current,NO); }
+void WUExportOriginalEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(void)) { WUExportEmoticon(owner,wrap,current,YES); }
 @interface WUImageEntry : NSObject { _Atomic(BOOL) _cancelled; }
 @property(nonatomic,weak) UIViewController *owner;
 @property(nonatomic,weak) UINavigationController *nav;
@@ -195,7 +231,7 @@ void WUExportEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(v
 @property(nonatomic,strong) UIViewController *editor;
 @property(nonatomic,strong) UIAlertController *prompt;
 @property(nonatomic,strong) NSTimer *timer;
-@property(nonatomic) BOOL stopped, consumed, pushing;
+@property(nonatomic) BOOL stopped, consumed, pushing, copying;
 @property(nonatomic,copy) BOOL (^dataCurrent)(BOOL editing);
 @property(nonatomic,copy) BOOL (^menuCurrent)(void);
 - (BOOL)current;
@@ -250,7 +286,7 @@ static NSMutableSet<WUImageEntry *> *entries;
 }
 - (void)fail:(NSString *)message {
     UIViewController *owner=self.owner; BOOL current=[self current]; [self stop];
-    if(current) Notice(owner,message);
+    if(current) { if(self.copying) NoticeWithTitle(owner,@"复制图片",message); else Notice(owner,message); }
 }
 - (void)prepare {
     NSArray *paths=self.paths; NSUInteger frozenGeneration=self.generation;
@@ -271,13 +307,22 @@ static NSMutableSet<WUImageEntry *> *entries;
             if(cancelled()) { dispatch_async(dispatch_get_main_queue(),^{ [self stop]; }); return; }
             if(!error && !data) error=@"没有可靠的已缓存图片。请先在微信打开并加载所选图片，再手动尝试；不会下载或猜测文件路径。";
             if(!error && !StaticImage(data)) error=@"仅支持完整静态 PNG/JPEG（不超过20MiB）。GIF、APNG、多帧、损坏或超限图片均拒绝，不会取首帧冒充表情动画。";
-        } @catch(__unused NSException *e) { error=@"缓存图片读取或校验失败，未打开编辑器。"; }
+        } @catch(__unused NSException *e) { error=@"缓存图片读取或校验失败，未操作。"; }
         dispatch_async(dispatch_get_main_queue(),^{
             if(![self current]) { [self stop]; return; }
             if(error) { [self fail:error]; return; }
             @try {
                 self.image=[UIImage imageWithData:data];
-                if(!self.image || self.image.images.count) { [self fail:@"图片解码失败或包含动画，未打开编辑器。"]; return; }
+                if(!self.image || self.image.images.count) { [self fail:@"图片解码失败或包含动画，未操作。"]; return; }
+                if(self.copying) {
+                    if(![self current]) { [self stop]; return; }
+                    NSString *type=WUEmoticonType(data);
+                    if(!type || ![self current]) { [self stop]; return; }
+                    [UIPasteboard.generalPasteboard setItems:@[@{type:data}] options:@{UIPasteboardOptionLocalOnly:@YES}];
+                    UIViewController *owner=self.owner; [self stop];
+                    NoticeWithTitle(owner,@"复制图片",@"已复制当前缓存图片到本机剪贴板，可能不是原图。剪贴板内容可被你主动粘贴到其他应用。");
+                    return;
+                }
                 UIAlertController *prompt=[UIAlertController alertControllerWithTitle:@"用当前缓存图片编辑表情？" message:@"当前缓存图片、可能非原图。仅把所选静图交给微信原生编辑页面；请在该页面确认或取消。打开页面不代表已添加表情。" preferredStyle:UIAlertControllerStyleAlert];
                 self.prompt=prompt; __weak WUImageEntry *weak=self;
                 [prompt addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(UIAlertAction *a){ [weak stop]; }]];
@@ -292,7 +337,7 @@ static NSMutableSet<WUImageEntry *> *entries;
                     else [op stop];
                 }]];
                 [self.owner presentViewController:prompt animated:YES completion:nil];
-            } @catch(__unused NSException *e) { [self fail:@"图片编辑准备失败，未自动重试。"]; }
+            } @catch(__unused NSException *e) { [self fail:@"图片处理失败，未自动重试。"]; }
         });
     });
 }
@@ -351,7 +396,7 @@ BOOL WUOpenConfirmedImageDataEditor(UIViewController *owner, NSData *data, BOOL 
         [op open]; return !op.stopped && op.editor!=nil;
     } @catch(__unused NSException *e) { WUCancelImageDataEditor(owner); return NO; }
 }
-void WUOpenMessageImageEditor(UIViewController *owner, id wrap, BOOL (^current)(void)) {
+static void WUStartMessageImage(UIViewController *owner, id wrap, BOOL (^current)(void), BOOL copying) {
     if(!NSThread.isMainThread || !current || !current()) return;
     @try {
         if(!owner.viewIfLoaded.window || owner.presentedViewController || !owner.navigationController || owner.navigationController.topViewController!=owner || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive || ![WUValue(@"enabled") boolValue]) return;
@@ -359,16 +404,18 @@ void WUOpenMessageImageEditor(UIViewController *owner, id wrap, BOOL (^current)(
         NSString *account=WUCurrentAccount(), *session=WUChatSession(owner);
         if(!account.length || !session.length) return;
         NSDictionary *identity=Identity(wrap,account,session); NSArray *paths=identity?Paths(wrap):nil;
-        if(!identity || !paths.count) { Notice(owner,@"图片身份或缓存路径不可核验。请先在微信加载图片；未读取其他图片。"); return; }
+        if(!identity || !paths.count) { NoticeWithTitle(owner,copying?@"复制图片":@"图片转表情",@"图片身份或缓存路径不可核验。请先在微信加载图片；未读取其他图片。"); return; }
         EnsureEntries();
-        WUImageEntry *op=[WUImageEntry new]; op.owner=owner; op.nav=owner.navigationController; op.account=account; op.session=session; op.generation=WUContextGeneration(); op.wrap=wrap; op.identity=identity; op.paths=paths; op.menuCurrent=current;
+        WUImageEntry *op=[WUImageEntry new]; op.owner=owner; op.nav=owner.navigationController; op.account=account; op.session=session; op.generation=WUContextGeneration(); op.wrap=wrap; op.identity=identity; op.paths=paths; op.menuCurrent=current; op.copying=copying;
         [entries addObject:op];
         __weak WUImageEntry *weak=op;
         op.timer=[NSTimer timerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *timer){ WUImageEntry *live=weak; if(![live current]) [live stop]; }];
         [NSRunLoop.mainRunLoop addTimer:op.timer forMode:NSRunLoopCommonModes];
         if([op current]) [op prepare]; else [op stop];
-    } @catch(__unused NSException *e) { Notice(owner,@"图片上下文读取失败，未打开编辑器。"); }
+    } @catch(__unused NSException *e) { NoticeWithTitle(owner,copying?@"复制图片":@"图片转表情",@"图片上下文读取失败，未操作。"); }
 }
+void WUOpenMessageImageEditor(UIViewController *owner, id wrap, BOOL (^current)(void)) { WUStartMessageImage(owner,wrap,current,NO); }
+void WUCopyMessageImage(UIViewController *owner, id wrap, BOOL (^current)(void)) { WUStartMessageImage(owner,wrap,current,YES); }
 void WUOpenSelectedImageEditor(UIViewController *owner) {
     if(!NSThread.isMainThread) return;
     @try {

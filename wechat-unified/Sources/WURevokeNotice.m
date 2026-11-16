@@ -5,6 +5,51 @@ extern id WUValue(NSString *key);
 #import <objc/message.h>
 #include <string.h>
 
+@interface WURevokeActorParser : NSObject <NSXMLParserDelegate>
+@property(nonatomic,strong) NSMutableArray *path;
+@property(nonatomic,strong) NSMutableString *text;
+@property(nonatomic,copy) NSString *replacement;
+@property(nonatomic) BOOL invalid;
+@end
+@implementation WURevokeActorParser
+- (void)parser:(NSXMLParser *)p didStartElement:(NSString *)n namespaceURI:(NSString *)u qualifiedName:(NSString *)q attributes:(NSDictionary *)a {
+    if (self.text) self.invalid=YES;
+    [self.path addObject:n];
+    if (self.path.count>12) { self.invalid=YES; [p abortParsing]; }
+    if (self.path.count==1 && (![n isEqual:@"sysmsg"] || ![a[@"type"] isEqual:@"revokemsg"])) self.invalid=YES;
+    if ([n isEqual:@"replacemsg"]) {
+        if (![self.path isEqual:@[@"sysmsg",@"revokemsg",n]] || self.replacement) self.invalid=YES;
+        self.text=[NSMutableString string];
+    }
+}
+- (void)parser:(NSXMLParser *)p foundCharacters:(NSString *)s { [self.text appendString:s]; }
+- (void)parser:(NSXMLParser *)p foundCDATA:(NSData *)d {
+    NSString *s=[[NSString alloc] initWithData:d encoding:NSUTF8StringEncoding];
+    if (!s) self.invalid=YES; else [self.text appendString:s];
+}
+- (void)parser:(NSXMLParser *)p didEndElement:(NSString *)n namespaceURI:(NSString *)u qualifiedName:(NSString *)q {
+    if ([n isEqual:@"replacemsg"]) { self.replacement=self.text ?: @""; self.text=nil; }
+    [self.path removeLastObject];
+}
+@end
+WURevokeActor WURevokeNoticeActor(NSString *xml) {
+    if (![xml isKindOfClass:NSString.class] || xml.length>65536 ||
+        [xml rangeOfString:@"<!DOCTYPE" options:NSCaseInsensitiveSearch].location!=NSNotFound ||
+        [xml rangeOfString:@"<!ENTITY" options:NSCaseInsensitiveSearch].location!=NSNotFound) return WURevokeActorUnknown;
+    WURevokeActorParser *d=[WURevokeActorParser new]; d.path=[NSMutableArray array];
+    NSXMLParser *p=[[NSXMLParser alloc] initWithData:[xml dataUsingEncoding:NSUTF8StringEncoding]];
+    p.delegate=d; p.shouldResolveExternalEntities=NO;
+    if (![p parse] || d.invalid) return WURevokeActorUnknown;
+    NSString *s=[d.replacement stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if ([s isEqual:@"你撤回了一条消息"]) return WURevokeActorSelf;
+    NSString *suffix=@"撤回了一条消息";
+    if (![s hasSuffix:suffix]) return WURevokeActorUnknown;
+    NSString *name=[[s substringToIndex:s.length-suffix.length] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (name.length<3) return WURevokeActorUnknown;
+    BOOL quoted=([name hasPrefix:@"\""] && [name hasSuffix:@"\""]) || ([name hasPrefix:@"“"] && [name hasSuffix:@"”"]);
+    return quoted ? WURevokeActorOther : WURevokeActorUnknown;
+}
+
 @protocol WUNoticeInitI <NSObject>
 - (instancetype)initWithMsgType:(unsigned int)type;
 @end
@@ -82,9 +127,17 @@ void WURevokeNoticeInsert(id manager, NSString *account, NSString *session,
             NSArray *key=@[account,session,@(serverID),@(generation)];
             if ([seen containsObject:key] || seen.count>=4096 || !CanInsert(manager)) return;
             id wrap=NewNotice(NSClassFromString(@"CMessageWrap"),account);
+            NSString *timeText=@"时间未知";
+            if (createTime) {
+                NSDateFormatter *formatter=[NSDateFormatter new];
+                formatter.locale=[[NSLocale alloc] initWithLocaleIdentifier:@"zh_CN"];
+                formatter.dateFormat=@"yyyy-MM-dd HH:mm:ss";
+                timeText=[formatter stringFromDate:[NSDate dateWithTimeIntervalSince1970:createTime]] ?: @"时间未知";
+            }
+            NSString *content=[NSString stringWithFormat:@"对方撤回了一条消息（撤回时间：%@）",timeText];
             if (!wrap || !SetObject(wrap,@"setM_nsFromUsr:",from) ||
                 !SetObject(wrap,@"setM_nsToUsr:",to) || !SetNumber(wrap,@"setM_uiStatus:",4) ||
-                !SetObject(wrap,@"setM_nsContent:",@"对方撤回了一条消息") ||
+                !SetObject(wrap,@"setM_nsContent:",content) ||
                 (createTime && !SetNumber(wrap,@"setM_uiCreateTime:",createTime)) || !valid()) return;
             // Reserve before the call: an exception may follow a partial local insertion.
             [seen addObject:key];
