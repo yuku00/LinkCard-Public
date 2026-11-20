@@ -40,7 +40,7 @@ jobs:
           test -f "$BIN"
           file "$BIN" > build-report/macho.txt
           lipo -info "$BIN" >> build-report/macho.txt
-          lipo -verify_arch arm64 arm64e "$BIN"
+          lipo "$BIN" -verify_arch arm64 arm64e
           python3 -c 'import plistlib; assert plistlib.load(open("build-report/extracted/Library/MobileSubstrate/DynamicLibraries/DateInfoProbe.plist", "rb")) == {"Filter": {"Bundles": ["com.apple.springboard"]}}'
           otool -L "$BIN" >> build-report/macho.txt
           otool -l "$BIN" > build-report/load-commands.txt
