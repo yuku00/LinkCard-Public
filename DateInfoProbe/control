@@ -1,0 +1,8 @@
+Package: local.dateinfo.probe
+Name: DateInfo Probe
+Version: 0.1.0
+Architecture: iphoneos-arm64e
+Description: Read-only SpringBoard DateInfo diagnostics
+Maintainer: DateInfo Probe Contributors
+Author: DateInfo Probe Contributors
+Section: Tweaks
