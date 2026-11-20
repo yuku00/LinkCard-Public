@@ -33,8 +33,13 @@ static NSURL *Path(NSURL *d, NSString *a) {
     const unsigned char *bytes=data.bytes; for(NSUInteger i=0;i<data.length;i++) [name appendFormat:@"%02x",bytes[i]];
     return [d URLByAppendingPathComponent:[name stringByAppendingString:@".plist"]];
 }
+static BOOL RepoBaseAvailable(NSURL *d) {
+    struct stat st; NSURL *base=[d URLByDeletingLastPathComponent];
+    return base.isFileURL && !lstat(base.fileSystemRepresentation,&st) && S_ISDIR(st.st_mode);
+}
 NSArray *WURepositoryLoad(NSURL *d, NSString *a, NSError **e) {
     NSURL *p=Path(d,a); if(!p) { Fail(e,@"账号不可用或过长"); return nil; }
+    if(!RepoBaseAvailable(d)) { Fail(e,@"插件存储根目录缺失或不可访问，未创建空仓库"); return nil; }
     struct stat dirStat;
     if(stat(d.fileSystemRepresentation,&dirStat)!=0) {
         int code=errno; if(code==ENOENT) return @[];
@@ -55,6 +60,7 @@ NSArray *WURepositoryLoad(NSURL *d, NSString *a, NSError **e) {
 }
 BOOL WURepositorySave(NSURL *d, NSString *a, NSArray *items, NSError **e) {
     NSURL *p=Path(d,a); if(!p || !WURepositoryValid(items)) return Fail(e,@"内容无效或超过200条/每组50项/文本10000字限制");
+    if(!RepoBaseAvailable(d)) return Fail(e,@"插件存储根目录缺失或不可访问，未保存");
     NSData *data=[NSPropertyListSerialization dataWithPropertyList:@{@"version":@1,@"account":a,@"items":items} format:NSPropertyListBinaryFormat_v1_0 options:0 error:e];
     if(!data) return NO; if(data.length>1024*1024) return Fail(e,@"仓库超过1MiB，保存被拒绝");
     if(![NSFileManager.defaultManager createDirectoryAtURL:d withIntermediateDirectories:YES attributes:@{NSFileProtectionKey:NSFileProtectionCompleteUntilFirstUserAuthentication} error:e]) return NO;

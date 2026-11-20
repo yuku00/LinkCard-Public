@@ -68,7 +68,16 @@ int main(void) { @autoreleasepool {
     CHECK([[store load:NULL] count]==count+2 && [[other load:NULL] count]==0);
     NSURL *link=[root URLByAppendingPathComponent:@"linked.amr"]; CHECK(symlink(raw.path.fileSystemRepresentation,link.path.fileSystemRepresentation)==0); CHECK(![store importFile:link name:@"link" current:yes error:NULL]);
     CHECK([[NSData dataWithContentsOfURL:raw] isEqual:amr]);
-    NSURL *index=[root URLByAppendingPathComponent:@"packs/61/index.plist"]; CHECK([[@"bad" dataUsingEncoding:NSUTF8StringEncoding] writeToURL:index atomically:YES]);
+    NSURL *index=[root URLByAppendingPathComponent:@"packs/61/index.plist"];
+    NSURL *missingCopy=[root URLByAppendingPathComponent:@"packs/61/preserved-index"];
+    CHECK([NSFileManager.defaultManager moveItemAtURL:index toURL:missingCopy error:NULL]);
+    NSData *preserved=[NSData dataWithContentsOfURL:missingCopy]; NSError *missingError=nil;
+    CHECK([store load:&missingError]==nil && missingError!=nil);
+    CHECK(![store importFile:raw name:@"missing index" current:yes error:NULL]);
+    CHECK(![NSFileManager.defaultManager fileExistsAtPath:index.path] && [[NSData dataWithContentsOfURL:missingCopy] isEqual:preserved]);
+    CHECK([NSFileManager.defaultManager moveItemAtURL:missingCopy toURL:index error:NULL]);
+    CHECK([[store load:NULL] count]==count+2);
+    CHECK([[ @"bad" dataUsingEncoding:NSUTF8StringEncoding] writeToURL:index atomically:YES]);
     CHECK(![store importFile:raw name:@"bad index" current:yes error:NULL]); CHECK(![store exportResource:imported[@"id"] error:NULL]);
     CHECK([NSFileManager.defaultManager removeItemAtURL:root error:NULL]);
     printf("Voice file import/export/trusted-pairing mock path: %lu checks passed\n",(unsigned long)checks);
