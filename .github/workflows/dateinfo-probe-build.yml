@@ -26,6 +26,7 @@ jobs:
         working-directory: DateInfoProbe
         run: |
           set -euxo pipefail
+          python3 tests/test_invariants.py
           gmake -j2 FINALPACKAGE=1 package
           mkdir -p build-report
           cp packages/*.deb build-report/

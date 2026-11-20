@@ -5,6 +5,11 @@
 #import <syslog.h>
 
 static NSMutableArray *samples;
+static NSMutableDictionary *document;
+static NSDictionary *tapReport;
+static NSUInteger writeAttempts, writeSuccesses;
+static BOOL canWrite = YES;
+#include "DITapProbe.inc"
 static NSString * const targetClass = @"_UIStatusBarForegroundView";
 static NSDictionary *rect(CGRect r) {
     if (CGRectIsNull(r) || CGRectIsInfinite(r) || !isfinite(r.origin.x) || !isfinite(r.origin.y) || !isfinite(r.size.width) || !isfinite(r.size.height)) return @{};
@@ -74,6 +79,21 @@ static void walk(UIView *v, UIWindow *w, Class cls, NSMutableArray *found, NSUIn
     }
     for (UIView *child in v.subviews) { if (*budget == 0) { *truncated=YES; break; } walk(child,w,cls,found,budget,truncated); }
 }
+static void flushDocument(void) {
+    if (!canWrite) return;
+    @try {
+        writeAttempts++;
+        document[@"schema"] = @1;
+        document[@"mechanism"] = @"automatic main-thread SpringBoard window-tree snapshots at approximately 15 and 35 seconds after injection";
+        document[@"samples"] = samples;
+        if (tapReport) document[@"tap_probe_v0_2"] = tapReport;
+        document[@"probe_io"] = @{ @"write_attempts_including_this": @(writeAttempts), @"successful_writes_before_this_flush": @(writeSuccesses) };
+        NSError *error = nil;
+        NSData *data = [NSJSONSerialization dataWithJSONObject:document options:NSJSONWritingPrettyPrinted error:&error];
+        if (data && [data writeToFile:@"/var/mobile/Library/Logs/DateInfoProbe.json" options:NSDataWritingAtomic error:&error]) writeSuccesses++;
+        else syslog(LOG_ERR,"DateInfoProbe: JSON write failed: %s", error.localizedDescription.UTF8String ?: "unknown error");
+    } @catch (__unused NSException *e) { syslog(LOG_ERR,"DateInfoProbe: flush exception (details omitted)"); }
+}
 static void sample(void) {
     @try {
         Class cls=NSClassFromString(targetClass);
@@ -89,19 +109,66 @@ static void sample(void) {
         for (UIWindow *w in windows) walk(w,w,cls,found,&budget,&truncated);
         NSDateFormatter *fmt=[NSDateFormatter new]; fmt.locale=[[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"]; fmt.timeZone=[NSTimeZone timeZoneForSecondsFromGMT:0]; fmt.dateFormat=@"yyyy-MM-dd'T'HH:mm:ss'Z'";
         NSDictionary *record=@{ @"timestamp_utc":[fmt stringFromDate:NSDate.date], @"bundle_id":NSBundle.mainBundle.bundleIdentifier ?: @"unknown", @"dateinfo_image_loaded":@(imageLoaded()), @"foreground_class_exists":@(cls != Nil), @"foreground_instance_count":@(found.count), @"foreground_instances":found, @"window_count":@(windows.count), @"tree_truncated":@(truncated), @"preferences":@{ @"Enabled":prefs(@"Enabled"), @"AvoidActivity":prefs(@"AvoidActivity") } };
-        [samples addObject:record];
-        NSDictionary *doc=@{ @"schema":@1, @"mechanism":@"automatic main-thread SpringBoard window-tree snapshots at approximately 15 and 35 seconds after injection", @"samples":samples };
-        NSError *error=nil; NSData *data=[NSJSONSerialization dataWithJSONObject:doc options:NSJSONWritingPrettyPrinted error:&error];
-        if (!data || ![data writeToFile:@"/var/mobile/Library/Logs/DateInfoProbe.json" options:NSDataWritingAtomic error:&error]) syslog(LOG_ERR,"DateInfoProbe: JSON write failed: %s",error.localizedDescription.UTF8String ?: "unknown error");
+        if (samples.count < 1000) [samples addObject:record];
+        else document[@"sample_capacity_reached"] = @YES;
+        flushDocument();
     } @catch (NSException *e) { syslog(LOG_ERR,"DateInfoProbe: diagnostic exception (details omitted)"); }
+}
+static void scanTree(UIView *view, Class cls, BOOL inside, NSUInteger *budget) {
+    if (!*budget) { diScanTruncations++; return; }
+    --*budget; diViewsVisited++;
+    BOOL selected = inside || (cls && [view isKindOfClass:cls]);
+    if (selected) DITapProbeScanView(view);
+    for (UIView *child in view.subviews) {
+        if (!*budget) { diScanTruncations++; break; }
+        scanTree(child, cls, selected, budget);
+    }
+}
+static void scanTapBindings(void) {
+    @try {
+        diScanCalls++;
+        Class cls = NSClassFromString(targetClass);
+        NSMutableOrderedSet *windows = [NSMutableOrderedSet orderedSet];
+        UIApplication *app = UIApplication.sharedApplication;
+        for (UIScene *scene in app.connectedScenes) if ([scene isKindOfClass:[UIWindowScene class]]) for (UIWindow *w in ((UIWindowScene *)scene).windows) [windows addObject:w];
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        for (UIWindow *w in app.windows) [windows addObject:w];
+#pragma clang diagnostic pop
+        NSUInteger budget = 30000;
+        for (UIWindow *w in windows) {
+            if (!budget) { diScanTruncations++; break; }
+            scanTree(w, cls, NO, &budget);
+        }
+    } @catch (__unused NSException *e) { diExceptions++; }
+}
+static void loadDocument(void) {
+    NSString *path = @"/var/mobile/Library/Logs/DateInfoProbe.json";
+    document = [NSMutableDictionary dictionary]; samples = [NSMutableArray array];
+    NSFileManager *fm = NSFileManager.defaultManager;
+    if (![fm fileExistsAtPath:path]) return;
+    NSError *err = nil;
+    NSDictionary *attrs = [fm attributesOfItemAtPath:path error:&err];
+    if (!attrs || [attrs fileSize] > 5 * 1024 * 1024 || ![attrs[NSFileType] isEqualToString:NSFileTypeRegular]) { canWrite = NO; return; }
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    id old = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&err] : nil;
+    if (![old isKindOfClass:[NSDictionary class]] || ![old[@"schema"] isEqual:@1] || ![old[@"samples"] isKindOfClass:[NSArray class]]) { canWrite = NO; return; }
+    document = [old mutableCopy]; samples = [old[@"samples"] mutableCopy];
 }
 __attribute__((constructor)) static void start(void) {
     @autoreleasepool {
         if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.apple.springboard"]) return;
         dispatch_async(dispatch_get_main_queue(), ^{
-            samples=[NSMutableArray array];
+            @try { loadDocument(); DITapProbeBegin(); }
+            @catch (__unused NSException *e) { canWrite = NO; return; }
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,15*NSEC_PER_SEC),dispatch_get_main_queue(),^{ sample(); });
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW,35*NSEC_PER_SEC),dispatch_get_main_queue(),^{ sample(); });
+            for (int seconds = 15; seconds <= 95; seconds += 5)
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)seconds*NSEC_PER_SEC),dispatch_get_main_queue(),^{ scanTapBindings(); });
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW,105*NSEC_PER_SEC),dispatch_get_main_queue(),^{
+                @try { DITapProbeEnd(); tapReport = DITapProbeReport(); flushDocument(); }
+                @catch (__unused NSException *e) { syslog(LOG_ERR,"DateInfoProbe: finish exception (details omitted)"); }
+            });
         });
     }
 }
