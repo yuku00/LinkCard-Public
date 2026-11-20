@@ -1,0 +1,18 @@
+name: WU isolated selection safety
+on:
+  push:
+    branches: ['wu-storage-selection/**']
+permissions:
+  contents: read
+jobs:
+  selection:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run real Darwin filesystem selection tests
+        run: |
+          cd wechat-unified/tests
+          python3 -m unittest -v test_storage_migration.SeparateSelection.test_selection_is_explicit_and_preserves_unknown_files test_storage_migration.SeparateSelection.test_invalid_pointer_or_root_never_falls_back test_storage_migration.SeparateSelection.test_only_missing_receipt_qualifies test_storage_migration.SeparateSelection.test_incomplete_and_name_collision_are_never_reused test_storage_migration.SeparateSelection.test_unreadable_target_or_pointer_never_creates_library test_storage_migration.SeparateSelection.test_competing_creators_publish_only_one
