@@ -15,6 +15,7 @@ static IMP WUInputHeightOriginal;
 @property(nonatomic,strong) NSArray *entries;
 @property(nonatomic,copy) BOOL (^current)(void);
 @property(nonatomic) BOOL reserved;
+@property(nonatomic,copy) NSString *reason;
 @end
 @implementation WUInputReservation @end
 
@@ -47,6 +48,7 @@ static void WUInputSyncChecked(UIViewController *owner, NSArray<NSDictionary *> 
     if(s && (s.tool!=tool || (s.panel && s.panel!=panel) || s.entries!=entries)) { WUInputRemove(owner); s=nil; }
     if(!s) {
         s=[WUInputReservation new]; s.owner=owner; s.tool=tool; s.entries=entries; s.current=current;
+        s.reason=@"等待宿主创建工具面板或重新布局";
         objc_setAssociatedObject(owner,&WUInputStateKey,s,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         objc_setAssociatedObject(tool,&WUInputToolTrackKey,s,OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
@@ -58,6 +60,13 @@ static void WUInputSyncChecked(UIViewController *owner, NSArray<NSDictionary *> 
     }
 }
 static __attribute__((unused)) void WUInputSync(UIViewController *owner, NSArray<NSDictionary *> *entries) { WUInputSyncChecked(owner,entries,nil); }
+static NSString *WUInputDiagnostic(UIViewController *owner) {
+    WUInputReservation *s=objc_getAssociatedObject(owner,&WUInputStateKey);
+    if(!WUInputHeightOriginal) return @"未安装宿主高度挂点；输入栏工具不可用。";
+    if(!s) return @"当前聊天未建立工具栏绑定；请返回聊天列表再进入。";
+    if(!s.toolbar) return @"已绑定聊天，正在等待有效的宿主工具面板。";
+    return [NSString stringWithFormat:@"%@。工具栏标记为%@。此状态不包含聊天、账号、工具名称或坐标，也不自动上传。", s.reason ?: @"尚未完成布局核验", s.toolbar.hidden ? @"隐藏" : @"显示"];
+}
 
 static double WUInputHeight(id tool, SEL sel) {
     double original=((double(*)(id,SEL))WUInputHeightOriginal)(tool,sel);
@@ -72,10 +81,10 @@ static double WUInputHeight(id tool, SEL sel) {
         CGFloat width=CGRectGetWidth(s.panel.bounds);
         BOOL eligible=WUInputValid(s) && clear && isfinite(original) && isfinite(width) && width>=44;
         s.reserved=eligible;
-        if(eligible) s.toolbar.frame=CGRectMake(0,WUInputHostY(original),width,WUInputExtra);
-        else s.toolbar.hidden=YES;
+        if(eligible) s.reason=@"已预留，等待宿主布局后核验位置";
+        else { s.toolbar.hidden=YES; s.reason=(!clear ? @"翻译栏状态不明或正在显示" : @"上下文、面板宽度或宿主高度不满足安全条件"); }
         return WUInputHostHeight(original,eligible);
-    } @catch(__unused NSException *e) { s.reserved=NO; s.toolbar.hidden=YES; return original; }
+    } @catch(__unused NSException *e) { s.reserved=NO; s.toolbar.hidden=YES; s.reason=@"读取宿主高度状态时异常，已安全隐藏"; return original; }
 }
 
 // After the host layout, reveal only if the reserved strip is inside its panel
@@ -91,12 +100,33 @@ void WUInputToolDidLayout(UIView *tool) {
             WUInputRemove(owner); WUInputSyncChecked(owner,entries,current); return;
         }
         UIView *bar=WUInputBarForOwner(s.owner), *root=s.owner.viewIfLoaded;
+        if(!s.reserved || !bar || bar.window!=root.window || bar.hidden || s.panel.hidden) {
+            s.toolbar.hidden=YES;
+            if(s.reserved) s.reason=@"未找到可见的当前输入条或工具面板";
+            return;
+        }
+        // Height is a size, not a panel-local y coordinate. Convert the actual
+        // laid-out input bar to the same coordinates as the original host panel.
+        CGRect barInPanel=[bar convertRect:bar.bounds toView:s.panel];
+        s.toolbar.frame=CGRectMake(CGRectGetMinX(barInPanel),WUInputHostY(CGRectGetMinY(barInPanel)),CGRectGetWidth(barInPanel),WUInputExtra);
         CGRect strip=[s.toolbar convertRect:s.toolbar.bounds toView:root];
         CGRect input=[bar convertRect:bar.bounds toView:root];
-        BOOL safe=s.reserved && bar && bar.window==root.window && !bar.hidden && !s.panel.hidden &&
-            CGRectContainsRect(s.panel.bounds,s.toolbar.frame) && CGRectContainsRect(root.bounds,strip) &&
+        BOOL safe=CGRectContainsRect(s.panel.bounds,s.toolbar.frame) && CGRectContainsRect(root.bounds,strip) &&
             WUInputHostDisjoint(strip.origin.x,strip.origin.y,strip.size.width,strip.size.height,input.origin.x,input.origin.y,input.size.width,input.size.height);
+        if(!safe) s.reason=@"工具栏位置不在面板内或与输入条重叠，已隐藏";
+        // UIKit hit-testing also requires each ancestor to contain the point,
+        // even when that ancestor does not clip its drawing.
+        for(UIView *v=s.panel; safe && v; v=v.superview) {
+            CGRect inView=[s.toolbar convertRect:s.toolbar.bounds toView:v];
+            if(v.hidden || v.alpha<=0.01 || !v.userInteractionEnabled || !CGRectContainsRect(v.bounds,inView)) {
+                safe=NO; s.reason=@"上级视图不可见、不可交互或超出点击范围";
+            }
+            if(v==root) break;
+        }
         s.toolbar.hidden=!safe;
-        if(safe && s.panel.subviews.lastObject!=s.toolbar) [s.panel bringSubviewToFront:s.toolbar];
-    } @catch(__unused NSException *e) { s.toolbar.hidden=YES; }
+        if(safe) {
+            s.reason=@"位置和交互条件已通过；仍需真机确认是否被其他视图遮挡";
+            if(s.panel.subviews.lastObject!=s.toolbar) [s.panel bringSubviewToFront:s.toolbar];
+        }
+    } @catch(__unused NSException *e) { s.toolbar.hidden=YES; s.reason=@"核验宿主布局时异常，已安全隐藏"; }
 }

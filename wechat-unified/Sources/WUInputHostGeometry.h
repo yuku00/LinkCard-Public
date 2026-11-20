@@ -2,7 +2,7 @@
 #ifndef WU_INPUT_HOST_GEOMETRY_H
 #define WU_INPUT_HOST_GEOMETRY_H
 #include <math.h>
-static inline double WUInputHostY(double original) { return fmax(original, 0.0); }
+static inline double WUInputHostY(double barTopInPanel) { return barTopInPanel - 35.0; }
 static inline double WUInputHostHeight(double original, int eligible) { return eligible ? original + 35.0 : original; }
 static inline int WUInputHostDisjoint(double x, double y, double w, double h,
                                       double bx, double by, double bw, double bh) {

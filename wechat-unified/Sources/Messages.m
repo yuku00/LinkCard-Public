@@ -358,6 +358,10 @@ static NSHashTable *chatActions;
         [menu addObject:[UIAction actionWithTitle:title image:nil identifier:nil handler:^(UIAction *action){ run(); }]];
     }
     if(menu.count) {
+        [menu addObject:[UIAction actionWithTitle:@"输入栏工具状态" image:nil identifier:nil handler:^(__kindof UIAction *action){
+            WUChatActions *target=weak; UIViewController *owner=target.owner;
+            if(owner.viewIfLoaded.window && (!owner.navigationController || owner.navigationController.topViewController==owner)) Notice(owner,WUInputDiagnostic(owner));
+        }]];
         if(!self.tools) self.tools=[[UIBarButtonItem alloc] initWithTitle:@"工具" style:UIBarButtonItemStylePlain target:nil action:NULL];
         NSString *layout=WUAccountOptions(account)[@"toolbarLayout"]?:@"menu";
         BOOL useGrid=[layout hasPrefix:@"grid"]; self.gridEntries=[grid copy]; self.gridColumns=useGrid?(NSUInteger)[[layout substringFromIndex:4] integerValue]:2;
@@ -375,7 +379,13 @@ static NSHashTable *chatActions;
 - (void)openGrid {
     [self refresh];
     UIViewController *v=self.owner; if(!v.viewIfLoaded.window || v.presentedViewController || !self.gridEntries.count || ![WUValue(@"enabled") boolValue] || UIApplication.sharedApplication.applicationState!=UIApplicationStateActive) return;
-    WUChatGridController *panel=[WUChatGridController new]; panel.entries=self.gridEntries; panel.columns=self.gridColumns;
+    WUChatGridController *panel=[WUChatGridController new];
+    __weak WUChatActions *weak=self;
+    NSDictionary *diagnostic=@{@"title":@"输入栏工具状态", @"run":^{
+        UIViewController *owner=weak.owner;
+        if(owner.viewIfLoaded.window && (!owner.navigationController || owner.navigationController.topViewController==owner)) Notice(owner,WUInputDiagnostic(owner));
+    }};
+    panel.entries=[self.gridEntries arrayByAddingObject:diagnostic]; panel.columns=self.gridColumns;
     UINavigationController *nav=[[UINavigationController alloc] initWithRootViewController:panel]; nav.modalPresentationStyle=UIModalPresentationPageSheet;
     [v presentViewController:nav animated:YES completion:nil];
 }
