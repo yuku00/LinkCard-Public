@@ -28,7 +28,7 @@ static BOOL imageLoaded(void) {
     }
     return NO;
 }
-static void descendants(UIView *v, UIWindow *w, NSMutableArray *transparent, NSUInteger *tapCount, NSUInteger *budget) {
+static void descendants(UIView *v, UIWindow *w, NSMutableArray *transparent, NSMutableArray *bindings, NSUInteger *tapCount, NSUInteger *budget) {
     if (*budget == 0) return;
     (*budget)--;
     for (UIView *child in v.subviews) {
@@ -36,6 +36,11 @@ static void descendants(UIView *v, UIWindow *w, NSMutableArray *transparent, NSU
         NSUInteger taps=0;
         for (UIGestureRecognizer *g in child.gestureRecognizers) if ([g isKindOfClass:[UITapGestureRecognizer class]]) taps++;
         *tapCount += taps;
+        if (taps) {
+            NSMutableDictionary *binding=[geometry(child,w) mutableCopy];
+            binding[@"tap_count_bound_to_this_view"]=@(taps);
+            [bindings addObject:binding];
+        }
         UIColor *c=child.backgroundColor;
         BOOL transparentColor = !c || CGColorGetAlpha(c.CGColor) < 0.01;
         if (transparentColor || child.alpha < 0.01) {
@@ -43,7 +48,7 @@ static void descendants(UIView *v, UIWindow *w, NSMutableArray *transparent, NSU
             entry[@"tap_count_bound_to_this_view"]=@(taps);
             [transparent addObject:entry];
         }
-        descendants(child,w,transparent,tapCount,budget);
+        descendants(child,w,transparent,bindings,tapCount,budget);
     }
 }
 static void walk(UIView *v, UIWindow *w, Class cls, NSMutableArray *found, NSUInteger *budget, BOOL *truncated) {
@@ -56,10 +61,11 @@ static void walk(UIView *v, UIWindow *w, Class cls, NSMutableArray *found, NSUIn
         while (p && depth++ < 32) { [ancestors addObject:geometry(p,w)]; p=p.superview; }
         item[@"anonymous_ancestors"]=ancestors;
         item[@"ancestors_truncated"]=@(p != nil);
-        NSMutableArray *transparent=[NSMutableArray array]; NSUInteger taps=0, childBudget=2000;
+        NSMutableArray *transparent=[NSMutableArray array], *bindings=[NSMutableArray array]; NSUInteger taps=0, childBudget=2000;
         for (UIGestureRecognizer *g in v.gestureRecognizers) if ([g isKindOfClass:[UITapGestureRecognizer class]]) taps++;
         item[@"tap_count_bound_to_foreground"]=@(taps);
-        descendants(v,w,transparent,&taps,&childBudget);
+        descendants(v,w,transparent,bindings,&taps,&childBudget);
+        item[@"tap_bindings_descendants"]=bindings;
         item[@"tap_count_foreground_and_descendants"]=@(taps);
         item[@"transparent_descendants"]=transparent;
         item[@"transparent_descendant_count"]=@(transparent.count);
