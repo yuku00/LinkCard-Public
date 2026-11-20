@@ -1,0 +1,34 @@
+name: WU synthetic storage live macOS
+on:
+  push:
+    branches: ['wu-storage-live/**']
+permissions:
+  contents: read
+jobs:
+  storage:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: wechat-unified
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Production C and Objective-C synthetic process gate
+        run: |
+          set -euo pipefail
+          mkdir -p build/migration
+          if python3 tests/test_p0.py --config-only > build/migration/config-red.txt 2>&1; then echo 'ERROR: release baseline unexpectedly green'; exit 1; fi
+          cat build/migration/config-red.txt
+          python3 -c "from pathlib import Path; s=Path('build/migration/config-red.txt').read_text(); assert 'FAIL configuration' in s and 'P0_CONFIG:' in s, 'baseline must fail assertions, not build'"
+          cp tests/fixtures/core_fixed.m Sources/Core.m
+          python3 tests/test_p0.py --config-only 2>&1 | tee build/migration/config-green.txt
+          python3 tools/test_storage_live_apple.py 2>&1 | tee build/migration/live-test.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: storage-live-log
+          path: wechat-unified/build/migration/*.txt
+          if-no-files-found: error
