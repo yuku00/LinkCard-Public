@@ -1,0 +1,29 @@
+name: WU synthetic storage live macOS
+on:
+  push:
+    branches: ['wu-storage-live/**']
+permissions:
+  contents: read
+jobs:
+  storage:
+    runs-on: macos-15
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: wechat-unified
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Production C and Objective-C synthetic process gate
+        run: |
+          set -euo pipefail
+          mkdir -p build/migration
+          python3 tools/test_storage_live_apple.py 2>&1 | tee build/migration/live-test.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: storage-live-log
+          path: wechat-unified/build/migration/live-test.txt
+          if-no-files-found: error
