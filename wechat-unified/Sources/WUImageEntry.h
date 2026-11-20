@@ -1,0 +1,18 @@
+#import <UIKit/UIKit.h>
+// Manual chat-toolbar entry only. Opening is not an add/upload receipt.
+void WUOpenSelectedImageEditor(UIViewController *owner);
+void WUOpenMessageImageEditor(UIViewController *owner, id wrap, BOOL (^current)(void));
+// Invoked only by the explicit single-message copy menu action.
+void WUCopyMessageImage(UIViewController *owner, id wrap, BOOL (^current)(void));
+BOOL WUImageEntryOwnsNavigation(UIViewController *owner);
+// Article callers have already shown source + preview and obtained user confirmation.
+// The guard is main-thread only; editing=YES after our editor is allocated.
+BOOL WUImageEntryValidateData(NSData *data);
+BOOL WUOpenConfirmedImageDataEditor(UIViewController *owner, NSData *data, BOOL (^current)(BOOL editing));
+void WUCancelImageDataEditor(UIViewController *owner);
+void WUCancelImageEntries(void);
+// Export the selected type-47 message; WxAM requires verified GIF conversion.
+void WUExportEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(void));
+// Explicit original-byte export, including WxAM; never renames it to GIF.
+void WUExportOriginalEmoticonForWrap(UIViewController *owner, id wrap, BOOL (^current)(void));
+void WUSaveSelectedEmoticonToPhotos(UIViewController *owner, id wrap, BOOL (^current)(void));

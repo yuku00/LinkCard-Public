@@ -1,0 +1,61 @@
+name: WU iPhoneOS compile only
+on:
+  push:
+    branches: ['wu-compile-only/**']
+permissions:
+  contents: read
+jobs:
+  migration:
+    runs-on: macos-15
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+        working-directory: wechat-unified
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Real Apple production C migration safety gate
+        run: |
+          set -euo pipefail
+          mkdir -p build/migration
+          python3 tools/test_storage_migration_apple.py 2>&1 | tee build/migration/apple-tests.txt
+          bash tools/test_storage_resources_apple.sh 2>&1 | tee -a build/migration/apple-tests.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wu-apple-migration-${{ github.sha }}
+          path: wechat-unified/build/migration/apple-tests.txt
+          if-no-files-found: error
+          retention-days: 30
+  compile:
+    needs: migration
+    runs-on: macos-15
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+        working-directory: wechat-unified
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build iPhoneOS arm64 dylib only
+        run: bash tools/compile_only.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wu-compile-only-${{ github.sha }}
+          path: |
+            wechat-unified/build/compile-only/WeChatUnified.dylib
+            wechat-unified/build/compile-only/SHA256SUMS
+            wechat-unified/build/compile-only/platform.txt
+            wechat-unified/build/compile-only/architecture.txt
+            wechat-unified/build/compile-only/signature.txt
+            wechat-unified/build/compile-only/dependencies.txt
+            wechat-unified/Vendor/silk/LICENSE
+            wechat-unified/Vendor/amr/LICENSE
+            wechat-unified/Vendor/amr/NOTICE
+            wechat-unified/Vendor/WeChatDragDropImages-LICENSE
+          if-no-files-found: error
+          retention-days: 30
