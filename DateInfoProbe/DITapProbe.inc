@@ -1,6 +1,4 @@
-// Included into DateInfoProbe.m. Main-thread use only; no method swizzling.
-// UIGestureRecognizer has no public target enumeration API. This optional probe
-// uses checked UIKit implementation details and fails closed when they differ.
+// Main-thread only. UIKit target internals are private; all failures mean unknown.
 #import <objc/runtime.h>
 #import <dlfcn.h>
 #import <string.h>
@@ -15,9 +13,14 @@
 static DITapCounter *diCounter;
 static NSMapTable<UIGestureRecognizer *, NSMutableDictionary *> *diBindings;
 static NSMutableArray<NSMutableDictionary *> *diBindingRecords;
-static NSUInteger diCandidates, diIntrospectionFailures, diMatched, diExceptions;
+static NSUInteger diCandidates, diMatched, diExceptions;
 static NSUInteger diFired, diRegistrations, diRemovalAttempts, diRemovalSuccesses;
 static NSUInteger diScanCalls, diViewsVisited, diScanTruncations, diCapacitySkips;
+static NSUInteger diTargetsIvarMissing, diTargetsNotArray, diPairs, diTargetIvarMissing;
+static NSUInteger diActionIvarMissing, diTargetNil, diClassMatches, diSelectorMatches;
+static NSUInteger diClassImageMatches, diClassImageFailures, diMethodMissing;
+static NSUInteger diImpImageMatches, diImpImageFailures, diSignatureMatches, diSignatureFailures;
+static NSUInteger diClassAvailableScans, diClassMissingScans;
 static BOOL diFinished;
 
 @implementation DITapCounter
@@ -41,49 +44,54 @@ static Ivar diObjectIvar(Class c, const char *name) {
     const char *t = v ? ivar_getTypeEncoding(v) : NULL;
     return t && t[0] == '@' ? v : NULL;
 }
-// Returns YES only when the existing recognizer contains the precise target and
-// action, and both the target class and its implementation originate in DateInfo.
+// Stage counts are observations across scans, not unique recognizers or targets.
+// Never invoke the IMP: stripping its signature is only for dladdr inspection.
 static BOOL diIsOriginalBinding(UIGestureRecognizer *g, NSMutableDictionary *metadata) {
     Ivar targetsIvar = diObjectIvar(object_getClass(g), "_targets");
-    if (!targetsIvar) { diIntrospectionFailures++; return NO; }
+    if (!targetsIvar) { diTargetsIvarMissing++; return NO; }
     id targets = object_getIvar(g, targetsIvar);
-    if (![targets isKindOfClass:[NSArray class]]) { diIntrospectionFailures++; return NO; }
-    BOOL unknown = NO;
+    if (![targets isKindOfClass:[NSArray class]]) { diTargetsNotArray++; return NO; }
     for (id pair in (NSArray *)targets) {
+        diPairs++;
         Ivar targetIvar = diObjectIvar(object_getClass(pair), "_target");
+        if (!targetIvar) { diTargetIvarMissing++; continue; }
+        id target = object_getIvar(pair, targetIvar);
+        if (!target) { diTargetNil++; continue; }
+        Class cls = object_getClass(target);
+        if (!cls || strcmp(class_getName(cls), "DIClockTapTarget") != 0) continue;
+        diClassMatches++;
         Ivar actionIvar = class_getInstanceVariable(object_getClass(pair), "_action");
         const char *encoding = actionIvar ? ivar_getTypeEncoding(actionIvar) : NULL;
-        if (!targetIvar || !encoding || strcmp(encoding, ":") != 0) { unknown = YES; continue; }
-        id target = object_getIvar(pair, targetIvar);
+        if (!encoding || strcmp(encoding, ":") != 0) { diActionIvarMissing++; continue; }
         SEL action = NULL;
         memcpy(&action, (const char *)(__bridge const void *)pair + ivar_getOffset(actionIvar), sizeof(action));
-        if (!target || action != @selector(handleTap:)) continue;
-        Class cls = object_getClass(target);
-        if (strcmp(class_getName(cls), "DIClockTapTarget") != 0 || !diDateInfoImage(class_getImageName(cls))) continue;
+        if (action != @selector(handleTap:)) continue;
+        diSelectorMatches++;
+        if (!diDateInfoImage(class_getImageName(cls))) { diClassImageFailures++; continue; }
+        diClassImageMatches++;
         Method m = class_getInstanceMethod(cls, action);
-        if (!m) continue;
+        if (!m) { diMethodMissing++; continue; }
         Dl_info info = {0};
         void *imp = (void *)method_getImplementation(m);
 #if __has_feature(ptrauth_calls)
         imp = ptrauth_strip(imp, ptrauth_key_function_pointer);
 #endif
-        if (!dladdr(imp, &info) || !diDateInfoImage(info.dli_fname)) continue;
+        if (!dladdr(imp, &info) || !diDateInfoImage(info.dli_fname)) { diImpImageFailures++; continue; }
+        diImpImageMatches++;
         unsigned int n = method_getNumberOfArguments(m);
         char *ret = method_copyReturnType(m);
         char *arg = n > 2 ? method_copyArgumentType(m, 2) : NULL;
+        BOOL valid = n == 3 && ret && strcmp(ret, "v") == 0 && arg && arg[0] == '@';
+        free(ret); free(arg);
+        if (!valid) { diSignatureFailures++; continue; }
+        diSignatureMatches++;
         metadata[@"target_class"] = @"DIClockTapTarget";
         metadata[@"action"] = @"handleTap:";
-        metadata[@"action_method_exists"] = @YES;
-        metadata[@"action_return_type"] = ret ? [NSString stringWithUTF8String:ret] : @"unknown";
-        metadata[@"action_explicit_argument_count"] = @(n >= 2 ? n - 2 : 0);
-        metadata[@"action_argument_0_type"] = arg ? [NSString stringWithUTF8String:arg] : @"absent";
         metadata[@"target_class_image_is_dateinfo"] = @YES;
         metadata[@"action_imp_image_is_dateinfo"] = @YES;
-        free(ret); free(arg);
-        if (unknown) diIntrospectionFailures++;
+        metadata[@"signature_matches"] = @YES;
         return YES;
     }
-    if (unknown) diIntrospectionFailures++;
     return NO;
 }
 
@@ -92,7 +100,6 @@ static void DITapProbeBegin(void) {
     diBindings = [NSMapTable weakToStrongObjectsMapTable];
     diBindingRecords = [NSMutableArray array];
 }
-// Call once per view during the bounded foreground-tree traversal, on main.
 static void DITapProbeScanView(UIView *view) {
     if (diFinished) return;
     @try {
@@ -118,7 +125,6 @@ static void DITapProbeScanView(UIView *view) {
         }
     } @catch (__unused NSException *e) { diExceptions++; }
 }
-// End before serializing the report, even if the window tree changed.
 static void DITapProbeEnd(void) {
     diFinished = YES;
     for (UIGestureRecognizer *g in diBindings.keyEnumerator) {
@@ -129,23 +135,24 @@ static void DITapProbeEnd(void) {
 }
 static NSDictionary *DITapProbeReport(void) {
     return @{
+        @"matching_status": diMatched ? @"matched" : @"unknown",
         @"candidate_tap_recognizers_inspected": @(diCandidates),
-        @"matching_status": diMatched ? @"matched" : ((diIntrospectionFailures || diExceptions || diScanTruncations || diCapacitySkips || !diCandidates) ? @"unknown" : @"no_match_observed"),
-        @"private_target_layout_unreadable_count": @(diIntrospectionFailures),
-        @"matched_dateinfo_bindings": @(diMatched),
-        @"probe_target_registrations": @(diRegistrations),
-        @"remove_target_attempts": @(diRemovalAttempts),
-        @"remove_target_successes": @(diRemovalSuccesses),
+        @"target_class_available_scans": @(diClassAvailableScans), @"target_class_missing_scans": @(diClassMissingScans),
+        @"targets_ivar_missing_or_not_object": @(diTargetsIvarMissing), @"targets_not_array_or_nil": @(diTargetsNotArray),
+        @"target_action_pairs_inspected": @(diPairs), @"pair_target_ivar_missing_or_not_object": @(diTargetIvarMissing),
+        @"pair_target_nil": @(diTargetNil), @"target_class_matches": @(diClassMatches),
+        @"class_matched_action_ivar_missing_or_wrong_type": @(diActionIvarMissing), @"selector_matches": @(diSelectorMatches),
+        @"target_class_image_matches": @(diClassImageMatches), @"target_class_image_unknown_or_mismatch": @(diClassImageFailures),
+        @"action_method_missing": @(diMethodMissing), @"action_imp_image_matches": @(diImpImageMatches),
+        @"action_imp_image_unknown_or_mismatch": @(diImpImageFailures), @"signature_matches": @(diSignatureMatches),
+        @"signature_unknown_or_mismatch": @(diSignatureFailures),
+        @"matched_dateinfo_bindings": @(diMatched), @"probe_target_registrations": @(diRegistrations),
+        @"remove_target_attempts": @(diRemovalAttempts), @"remove_target_successes": @(diRemovalSuccesses),
         @"scan_passes": @(diScanCalls), @"views_visited": @(diViewsVisited),
         @"scan_truncations": @(diScanTruncations), @"capacity_skips": @(diCapacitySkips),
-        @"complete": @(diFinished),
-        @"unknown_layout_interpretation": @"Unreadable target layout means unknown, never a definite no-match; counts may include repeated scans.",
-        @"recognizer_callback_total": @(diFired),
-        @"diagnostic_exceptions": @(diExceptions),
-        @"bindings": diBindingRecords ?: @[],
-        @"original_action_execution_count": @"not_observed",
+        @"complete": @(diFinished), @"recognizer_callback_total": @(diFired), @"diagnostic_exceptions": @(diExceptions),
+        @"bindings": diBindingRecords ?: @[], @"original_action_execution_count": @"not_observed",
         @"present_path_execution_count": @"not_observed",
-        @"method": @"existing UITapGestureRecognizer target/action inspected via private UIKit ivars; class and action implementation must both belong to DateInfo.dylib; added target only, no swizzle",
-        @"limitation": @"A callback counts recognizer action delivery, not the original action or presentation. Private layout may be unavailable; absence of a match is not proof of absence. An extra target can affect timing or target-list iteration ordering."
+        @"interpretation": @"Counts are scan observations and can repeat. Zero matches means unknown, not no tap or no matching gesture. A callback only shows recognizer action delivery, not original action execution or presentation. Extra target can alter timing or target iteration order."
     };
 }

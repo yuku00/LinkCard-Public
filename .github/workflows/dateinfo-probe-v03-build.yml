@@ -1,0 +1,55 @@
+name: DateInfoProbe v0.3 RootHide manual build
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      THEOS: ${{ github.workspace }}/.theos-roothide
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Native command-line mock tests
+        working-directory: DateInfoProbe
+        run: python3 tests/test_invariants.py
+      - name: Prepare RootHide Theos
+        run: |
+          set -euxo pipefail
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          brew install ldid dpkg make
+          git clone https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" checkout 958fea4f779943505b15b93c88bb4db8d97b346d
+          git -C "$THEOS" submodule update --init --recursive
+          test -f "$THEOS/vendor/mod/roothide/package/deb.mk"
+      - name: Build iPhone device binaries and inspect package
+        working-directory: DateInfoProbe
+        run: |
+          set -euxo pipefail
+          python3 tests/test_invariants.py
+          gmake -j2 FINALPACKAGE=1 package
+          mkdir -p build-report
+          cp packages/*.deb build-report/
+          dpkg-deb --info packages/*.deb > build-report/control.txt
+          dpkg-deb --contents packages/*.deb > build-report/contents.txt
+          dpkg-deb -x packages/*.deb build-report/extracted
+          BIN=build-report/extracted/Library/MobileSubstrate/DynamicLibraries/DateInfoProbe.dylib
+          test -f "$BIN"
+          file "$BIN" > build-report/macho.txt
+          lipo -info "$BIN" >> build-report/macho.txt
+          lipo -verify_arch arm64 arm64e "$BIN"
+          python3 -c 'import plistlib; assert plistlib.load(open("build-report/extracted/Library/MobileSubstrate/DynamicLibraries/DateInfoProbe.plist", "rb")) == {"Filter": {"Bundles": ["com.apple.springboard"]}}'
+          otool -L "$BIN" >> build-report/macho.txt
+          otool -l "$BIN" > build-report/load-commands.txt
+          ldid -e "$BIN" > build-report/entitlements.plist
+          shasum -a 256 packages/*.deb > build-report/SHA256SUMS
+          cat build-report/control.txt build-report/contents.txt build-report/macho.txt
+          rm -rf build-report/extracted
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: DateInfoProbe-v03-RootHide
+          path: DateInfoProbe/build-report/
+          if-no-files-found: error
