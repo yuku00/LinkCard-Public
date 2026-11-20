@@ -1,0 +1,52 @@
+name: WU synthetic storage live macOS
+on:
+  push:
+    branches: ['wu-storage-live/**']
+permissions:
+  contents: read
+jobs:
+  storage:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+        working-directory: wechat-unified
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Production C and Objective-C synthetic process gate
+        run: |
+          set -euo pipefail
+          mkdir -p build/migration
+          if python3 tests/test_p0.py --config-only > build/migration/config-red.txt 2>&1; then echo 'ERROR: release baseline unexpectedly green'; exit 1; fi
+          cat build/migration/config-red.txt
+          python3 -c "from pathlib import Path; s=Path('build/migration/config-red.txt').read_text(); assert 'FAIL configuration' in s and 'P0_CONFIG:' in s, 'baseline must fail assertions, not build'"
+          cp tests/fixtures/core_fixed.m Sources/Core.m
+          python3 tests/test_p0.py --config-only 2>&1 | tee build/migration/config-green.txt
+          python3 tools/test_storage_live_apple.py 2>&1 | tee build/migration/live-test.txt
+          flags=(-fobjc-arc -fobjc-arc-exceptions -fblocks -Wall -Wextra -Werror -Wno-unused-parameter -I Sources)
+          xcrun --sdk macosx clang "${flags[@]}" tests/repository_logic.m Sources/RepositoryLogic.m -framework Foundation -o build/migration/repository-tests
+          build/migration/repository-tests 2>&1 | tee build/migration/repository-tests.txt
+          for test in voice_pack_files; do
+            xcrun --sdk macosx clang "${flags[@]}" tests/${test}.m Sources/VoicePackLogic.m Sources/VoiceAudio.m Sources/VoiceLogic.m Sources/VoiceSendLogic.m Sources/MessageConstruction.m Sources/RepositoryLogic.m Sources/DraftMediaLogic.m build/codec-macosx/libWUOffline.a -framework Foundation -framework AudioToolbox -o build/migration/${test}
+            build/migration/${test} 2>&1 | tee build/migration/${test}.txt
+          done
+          voice_deps=(Sources/VoiceAudio.m Sources/VoiceLogic.m Sources/VoiceSendLogic.m Sources/MessageConstruction.m Sources/DraftMediaLogic.m build/codec-macosx/libWUOffline.a -framework Foundation -framework AudioToolbox)
+          for version in release current; do
+            if [[ "$version" == release ]]; then v=tests/fixtures/voice_c73_release.m; r=tests/fixtures/repository_c73_release.m; else v=Sources/VoicePackLogic.m; r=Sources/RepositoryLogic.m; fi
+            xcrun --sdk macosx clang "${flags[@]}" tests/voice_pack_logic.m "$v" "$r" "${voice_deps[@]}" -o build/migration/voice-${version}
+            if build/migration/voice-${version} > build/migration/voice-${version}.txt 2>&1; then echo 'Unexpected voice test pass'; exit 1; fi
+            python3 -c "from pathlib import Path; import sys; assert 'FAIL line 141' in Path(sys.argv[1]).read_text(), 'unexpected voice regression'" build/migration/voice-${version}.txt
+          done
+          python3 -c "from pathlib import Path; s=Path('tests/voice_pack_logic.m').read_text(); q=chr(34); a='name:@'+q+'again'+q+' version:'; b='name:@'+q+'generated'+q+' version:'; assert s.count(a)==1; Path('build/migration/voice-matched.m').write_text(s.replace(a,b))"
+          xcrun --sdk macosx clang "${flags[@]}" build/migration/voice-matched.m Sources/VoicePackLogic.m Sources/RepositoryLogic.m "${voice_deps[@]}" -o build/migration/voice-matched
+          build/migration/voice-matched 2>&1 | tee build/migration/voice-matched.txt
+          bash tools/compile_only.sh 2>&1 | tee build/migration/iphoneos-compile.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: storage-live-log
+          path: wechat-unified/build/migration/*.txt
+          if-no-files-found: error

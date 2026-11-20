@@ -71,8 +71,17 @@ static NSMutableDictionary *Leases(void) { static NSMutableDictionary *v; static
 - (NSArray *)load:(NSError **)error {
     @synchronized(Leases()) {
         if(![self safe]) { Fail(error,@"目录链接不安全"); return nil; }
+        NSURL *base=[[self.directory URLByDeletingLastPathComponent] URLByDeletingLastPathComponent]; struct stat baseStat;
+        if(lstat(base.fileSystemRepresentation,&baseStat) || !S_ISDIR(baseStat.st_mode)) { Fail(error,@"插件存储根目录缺失或不可访问，保留原数据"); return nil; }
         NSURL *p=[self.directory URLByAppendingPathComponent:@"index.plist"]; struct stat st;
-        if(lstat(p.path.fileSystemRepresentation,&st)) { if(errno==ENOENT) return @[]; Fail(error,@"索引不可读，保留原数据"); return nil; }
+        if(lstat(p.path.fileSystemRepresentation,&st)) {
+            if(errno==ENOENT) {
+                struct stat directory;
+                if(lstat(self.directory.fileSystemRepresentation,&directory) && errno==ENOENT) return @[];
+                Fail(error,@"语音目录已存在但索引缺失或不可读；保留原数据"); return nil;
+            }
+            Fail(error,@"索引不可读，保留原数据"); return nil;
+        }
         if(!S_ISREG(st.st_mode) || st.st_nlink!=1 || st.st_size<0 || (uint64_t)st.st_size>WUVoiceMaxIndexBytes) { Fail(error,@"索引非自有普通文件或超限"); return nil; }
         NSData *data=WUDraftMediaReadSource(p,WUVoiceMaxIndexBytes);
         id value=data?[NSPropertyListSerialization propertyListWithData:data options:NSPropertyListImmutable format:NULL error:error]:nil;
