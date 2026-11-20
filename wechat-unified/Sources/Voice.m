@@ -1,0 +1,379 @@
+#import "WUCapture.h"
+#import "WU.h"
+#import "VoiceLogic.h"
+#import "VoiceAudio.h"
+#import "VoiceDisplay.h"
+#import "VoiceGeometry.h"
+#import "WUHostService.h"
+#import <QuartzCore/QuartzCore.h>
+#include <math.h>
+#include <string.h>
+extern void WUNativePlaybackCall(id model, BOOL playing, void (^original)(void));
+static BOOL installed;
+static IMP layoutOriginal, playingOriginal, windowOriginal;
+static char bindingKey;
+static BOOL Option(NSString *key) { id v=WUValue(key); return v ? [v boolValue] : ![key isEqual:@"voiceCountdown"]; }
+static id Object(id obj, NSString *key) {
+    @try { return obj ? [obj valueForKey:key] : nil; } @catch(NSException *e) { return nil; }
+}
+static BOOL Signature(id obj, NSString *name, const char *ret, NSArray *args) {
+    SEL sel=NSSelectorFromString(name); Class cls=obj?object_getClass(obj):Nil;
+    Method actual=cls?class_getInstanceMethod(cls,sel):NULL;
+    if(actual) return WUMatches(actual,ret,args);
+    // Only the observed playback service may use forwarding; verify both host ABI and proxy signature.
+    if(![name isEqual:@"currentPlayTime"] && ![name isEqual:@"seekToTime:"]) return NO;
+    BOOL proxy=NO; for(Class c=cls;c;c=class_getSuperclass(c)) if(c==objc_getClass("NSProxy")) { proxy=YES; break; }
+    if(!proxy || !WUMatches(class_getInstanceMethod(NSClassFromString(@"MsgPlayingFacade"),sel),ret,args)) return NO;
+    @try {
+        NSMethodSignature *sig=[obj methodSignatureForSelector:sel];
+        if(!sig || sig.numberOfArguments!=args.count+2 || strcmp(sig.methodReturnType,ret) || strcmp([sig getArgumentTypeAtIndex:0],"@") || strcmp([sig getArgumentTypeAtIndex:1],":")) return NO;
+        for(NSUInteger i=0;i<args.count;i++) if(strcmp([sig getArgumentTypeAtIndex:i+2],[args[i] UTF8String])) return NO;
+        return YES;
+    } @catch(NSException *e) { return NO; }
+}
+static id CallObject(id obj, NSString *name) {
+    if(!Signature(obj,name,"@",@[])) return nil;
+    @try { return ((id(*)(id,SEL))objc_msgSend)(obj,NSSelectorFromString(name)); } @catch(NSException *e) { return nil; }
+}
+static id Facade(void) { return WUHostService(@"MsgPlayingFacade"); }
+static BOOL ClockReady(id f) { return Signature(f,@"currentPlayTime","I",@[]) || Signature(f,@"currentPlayTime","i",@[]); }
+static double ClockMS(id f) {
+    @try {
+        if(Signature(f,@"currentPlayTime","I",@[])) return ((unsigned(*)(id,SEL))objc_msgSend)(f,NSSelectorFromString(@"currentPlayTime"));
+        if(Signature(f,@"currentPlayTime","i",@[])) return ((int(*)(id,SEL))objc_msgSend)(f,NSSelectorFromString(@"currentPlayTime"));
+    } @catch(NSException *e) {} return -1;
+}
+static BOOL SeekReady(id f) { return Signature(f,@"seekToTime:","v",@[@"I"]); }
+static BOOL Playing(id vm) {
+    if(!Signature(vm,@"isPlaying",@encode(BOOL),@[])) return NO;
+    @try { return ((BOOL(*)(id,SEL))objc_msgSend)(vm,NSSelectorFromString(@"isPlaying")); } @catch(NSException *e) { return NO; }
+}
+@class WUVoiceBinding;
+@interface WUVoiceWave : UIView <UIGestureRecognizerDelegate>
+@property(nonatomic,weak) WUVoiceBinding *binding;
+@property(nonatomic,strong) UILabel *time;
+@property(nonatomic,strong) NSArray<NSNumber *> *peaks;
+@property(nonatomic) double progress, phase, preview;
+@property(nonatomic) BOOL pulsing, dragging;
+@end
+@interface WUVoiceBinding : NSObject
+@property(nonatomic,weak) UIView *cell;
+@property(nonatomic,weak) id model, message;
+@property(nonatomic,copy) NSString *account, *path;
+@property(nonatomic) NSUInteger generation, request;
+@property(nonatomic) BOOL loading, attempted;
+@property(nonatomic,strong) WUVoiceWave *wave;
+@property(nonatomic,strong) NSDictionary *audio;
+@property(nonatomic,strong) NSProgress *cancellation;
+@property(nonatomic,strong) WUVoiceDisplay *display;
+@property(nonatomic,weak) UILabel *hostLabel;
+@property(nonatomic,weak) id labelModel;
+@property(nonatomic,copy) NSString *appliedText, *savedText, *sourceVersion;
+@property(nonatomic) uint64_t cacheVersion;
+@property(nonatomic) BOOL checking;
+@property(nonatomic) CFTimeInterval nextProbe;
+- (void)clearDisplay;
+- (void)refreshDisplay;
+- (BOOL)valid;
+- (void)clear;
+- (void)refresh;
+- (BOOL)canSeek;
+- (void)seek:(double)fraction;
+@end
+@interface WUVoiceClock : NSObject
+@property(nonatomic,strong) CADisplayLink *link;
+@property(nonatomic,weak) id model, facade;
+@property(nonatomic) NSUInteger generation;
+@property(nonatomic,copy) NSString *account;
+- (void)stop;
+- (void)tick:(CADisplayLink *)link;
+@end
+static WUVoiceClock *clockOwner;
+static NSHashTable<WUVoiceBinding *> *bindings;
+static dispatch_queue_t audioQueue;
+static BOOL Foreground(void) { return UIApplication.sharedApplication.applicationState==UIApplicationStateActive; }
+/* Unknown visible leaves are obstacles too; an uninspectable tree gets no overlay. */
+static BOOL VoiceObstacles(UIView *view, UIView *cell, UIView *bg, UIView *overlay, WUVoiceRect *rects, size_t *count, unsigned depth) {
+    if(view==overlay || view.hidden || view.alpha<0.01) return YES;
+    if(depth>32) return NO;
+    BOOL leaf=view.subviews.count==0;
+    if(view!=cell && view!=bg && (leaf || [view isKindOfClass:UILabel.class] || [view isKindOfClass:UIImageView.class])) {
+        CGRect r=[view convertRect:view.bounds toView:cell];
+        if(!CGRectIsEmpty(r)) {
+            if(*count>=128) return NO;
+            rects[(*count)++]=(WUVoiceRect){r.origin.x,r.origin.y,r.size.width,r.size.height};
+        }
+    }
+    for(UIView *child in view.subviews) if(!VoiceObstacles(child,cell,bg,overlay,rects,count,depth+1)) return NO;
+    return YES;
+}
+@implementation WUVoiceWave
+- (instancetype)initWithFrame:(CGRect)frame {
+    if((self=[super initWithFrame:frame])) {
+        self.backgroundColor=UIColor.clearColor; self.isAccessibilityElement=YES;
+        self.time=[UILabel new]; self.time.font=[UIFont monospacedDigitSystemFontOfSize:10 weight:UIFontWeightMedium];
+        self.time.textAlignment=NSTextAlignmentRight; self.time.textColor=UIColor.labelColor; [self addSubview:self.time];
+        UIPanGestureRecognizer *pan=[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(pan:)];
+        pan.maximumNumberOfTouches=1; pan.delegate=self; pan.cancelsTouchesInView=NO; [self addGestureRecognizer:pan];
+    } return self;
+}
+- (CGFloat)waveWidth { return MAX(0,self.bounds.size.width-(self.time.hidden?0:self.time.bounds.size.width+3)); }
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGFloat needed=ceil([self.time sizeThatFits:CGSizeMake(CGFLOAT_MAX,self.bounds.size.height)].width);
+    self.time.hidden=!self.time.text.length || self.bounds.size.width-needed-3<32;
+    self.time.frame=CGRectMake(self.bounds.size.width-needed,0,needed,self.bounds.size.height);
+}
+- (BOOL)pointInside:(CGPoint)p withEvent:(UIEvent *)event { return self.peaks.count>0 && p.x<[self waveWidth] && [self.binding canSeek] && [super pointInside:p withEvent:event]; }
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)g {
+    CGPoint v=[(UIPanGestureRecognizer *)g velocityInView:self]; return [self.binding canSeek] && fabs(v.x)>fabs(v.y);
+}
+- (void)pan:(UIPanGestureRecognizer *)g {
+    if(![self.binding canSeek]) { self.dragging=NO; [self setNeedsDisplay]; return; }
+    if(g.state==UIGestureRecognizerStateBegan || g.state==UIGestureRecognizerStateChanged) {
+        self.dragging=YES; self.preview=fmax(0,fmin(1,[g locationInView:self].x/fmax(1,[self waveWidth])));
+    } else {
+        BOOL commit=g.state==UIGestureRecognizerStateEnded && self.dragging; self.dragging=NO;
+        if(commit) [self.binding seek:self.preview];
+    } [self setNeedsDisplay];
+}
+- (void)accessibilityIncrement { if([self.binding canSeek]) [self.binding seek:self.progress+0.05]; }
+- (void)accessibilityDecrement { if([self.binding canSeek]) [self.binding seek:self.progress-0.05]; }
+- (void)drawRect:(CGRect)rect {
+    CGContextRef c=UIGraphicsGetCurrentContext(); if(!c) return;
+    CGFloat w=[self waveWidth], h=self.bounds.size.height;
+    if(h<=0 || w<=0) return;
+    for(NSUInteger i=0;i<self.peaks.count;i++) {
+        double a=self.peaks[i].doubleValue;
+        // Pulse changes only the measured bar's scale; silence remains silence.
+        if(self.pulsing && !UIAccessibilityIsReduceMotionEnabled()) a*=0.82+0.18*sin(self.phase+i*0.35);
+        CGFloat x=(i+0.5)*w/self.peaks.count, height=a*h;
+        UIColor *color=((i+0.5)/self.peaks.count<=self.progress)?UIColor.systemGreenColor:UIColor.secondaryLabelColor;
+        CGContextSetStrokeColorWithColor(c,color.CGColor); CGContextSetLineWidth(c,2);
+        CGContextMoveToPoint(c,x,(h-height)/2); CGContextAddLineToPoint(c,x,(h+height)/2); CGContextStrokePath(c);
+    }
+    if(self.dragging) {
+        CGContextSetStrokeColorWithColor(c,UIColor.systemOrangeColor.CGColor); CGContextSetLineWidth(c,1);
+        CGContextMoveToPoint(c,self.preview*w,0); CGContextAddLineToPoint(c,self.preview*w,self.bounds.size.height); CGContextStrokePath(c);
+    }
+}
+@end
+@implementation WUVoiceBinding
+- (BOOL)valid {
+    id vm=Object(self.cell,@"viewModel");
+    return WUVoiceLease(self.account,WUCurrentAccount(),self.generation,WUContextGeneration(),self.cell.window!=nil,WUEnabled(@"voiceProgress"),Foreground(),vm && vm==self.model && self.message && Object(vm,@"messageWrap")==self.message);
+}
+- (void)clearDisplay {
+    [self.display clear];
+    if(self.appliedText && [self.hostLabel.text isEqual:self.appliedText]) {
+        // Re-read the current model: never restore an old message's snapshot after reuse.
+        id current=Object(self.cell,@"viewModel");
+        NSString *text=[self.display originalText:current];
+        self.hostLabel.text=text ?: (current==self.labelModel ? self.savedText : nil);
+    }
+    BOOL changed=self.appliedText!=nil;
+    self.hostLabel=nil; self.labelModel=nil; self.appliedText=nil; self.savedText=nil;
+    if(changed) [self.cell setNeedsLayout];
+}
+- (void)refreshDisplay {
+    UILabel *label=Object(self.cell,@"m_secLabel");
+    if(!self.audio || !Option(@"voiceRealDuration") || ![label isKindOfClass:UILabel.class] || ![label isDescendantOfView:self.cell]) { [self clearDisplay]; return; }
+    if(self.hostLabel && self.hostLabel!=label) [self clearDisplay];
+    if(!self.display) {
+        self.display=[WUVoiceDisplay new]; __weak WUVoiceBinding *weak=self;
+        self.display.identity=^{
+            WUVoiceBinding *b=weak;
+            return (WUVoiceDisplayIdentity){(uintptr_t)(__bridge void *)b.model,(uintptr_t)(__bridge void *)b.message,b.generation,b.request,b.cacheVersion};
+        };
+        self.display.enabled=^BOOL(void){
+            WUVoiceBinding *b=weak;
+            return [b valid] && b.audio && b.sourceVersion.length && Option(@"voiceRealDuration") &&
+                [b.path isEqual:CallObject(b.message,@"getVoicePath")];
+        };
+        self.display.carry=^{ return Option(@"voiceCarry"); };
+    }
+    if(![self.display applyModel:self.model message:self.message milliseconds:[self.audio[@"duration"] doubleValue]]) { [self clearDisplay]; return; }
+    NSString *text=CallObject(self.model,@"voiceTimeStirng");
+    if(![text isKindOfClass:NSString.class]) { [self clearDisplay]; return; }
+    BOOL changed=!self.display.layoutObserved || ![self.appliedText isEqual:text];
+    if(!self.appliedText || ![label.text isEqual:self.appliedText]) self.savedText=label.text;
+    self.hostLabel=label; self.labelModel=self.model; self.appliedText=text; label.text=text;
+    if(changed) [self.cell setNeedsLayout];
+}
+- (void)clear {
+    [self clearDisplay];
+    [self.cancellation cancel]; self.request++; self.loading=NO; self.attempted=NO; self.audio=nil; self.path=nil;
+    self.sourceVersion=nil; self.cacheVersion++; self.checking=NO; self.nextProbe=0;
+    [self.wave removeFromSuperview]; self.wave=nil;
+}
+- (BOOL)canSeek {
+    return WUVoiceSeekUnitVerified() && [self valid] && Option(@"voiceSeek") && self.audio && clockOwner.model==self.model &&
+        Playing(self.model) && clockOwner.facade==Facade() && SeekReady(clockOwner.facade) &&
+        CallObject(clockOwner.facade,@"currentPlayingMsg")==self.message;
+}
+- (void)seek:(double)fraction {
+    if(![self canSeek]) return;
+    id f=Facade(); if(f!=clockOwner.facade) return;
+    uint32_t ms=WUVoiceSeekMS(fraction,[self.audio[@"duration"] doubleValue]);
+    @try { ((void(*)(id,SEL,unsigned))objc_msgSend)(f,NSSelectorFromString(@"seekToTime:"),ms); } @catch(NSException *e) { [clockOwner stop]; }
+    // Never set progress here: only a subsequent host clock read can confirm a seek.
+}
+- (void)refresh {
+    if(![self valid]) { [self clear]; return; }
+    UIView *bg=Object(self.cell,@"m_bgImageView");
+    if(![bg isKindOfClass:UIView.class] || ![bg isDescendantOfView:self.cell] || bg.bounds.size.width<60 || bg.bounds.size.height<32) { [self clear]; return; }
+    CGRect area=[bg convertRect:bg.bounds toView:self.cell];
+    WUVoiceRect obstacles[128], safe; size_t count=0;
+    if(!VoiceObstacles(self.cell,self.cell,bg,self.wave,obstacles,&count,0) ||
+       !WUVoicePlace((WUVoiceRect){area.origin.x,area.origin.y,area.size.width,area.size.height},obstacles,count,&safe)) {
+        [self clear]; return;
+    }
+    if(!self.wave) { self.wave=[[WUVoiceWave alloc] initWithFrame:CGRectZero]; self.wave.binding=self; }
+    if(self.wave.superview!=self.cell) [self.cell addSubview:self.wave];
+    self.wave.frame=CGRectMake(safe.x,safe.y,safe.w,safe.h);
+    UILabel *host=Object(self.cell,@"m_secLabel");
+    if([host isKindOfClass:UILabel.class] && host.font) self.wave.time.font=[host.font fontWithSize:MIN(10,host.font.pointSize)];
+    id path=CallObject(self.message,@"getVoicePath");
+    if(![path isKindOfClass:NSString.class]) path=nil;
+    if(![self.path isEqual:path] && (self.path || path)) {
+        [self clearDisplay]; [self.cancellation cancel]; self.request++; self.loading=NO; self.attempted=NO;
+        self.audio=nil; self.sourceVersion=nil; self.cacheVersion++; self.checking=NO; self.nextProbe=0; self.path=[path copy];
+    }
+    CFTimeInterval now=CACurrentMediaTime();
+    if(!self.attempted && path && now>=self.nextProbe) {
+        self.nextProbe=now+1; self.attempted=YES; self.loading=YES; NSUInteger request=++self.request; __weak WUVoiceBinding *weak=self;
+        NSProgress *cancellation=[NSProgress progressWithTotalUnitCount:1]; self.cancellation=cancellation;
+        dispatch_async(audioQueue,^{ @autoreleasepool {
+            NSString *before=WUVoiceDisplaySourceVersion(path);
+            NSDictionary *audio=cancellation.cancelled || !before?nil:WUVoiceDecodeCancellable(WUVoiceReadLocal(path),cancellation);
+            NSString *after=WUVoiceDisplaySourceVersion(path); BOOL stable=before && [before isEqual:after];
+            dispatch_async(dispatch_get_main_queue(),^{
+                WUVoiceBinding *b=weak;
+                if(!b || cancellation.cancelled || b.request!=request || ![b valid]) return;
+                if(![path isEqual:CallObject(b.message,@"getVoicePath")]) { [b refresh]; return; }
+                b.loading=NO; b.sourceVersion=after; b.cacheVersion++;
+                b.audio=stable?audio:nil; b.attempted=stable || !after; [b refresh];
+            });
+        }});
+    } else if(self.attempted && !self.loading && !self.checking && path && now>=self.nextProbe) {
+        // No new timer: metadata is checked on existing layout/play events, at most once/sec.
+        self.checking=YES; self.nextProbe=now+1; NSUInteger request=self.request; __weak WUVoiceBinding *weak=self;
+        dispatch_async(audioQueue,^{ @autoreleasepool {
+            NSString *version=WUVoiceDisplaySourceVersion(path);
+            dispatch_async(dispatch_get_main_queue(),^{
+                WUVoiceBinding *b=weak; if(!b || b.request!=request || ![b valid]) return;
+                b.checking=NO;
+                if(![path isEqual:CallObject(b.message,@"getVoicePath")]) { [b refresh]; return; }
+                if((b.sourceVersion || version) && ![b.sourceVersion isEqual:version]) {
+                    [b clearDisplay]; b.audio=nil; b.sourceVersion=version; b.cacheVersion++;
+                    b.request++; b.attempted=NO; b.nextProbe=0; [b refresh];
+                }
+            });
+        }});
+    }
+    // Keep native duration and layout untouched; PCM duration is shown only in the safe strip.
+    [self clearDisplay];
+    BOOL active=clockOwner.model==self.model && Playing(self.model) && clockOwner.facade==Facade();
+    double current=active?ClockMS(clockOwner.facade):0, total=[self.audio[@"duration"] doubleValue];
+    if(current<0 || current>180000) { active=NO; current=0; }
+    self.wave.progress=total>0?fmax(0,fmin(1,current/total)):0;
+    self.wave.peaks=Option(@"voiceWaveform") && (active || Option(@"voiceAlways")) ? self.audio[@"peaks"] : nil;
+    self.wave.pulsing=active && Option(@"voicePulse");
+    NSString *text;
+    if(total>0 && Option(@"voiceRealDuration")) {
+        double shown=Option(@"voiceCountdown") && active?fmax(0,total-current):current;
+        text=active?[NSString stringWithFormat:@"%@ / %@",WUVoiceTime(shown,Option(@"voiceCarry")),WUVoiceTime(total,Option(@"voiceCarry"))]:WUVoiceTime(total,Option(@"voiceCarry"));
+    } else text=active?WUVoiceTime(current,Option(@"voiceCarry")):@"";
+    if(!Option(@"voiceRealDuration") && total>0) text=active?WUVoiceTime(current,Option(@"voiceCarry")):@"";
+    self.wave.time.text=text;
+    [self.wave setNeedsLayout]; [self.wave layoutIfNeeded];
+    self.wave.accessibilityLabel=@"语音真实播放进度"; self.wave.accessibilityValue=text;
+    self.wave.accessibilityTraits=[self canSeek]?UIAccessibilityTraitAdjustable:UIAccessibilityTraitStaticText;
+    self.wave.accessibilityHint=[self canSeek]?@"左右拖动，松手定位；上下轻扫调整5%":@"当前不可拖动";
+    [self.wave setNeedsDisplay];
+}
+@end
+@implementation WUVoiceClock
+- (void)stop {
+    [self.link invalidate]; self.link=nil; self.model=nil; self.facade=nil; self.account=nil;
+    for(WUVoiceBinding *b in bindings.allObjects) { b.wave.pulsing=NO; b.wave.dragging=NO; [b.wave setNeedsDisplay]; }
+}
+- (void)tick:(CADisplayLink *)link {
+    id cell=Object(self.model,@"cellView"); WUVoiceBinding *b=objc_getAssociatedObject(cell,&bindingKey);
+    if(![b valid] || b.model!=self.model || !Playing(self.model) || self.facade!=Facade() || self.generation!=WUContextGeneration() || ![self.account isEqual:WUCurrentAccount()]) {
+        [self stop]; for(WUVoiceBinding *item in bindings.allObjects) [item refresh]; return;
+    }
+    b.wave.phase=link.timestamp*8; [b refresh];
+}
+@end
+static void Bind(UIView *cell) {
+    if(!NSThread.isMainThread) return;
+    WUVoiceBinding *b=objc_getAssociatedObject(cell,&bindingKey);
+    if(!WUVoiceOverlayReady() || !WUEnabled(@"voiceProgress") || !Foreground() || !cell.window) { [b clear]; return; }
+    id vm=Object(cell,@"viewModel"), msg=Object(vm,@"messageWrap");
+    NSString *account=WUCurrentAccount(); NSUInteger gen=WUContextGeneration();
+    if(!vm || !msg || !account.length) { [b clear]; return; }
+    if(!b) { b=[WUVoiceBinding new]; b.cell=cell; objc_setAssociatedObject(cell,&bindingKey,b,OBJC_ASSOCIATION_RETAIN_NONATOMIC); [bindings addObject:b]; }
+    if(b.model!=vm || b.message!=msg || b.generation!=gen || ![b.account isEqual:account]) {
+        [b clear]; b.model=vm; b.message=msg; b.generation=gen; b.account=account;
+    }
+    [b refresh];
+}
+static void Layout(id cell, SEL cmd) {
+    WUVoiceBinding *b=NSThread.isMainThread?objc_getAssociatedObject(cell,&bindingKey):nil;
+    @try { WUVoiceDisplayLayout(b.display,^{ ((void(*)(id,SEL))layoutOriginal)(cell,cmd); }); }
+    @catch(NSException *e) { [b clearDisplay]; @throw; }
+    Bind(cell);
+}
+static void Window(id cell, SEL cmd) {
+    ((void(*)(id,SEL))windowOriginal)(cell,cmd);
+    if(![cell window]) {
+        WUVoiceBinding *b=objc_getAssociatedObject(cell,&bindingKey);
+        if(b.model==clockOwner.model) [clockOwner stop]; [b clear];
+    } else Bind(cell);
+}
+static void SetPlaying(id vm, SEL cmd, BOOL value) {
+    WUNativePlaybackCall(vm,value,^{ ((void(*)(id,SEL,BOOL))playingOriginal)(vm,cmd,value); WUCaptureObserve(vm,4); });
+    if(!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(),^{ [clockOwner stop]; }); return; }
+    if(!value) { if(clockOwner.model==vm) [clockOwner stop]; }
+    else {
+        [clockOwner stop];
+        id f=Facade();
+        if(WUVoiceOverlayReady() && installed && WUEnabled(@"voiceProgress") && Foreground() && ClockReady(f) && Playing(vm)) {
+            clockOwner.account=WUCurrentAccount(); clockOwner.generation=WUContextGeneration();
+            if(clockOwner.account.length) {
+                clockOwner.model=vm; clockOwner.facade=f;
+                clockOwner.link=[CADisplayLink displayLinkWithTarget:clockOwner selector:@selector(tick:)];
+                clockOwner.link.preferredFramesPerSecond=15; [clockOwner.link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+            }
+        }
+    }
+    id cell=Object(vm,@"cellView"); if([cell isKindOfClass:UIView.class]) Bind(cell);
+}
+void WUCancelVoice(void) {
+    if(!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(),^{ WUCancelVoice(); }); return; }
+    [clockOwner stop]; for(WUVoiceBinding *b in bindings.allObjects) [b clear];
+}
+BOOL WUVoiceAvailable(NSString *key) {
+    if(!WUVoiceOverlayReady() || !installed) return NO;
+    id f=Facade(); return ![key isEqual:@"voiceSeek"] || (WUVoiceSeekUnitVerified() && ClockReady(f) && SeekReady(f));
+}
+void WUInstallVoice(void) {
+    static dispatch_once_t once; dispatch_once(&once,^{
+        bindings=[NSHashTable weakObjectsHashTable]; clockOwner=[WUVoiceClock new]; audioQueue=dispatch_queue_create("org.wechatunified.voice-decode",DISPATCH_QUEUE_SERIAL);
+        for(NSString *name in @[UIApplicationWillResignActiveNotification,WUChanged]) [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n){
+            WUCancelVoice(); if([n.name isEqual:WUChanged] && Foreground() && WUEnabled(@"voiceProgress")) for(WUVoiceBinding *b in bindings.allObjects) Bind(b.cell);
+        }];
+    });
+    // No host duration projection is needed for the separate safe strip.
+    if(installed) return;
+    Class cell=NSClassFromString(@"VoiceMessageCellView"), vm=NSClassFromString(@"VoiceMessageViewModel");
+    if(!WUMatches(class_getInstanceMethod(cell,@selector(layoutSubviews)),"v",@[]) ||
+       !WUMatches(class_getInstanceMethod(cell,@selector(didMoveToWindow)),"v",@[]) ||
+       !WUMatches(class_getInstanceMethod(vm,NSSelectorFromString(@"setIsPlaying:")),"v",@[@(@encode(BOOL))]) ||
+       !WUMatches(class_getInstanceMethod(vm,NSSelectorFromString(@"isPlaying")),@encode(BOOL),@[])) return;
+    BOOL a=layoutOriginal || WUHook(@"VoiceMessageCellView",@"layoutSubviews",NO,"v",@[],(IMP)Layout,&layoutOriginal);
+    BOOL b=windowOriginal || WUHook(@"VoiceMessageCellView",@"didMoveToWindow",NO,"v",@[],(IMP)Window,&windowOriginal);
+    BOOL c=playingOriginal || WUHook(@"VoiceMessageViewModel",@"setIsPlaying:",NO,"v",@[@(@encode(BOOL))],(IMP)SetPlaying,&playingOriginal);
+    installed=a && b && c;
+}
