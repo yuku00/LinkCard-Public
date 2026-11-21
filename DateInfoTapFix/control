@@ -1,0 +1,9 @@
+Package: local.dateinfo.tapfix
+Name: DateInfo Tap Fix
+Version: 1.0.0
+Architecture: iphoneos-arm64e
+Description: Companion fix that makes the status-bar clock tap reach the DateInfo tweak again.
+Maintainer: DateInfo Tap Fix Contributors
+Author: DateInfo Tap Fix Contributors
+Section: Tweaks
+Depends: mobilesubstrate, firmware (>= 15.0)
