@@ -8,12 +8,18 @@ t = (p / 'DITapProbe.inc').read_text()
 c = (p / 'control').read_text()
 m = (p / 'Makefile').read_text()
 assert plistlib.loads((p / 'DateInfoProbe.plist').read_bytes()) == {'Filter': {'Bundles': ['com.apple.springboard']}}
-assert 'Version: 0.3.0\n' in c
+assert 'Version: 0.4.0\n' in c
 assert 'ARCHS = arm64 arm64e' in m and 'THEOS_PACKAGE_SCHEME = roothide' in m
-for x in ('#include "DITapProbe.inc"', 'O_CREAT | O_EXCL | O_NOFOLLOW', '20*NSEC_PER_SEC', '2*NSEC_PER_SEC', 'monotonic()+600', '>= 90', 'queueIndex + 100', 'queue.count >= 10000', 'records.count < 20', 'diClassAvailableScans++', 'diClassMissingScans++', 'DITapProbeEnd()', '@"stage_observations":delta'):
+for x in ('#include "DITapProbe.inc"', 'O_CREAT | O_EXCL | O_NOFOLLOW', '20*NSEC_PER_SEC', '2*NSEC_PER_SEC', 'monotonic()+600', '>= 90', 'queueIndex + 100', 'queue.count >= 10000', 'records.count < 20', 'diClassAvailableScans++', 'diClassMissingScans++', 'DITapProbeEnd()', '@"stage_observations":delta', 'diWindowInventory()'):
     assert x in s, x
 for x in ('class_getImageName(cls)', 'dladdr(imp, &info)', 'diCandidates >= 4096', 'diRegistrations >= 128', 'addTarget:diCounter', 'removeTarget:diCounter'):
     assert x in t, x
+# v0.4: the stored selector is named, but only after sel_isMapped proves it is
+# dereferenceable, and binding no longer depends on the selector comparison.
+for x in ('sel_isMapped((SEL)raw)', 'sel_getName(named)', 'ptrauth_blend_discriminator', 'hitTest:centre withEvent:nil', 'bindings_by_target_class_only', 'selector_match_by_name'):
+    assert x in t, x
+assert t.index('sel_isMapped((SEL)raw)') < t.index('sel_getName(named)')
+assert t.index('SEL named =') < t.index('sel_getName(named)')
 for x in ('MSHook', 'method_exchangeImplementations', 'NSURLSession', 'CFPreferencesSet', 'openURL', 'sendEvent:', 'UITouch'):
     assert x not in s + t, x
 # Compile the real predicate with mocked syscalls to exercise acceptance and failure paths.

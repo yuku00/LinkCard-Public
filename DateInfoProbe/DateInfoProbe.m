@@ -10,8 +10,8 @@
 #include "DITapProbe.inc"
 
 // Private target inspection and all UIKit access run only on the main thread.
-static const char *const triggerPath = "/var/mobile/Library/Logs/DateInfoProbe-v03.start";
-static const char *const outputPath = "/var/mobile/Library/Logs/DateInfoProbe-v03.json";
+static const char *const triggerPath = "/var/mobile/Library/Logs/DateInfoProbe-v04.start";
+static const char *const outputPath = "/var/mobile/Library/Logs/DateInfoProbe-v04.json";
 static int outFD = -1;
 static time_t injectionSecond;
 static NSTimeInterval startedAt;
@@ -44,20 +44,20 @@ static void finish(void) {
     running = NO;
     @try {
         DITapProbeEnd();
-        NSDictionary *report = @{ @"schema": @3, @"run_id":runID, @"status":@"completed", @"injection_utc":injectionUTC, @"trigger_utc":triggerUTC, @"sampling_start_utc":startUTC, @"sampling_end_utc":utc(), @"trigger":@"mobile-owned empty file after injection; 20-second return-to-home delay", @"scan_interval_seconds":@5, @"duration_seconds":@(monotonic()-startedAt), @"incomplete_scan_at_end":@(scanning), @"scans":records, @"tap_probe":DITapProbeReport() };
+        NSDictionary *report = @{ @"schema": @4, @"run_id":runID, @"status":@"completed", @"injection_utc":injectionUTC, @"trigger_utc":triggerUTC, @"sampling_start_utc":startUTC, @"sampling_end_utc":utc(), @"trigger":@"mobile-owned empty file after injection; 20-second return-to-home delay", @"scan_interval_seconds":@5, @"duration_seconds":@(monotonic()-startedAt), @"incomplete_scan_at_end":@(scanning), @"scans":records, @"window_inventory":diWindowInventory(), @"tap_probe":DITapProbeReport() };
         NSError *error = nil;
         NSData *data = [NSJSONSerialization dataWithJSONObject:report options:NSJSONWritingPrettyPrinted error:&error];
         if (data) {
             const uint8_t *p = data.bytes; size_t left = data.length;
             while (left) { ssize_t n = write(outFD, p, left); if (n < 0 && errno == EINTR) continue; if (n <= 0) break; p += n; left -= (size_t)n; }
-            if (left || fsync(outFD)) syslog(LOG_ERR, "DateInfoProbe v03: output write failed");
-        } else syslog(LOG_ERR, "DateInfoProbe v03: JSON serialization failed");
-    } @catch (__unused NSException *e) { syslog(LOG_ERR, "DateInfoProbe v03: finish exception"); }
+            if (left || fsync(outFD)) syslog(LOG_ERR, "DateInfoProbe v04: output write failed");
+        } else syslog(LOG_ERR, "DateInfoProbe v04: JSON serialization failed");
+    } @catch (__unused NSException *e) { syslog(LOG_ERR, "DateInfoProbe v04: finish exception"); }
     if (outFD >= 0) { close(outFD); outFD = -1; }
     queue = nil;
 }
 static NSDictionary *stageCounts(void) {
-    return @{ @"candidates":@(diCandidates), @"pairs":@(diPairs), @"targets_ivar_missing":@(diTargetsIvarMissing), @"targets_not_array":@(diTargetsNotArray), @"target_ivar_missing":@(diTargetIvarMissing), @"target_nil":@(diTargetNil), @"class_matches":@(diClassMatches), @"action_ivar_missing":@(diActionIvarMissing), @"selector_matches":@(diSelectorMatches), @"class_image_mismatch":@(diClassImageFailures), @"method_missing":@(diMethodMissing), @"imp_image_mismatch":@(diImpImageFailures), @"signature_mismatch":@(diSignatureFailures), @"signature_matches":@(diSignatureMatches), @"capacity_skips":@(diCapacitySkips), @"exceptions":@(diExceptions) };
+    return @{ @"candidates":@(diCandidates), @"pairs":@(diPairs), @"targets_ivar_missing":@(diTargetsIvarMissing), @"targets_not_array":@(diTargetsNotArray), @"target_ivar_missing":@(diTargetIvarMissing), @"target_nil":@(diTargetNil), @"class_matches":@(diClassMatches), @"other_target_classes":@(diOtherTargetClasses), @"action_ivar_missing":@(diActionIvarMissing), @"selector_matches":@(diSelectorMatches), @"selector_raw":@(diSelectorRawMatches), @"selector_stripped":@(diSelectorStrippedMatches), @"selector_authenticated":@(diSelectorSignedMatches), @"selector_by_name":@(diSelectorNameMatches), @"class_only_bindings":@(diClassOnlyBindings), @"class_image_mismatch":@(diClassImageFailures), @"method_missing":@(diMethodMissing), @"imp_image_mismatch":@(diImpImageFailures), @"signature_mismatch":@(diSignatureFailures), @"signature_matches":@(diSignatureMatches), @"hit_test_samples":@(diHitTestSamples), @"hit_test_inside":@(diHitTestInsideTweakView), @"hit_test_no_window":@(diNoWindowSamples), @"capacity_skips":@(diCapacitySkips), @"exceptions":@(diExceptions) };
 }
 static void scanBatch(void);
 static void beginScan(void) {
@@ -113,14 +113,14 @@ static void tick(void) {
 }
 static void beginSampling(void) {
     @try { DITapProbeBegin(); records = [NSMutableArray array]; startUTC = utc(); startedAt = monotonic(); running = YES; tick(); }
-    @catch (__unused NSException *e) { if (outFD >= 0) close(outFD); outFD = -1; syslog(LOG_ERR, "DateInfoProbe v03: initialization failed"); }
+    @catch (__unused NSException *e) { if (outFD >= 0) close(outFD); outFD = -1; syslog(LOG_ERR, "DateInfoProbe v04: initialization failed"); }
 }
 static void pollTrigger(NSTimeInterval deadline) {
     if (monotonic() >= deadline) return;
     if (validTrigger()) {
         triggerUTC = utc();
         outFD = open(outputPath, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
-        if (outFD < 0) { syslog(LOG_ERR, "DateInfoProbe v03: output exists or cannot be created; aborting"); return; }
+        if (outFD < 0) { syslog(LOG_ERR, "DateInfoProbe v04: output exists or cannot be created; aborting"); return; }
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 20*NSEC_PER_SEC), dispatch_get_main_queue(), ^{ beginSampling(); });
         return;
     }
