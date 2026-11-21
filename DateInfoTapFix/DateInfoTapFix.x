@@ -148,13 +148,58 @@ static UIView *DIFindHostView(UIView *root, UIGestureRecognizer **outRecognizer,
 
 #pragma mark - Visible window snapshot
 
-static NSArray<NSString *> *DIWindowSnapshot(void) {
-    NSMutableArray<NSString *> *snapshot = [NSMutableArray array];
+// Windows of the connected scenes, newest API first with a fallback for older
+// systems. Deprecation warnings are silenced locally instead of globally.
+static NSArray<UIWindow *> *DIAllWindows(void) {
+    NSMutableArray<UIWindow *> *windows = [NSMutableArray array];
     @try {
-        for (UIWindow *window in [UIApplication sharedApplication].windows) {
-            [snapshot addObject:[NSString stringWithFormat:@"%p:%d", (__bridge void *)window, window.hidden ? 1 : 0]];
+        UIApplication *application = [UIApplication sharedApplication];
+        if (@available(iOS 13.0, *)) {
+            for (UIScene *scene in application.connectedScenes) {
+                if (![scene isKindOfClass:[UIWindowScene class]]) {
+                    continue;
+                }
+                for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+                    [windows addObject:window];
+                }
+            }
+        }
+        if (windows.count == 0) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            [windows addObjectsFromArray:application.windows];
+#pragma clang diagnostic pop
         }
     } @catch (__unused NSException *exception) {
+    }
+    return windows;
+}
+
+static UIWindow *DIKeyWindow(void) {
+    UIWindow *key = nil;
+    @try {
+        for (UIWindow *window in DIAllWindows()) {
+            if (window.isKeyWindow) {
+                key = window;
+                break;
+            }
+        }
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        if (!key) {
+            key = [UIApplication sharedApplication].keyWindow;
+        }
+#pragma clang diagnostic pop
+    } @catch (__unused NSException *exception) {
+        key = nil;
+    }
+    return key;
+}
+
+static NSArray<NSString *> *DIWindowSnapshot(void) {
+    NSMutableArray<NSString *> *snapshot = [NSMutableArray array];
+    for (UIWindow *window in DIAllWindows()) {
+        [snapshot addObject:[NSString stringWithFormat:@"%p:%d", (__bridge void *)window, window.hidden ? 1 : 0]];
     }
     return snapshot;
 }
@@ -423,7 +468,7 @@ static BOOL DICallOriginalAction(id target, UIGestureRecognizer *recognizer) {
         if (DIWindowAppeared(before)) {
             return;
         }
-        UIWindow *anchor = window ?: [UIApplication sharedApplication].keyWindow;
+        UIWindow *anchor = window ?: DIKeyWindow();
         [DIFallbackBubble toggleInWindow:anchor];
     });
 }
@@ -431,6 +476,11 @@ static BOOL DICallOriginalAction(id target, UIGestureRecognizer *recognizer) {
 @end
 
 #pragma mark - Hook
+
+// Declared so the compiler knows the hooked class is a view; the real class is
+// provided by UIKit at runtime.
+@interface _UIStatusBarForegroundView : UIView
+@end
 
 %hook _UIStatusBarForegroundView
 
