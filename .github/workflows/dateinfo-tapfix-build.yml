@@ -48,8 +48,8 @@ jobs:
           dpkg-deb -x "$DEB" build-report/pkg
           BIN=$(find build-report/pkg -name 'DateInfoTapFix.dylib' | head -n 1)
           test -n "$BIN"
-          lipo -verify_arch arm64 arm64e "$BIN"
-          lipo -info "$BIN" | tee build-report/lipo.txt
+          lipo "$BIN" -verify_arch arm64 arm64e
+          lipo "$BIN" -info | tee build-report/lipo.txt
           python3 - "$BIN" <<'PY'
           import plistlib, sys, pathlib
           root = pathlib.Path("build-report/pkg")
