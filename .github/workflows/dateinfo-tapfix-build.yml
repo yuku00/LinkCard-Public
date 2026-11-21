@@ -1,0 +1,76 @@
+name: DateInfoTapFix RootHide manual build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      THEOS: ${{ github.workspace }}/.theos-roothide
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Static invariants
+        working-directory: DateInfoTapFix
+        run: python3 tests/test_invariants.py
+
+      - name: Install build tools
+        run: |
+          brew install ldid dpkg make
+
+      - name: Fetch RootHide theos
+        run: |
+          git clone https://github.com/roothide/theos.git "$THEOS"
+          git -C "$THEOS" checkout 958fea4f779943505b15b93c88bb4db8d97b346d
+          git -C "$THEOS" submodule update --init --recursive
+          test -f "$THEOS/vendor/mod/roothide/package/deb.mk"
+
+      - name: Build package
+        working-directory: DateInfoTapFix
+        run: gmake -j2 FINALPACKAGE=1 package
+
+      - name: Inspect package and binary
+        working-directory: DateInfoTapFix
+        run: |
+          mkdir -p build-report
+          DEB=$(find packages -name '*.deb' | head -n 1)
+          test -n "$DEB"
+          cp "$DEB" build-report/
+          dpkg-deb --info "$DEB"
+          dpkg-deb --contents "$DEB"
+          rm -rf build-report/pkg
+          dpkg-deb -x "$DEB" build-report/pkg
+          BIN=$(find build-report/pkg -name 'DateInfoTapFix.dylib' | head -n 1)
+          test -n "$BIN"
+          lipo -verify_arch arm64 arm64e "$BIN"
+          lipo -info "$BIN" | tee build-report/lipo.txt
+          python3 - "$BIN" <<'PY'
+          import plistlib, sys, pathlib
+          root = pathlib.Path("build-report/pkg")
+          plists = list(root.rglob("DateInfoTapFix.plist"))
+          assert len(plists) == 1, plists
+          loaded = plistlib.loads(plists[0].read_bytes())
+          expected = {"Filter": {"Bundles": ["com.apple.springboard"]}}
+          assert loaded == expected, loaded
+          # The binary must carry the action it forwards to.
+          data = pathlib.Path(sys.argv[1]).read_bytes()
+          assert b"handleTap:" in data
+          assert b"DIClockTapTarget" in data
+          print("binary and plist assertions: PASS")
+          PY
+          otool -L "$BIN" | tee build-report/otool-L.txt
+          otool -l "$BIN" | grep -A4 LC_CODE_SIGNATURE | tee build-report/otool-l.txt
+          ldid -e "$BIN" | head -n 40 | tee build-report/entitlements.txt
+          shasum -a 256 "$DEB" | tee build-report/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: DateInfoTapFix-RootHide
+          path: DateInfoTapFix/build-report/
+          if-no-files-found: error
